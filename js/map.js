@@ -358,3 +358,6 @@ export function mapPageY(y) {
   const r = svg.getBoundingClientRect();
   return r.top + window.scrollY + (y / H) * r.height;
 }
+
+// Shared with the lane maps (Tri, Hybrid) so every map has the same look and feel.
+export { DECO, G, shadow, RUNNER, rng };

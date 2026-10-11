@@ -99,7 +99,9 @@ export function placeHybrid(s, a, now) {
   const h = newHybrid(now, start);
   h.gym = a.gym || 'full';
   // Strength: from lifts relative to bodyweight when given, else from experience.
-  const bw = +a.bodyweight, sq = +a.squat5, dl = +a.deadlift5, pu = +a.pullups;
+  // A 1-rep max is converted to a 5-rep weight (about 86% of the max).
+  const k = String(a.liftMode) === '1' ? 0.86 : 1;
+  const bw = +a.bodyweight, sq = +a.squat5 * k, dl = +a.deadlift5 * k, pu = +a.pullups;
   let str = EXPERIENCE[a.liftExp] ?? 0;
   if (bw > 30 && (sq || dl)) {
     const r = (x, k) => x && x >= k * bw;
@@ -112,20 +114,24 @@ export function placeHybrid(s, a, now) {
   // Engine: from a 1000 m row, finished races and the running level.
   const row = +a.row1000; // minutes
   let eng = row ? (row < 3.83 ? 5 : row < 4.25 ? 4 : row < 4.75 ? 3 : 2) : 1;
+  // Alpha X Base (10 x 400 m, lighter) counts less than a Hyrox or Alpha X Open.
   const races = a.hybridRaces || [];
-  if (races.some(r => r.format === 'solo')) eng = Math.max(eng, 5);
-  else if (races.length) eng = Math.max(eng, 4);
+  const big = races.filter(r => !(r.event === 'Alpha X' && r.category === 'base'));
+  if (big.some(r => r.format === 'solo')) eng = Math.max(eng, 5);
+  else if (big.length) eng = Math.max(eng, 4);
+  else if (races.length) eng = Math.max(eng, 3);
   eng = Math.max(eng, Math.min(4, Math.floor(s.run.level / 2)));
-  if (races.some(r => r.format === 'solo' || r.format === 'pair')) str = Math.max(str, 4);
+  if (big.some(r => r.format === 'solo' || r.format === 'pair')) str = Math.max(str, 4);
   h.strength.stage = Math.max(0, Math.min(STR_MAX, str) - 1);
   h.engine.stage = Math.max(0, Math.min(ENG_MAX, eng) - 1);
   // World: the first one whose targets are not all met, nudged up by races already finished.
   const probe = { ...s, hybrid: h };
   let world = HYBRID_WORLDS.findIndex((_, i) => laneStatus(probe, i).some(l => !l.ok));
   if (world < 0) world = HYBRID_WORLDS.length - 1;
-  if (races.some(r => r.division === 'pro')) world = Math.max(world, 5);
-  else if (races.some(r => r.format === 'solo')) world = Math.max(world, 4);
-  else if (races.length) world = Math.max(world, 3);
+  if (big.some(r => r.division === 'pro')) world = Math.max(world, 5);
+  else if (big.some(r => r.format === 'solo')) world = Math.max(world, 4);
+  else if (big.length) world = Math.max(world, 3);
+  else if (races.length) world = Math.max(world, 2);
   h.world = Math.min(world, HYBRID_WORLDS.length - 1);
   return h;
 }

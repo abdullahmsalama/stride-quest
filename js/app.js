@@ -13,13 +13,22 @@ import * as K from './calendar.js';
 import { parseTime, formatTime, raceMinutes, estimateKm } from './time.js';
 import { dreamTarget, weeksUntil, targetFromAI } from './goal.js';
 import * as TRI from './tri.js';
-import { renderLaneMap, gateY as laneGateY, TH as LANE_H } from './trimap.js';
+import { renderLaneMap, gateY as laneGateY, TH as LANE_H, MAPS as LANE_MAPS, nodePoint, moveCharacter, celebrate } from './trimap.js';
 import * as HYB from './hybrid.js';
 import { HYBRID_WORLDS, BLOCK_WEEKS } from './data/hybrid.js';
 import { TRI_WORLDS } from './data/tri.js';
 import { confetti } from './intro.js';
 
 // ---------- state ----------
+// Theme: light by default (the look the app launched with); dark or follow-the-device on request.
+const THEME_KEY = 'stride-quest:theme';
+const theme = () => { try { return localStorage.getItem(THEME_KEY) || 'light'; } catch { return 'light'; } };
+function applyTheme(t = theme()) {
+  if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', t === 'light' ? '#f4f5f0' : '#14213d');
+}
+applyTheme();
+
 let S = store.load();
 if (!S || S.v !== 1) S = E.newState(Date.now());
 S = CH.ensureSocial(S);
@@ -172,8 +181,10 @@ const TRI_RACES = [['supersprint', 'Super Sprint'], ['sprint', 'Sprint'], ['olym
 function hybQuestions(a) {
   return `<p class="q">Where do you train?</p>${radio('gym', [['full', 'Gym with sled, rower, SkiErg'], ['gym', 'Gym with barbells, no sled or ergs'], ['home', 'Home: dumbbells / kettlebells'], ['none', 'No equipment yet']], a.gym || 'full')}
     <p class="q">Lifting experience</p>${radio('liftExp', [['none', 'New to lifting'], ['lt1', 'Under 1 year'], ['y1_3', '1-3 years'], ['y3', 'More than 3 years']], a.liftExp || 'lt1')}
-    <p class="q">Current numbers <span class="hint">optional, good-form sets of 5</span></p>
-    ${num('bodyweight', 'Bodyweight', a.bodyweight, 'kg')}${num('squat5', 'Back squat x 5', a.squat5, 'kg')}${num('deadlift5', 'Deadlift x 5', a.deadlift5, 'kg')}${num('pullups', 'Strict pull-ups in a row', a.pullups, 'reps')}
+    <p class="q">Your current lifts <span class="hint">optional</span></p>
+    <p class="hint">The heaviest weight you can lift with good form, either for 5 clean reps or as a single max rep.</p>
+    ${radio('liftMode', [['5', 'For 5 clean reps'], ['1', 'As a 1-rep max']], a.liftMode || '5')}
+    ${num('bodyweight', 'Your bodyweight', a.bodyweight, 'kg')}${num('squat5', 'Heaviest back squat', a.squat5, 'kg')}${num('deadlift5', 'Heaviest deadlift', a.deadlift5, 'kg')}${num('pullups', 'Strict pull-ups in a row', a.pullups, 'reps')}
     ${timeField('row1000Text', '1000 m row time', a.row1000Text, 'm:ss, e.g. 3:55')}
     <p class="q">Start with which block?</p>${radio('startBlock', [['auto', 'Let the app choose'], ['engine', '⚡ Engine block'], ['strength', '🏋️ Strength block']], a.startBlock || 'auto')}`;
 }
@@ -199,8 +210,8 @@ function hybridCard(onMap = false) {
   return `<section class="card hyb-card" ${onMap ? '' : 'style="order:8"'}><p class="eyebrow">Hybrid · ${w.emoji} ${h(w.name)}</p>
     <p class="block-line">${blockLine}</p>
     <div class="block-bar">${Array.from({ length: BLOCK_WEEKS }, (_, i) => `<span class="${b.type !== 'deload' && i < b.week ? 'on' : ''}"></span>`).join('')}<span class="deload ${b.type === 'deload' ? 'on' : ''}"></span></div>
-    <div class="lane-bars">${st.map(l => `<div class="${l.ok ? 'ok' : lim?.lane === l.lane ? 'lim' : ''}"><span>${HYB.LANE_ICON[l.lane]}</span><b>${h(HYB.laneTarget(l.lane, l.need).replace(' x bodyweight', 'x BW'))}</b><em>${l.ok ? 'ready' : lim?.lane === l.lane ? 'limiter' : 'building'}</em></div>`).join('')}</div>
-    <p class="hint">${S.hybrid.finished ? 'Pro League conquered 👑' : lim ? `${HYB.LANE_ICON[lim.lane]} ${HYB.LANE_LABEL[lim.lane]} is your limiter.${lim.lane !== 'run' && !HYB.inFocus(S, lim.lane) ? ` A ${HYB.LANE_LABEL[lim.lane]} block would move it most.` : ''}` : '🏁 All lanes ready: your race gate is open!'}</p>
+    <div class="lane-bars">${st.map(l => `<div class="${l.ok ? 'ok' : lim?.lane === l.lane ? 'lim' : ''}"><span>${HYB.LANE_ICON[l.lane]}</span><b>${h(HYB.laneTarget(l.lane, l.need).replace(' x bodyweight', ' x BW'))}</b><em>${l.ok ? 'ready' : lim?.lane === l.lane ? 'limiter' : 'building'}</em></div>`).join('')}</div>
+    <p class="hint">${S.hybrid.finished ? 'Pro League conquered 👑' : lim ? `${HYB.LANE_ICON[lim.lane]} ${HYB.LANE_LABEL[lim.lane]} is your limiter.${lim.lane !== 'run' && !HYB.inFocus(S, lim.lane) ? ` ${lim.lane === 'engine' ? 'An' : 'A'} ${HYB.LANE_LABEL[lim.lane]} block would move it most.` : ''}` : '🏁 All lanes ready: your race gate is open!'}</p>
     <div class="row wrap">${onMap ? '' : '<button class="btn small" data-act="goto-hyb-map">Open Hybrid map</button>'}
       ${b.type !== 'deload' ? `<button class="btn ghost small" data-act="block-switch" data-b="${other}">Switch to ${other} block</button><button class="btn ghost small" data-act="block-switch" data-b="deload">Deload now</button>` : `<button class="btn ghost small" data-act="block-switch" data-b="${b.next}">Start ${b.next} block now</button>`}</div>
     <p class="hint">Use your division's official weights (Hyrox Open/Pro, Alpha X). ${S.hybrid.gym !== 'full' ? 'No sled or ergs? Each exercise shows a swap.' : ''}</p></section>`;
@@ -222,7 +233,7 @@ function hybridRaces(a) {
       <div class="race-head">${check(`hx_${key}`, `I have finished <strong>${name}</strong>`, a[`hx_${key}`])}${info ? tip(info, `About ${name}`) : ''}</div>
       ${a[`hx_${key}`] ? `<div class="race-detail">${extra}${timeField(`${key}Time`, 'Finish time (optional)', a[`${key}Time`], 'h:mm:ss')}</div>` : ''}</div>`;
   return `<p class="q">Hybrid races</p>
-    ${block('alphax', 'Alpha X', 'Alpha X is about 75% endurance, so it leans toward an endurance race. Your Hybrid plan adds real strength blocks on top.',
+    ${block('alphax', 'Alpha X', 'Alpha X is about 75% endurance. Open: 10 x (800 m run + station), 8 km running. Base: 10 x (400 m run + station) with lighter weights. Your Hybrid plan adds real strength blocks on top.',
       `<label class="field"><span>Category</span>${select('alphaxCat', [['base', 'Base'], ['open', 'Open']], a.alphaxCat || 'base')}</label><label class="field"><span>Format</span>${select('alphaxFormat', formats('Pair'), a.alphaxFormat || 'solo')}</label>`)}
     ${block('hyrox', 'Hyrox', 'Hyrox is about 80% endurance: closer to an endurance race than truly hybrid. Your Hybrid plan adds real strength blocks on top.',
       `<label class="field"><span>Division</span>${select('hyroxDiv', [['open', 'Open'], ['pro', 'Pro']], a.hyroxDiv || 'open')}</label><label class="field"><span>Format</span>${select('hyroxFormat', formats('Doubles (pair)'), a.hyroxFormat || 'solo')}</label>`)}
@@ -251,8 +262,9 @@ function normalize(a) {
   if (a.hx_alphax) hybrid.push({ event: 'Alpha X', category: a.alphaxCat || 'base', format: a.alphaxFormat || 'solo', time: parseTime(a.alphaxTime) });
   if (a.hx_hyrox) hybrid.push({ event: 'Hyrox', division: a.hyroxDiv || 'open', format: a.hyroxFormat || 'solo', time: parseTime(a.hyroxTime) });
   if (a.hx_other && a.otherName) hybrid.push({ event: String(a.otherName).slice(0, 60), time: parseTime(a.otherTime) });
-  // A Hyrox finished solo or as doubles means running 8 x 1 km within the race.
-  if (hybrid.some(r => r.event === 'Hyrox' && r.format !== 'relay')) longestKm = Math.max(longestKm, 8);
+  // A Hyrox or Alpha X Open finished solo or as a pair means 8 km of running in the race; Alpha X Base is 4 km.
+  if (hybrid.some(r => (r.event === 'Hyrox' || (r.event === 'Alpha X' && r.category === 'open')) && r.format !== 'relay')) longestKm = Math.max(longestKm, 8);
+  else if (hybrid.some(r => r.event === 'Alpha X' && r.format !== 'relay')) longestKm = Math.max(longestKm, 4);
   return {
     ...a,
     runsLast4w: n(a.runsLast4w), weeklyKm: n(a.weeklyKm), longestKm, longestEstimated, longestMin,
@@ -514,6 +526,7 @@ function viewMap() {
   const sideInfo = `<section class="card map-side-info"><p class="eyebrow">${E.worldOf(lvl).emoji} ${h(E.worldOf(lvl).name)}</p><h3>Level ${lvl.n} · ${h(lvl.name)}</h3>
       ${S.profile.dream ? dreamLine(S.profile.dream, S.run.level, true) : ''}<button class="btn primary small" data-act="open-level">Open level</button></section>`;
   if (ui.mapMode === 'hyb') {
+    prepareLaneMap('hyb');
     return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${renderLaneMap(S, ui, 'hyb')}</div><div class="map-side">${hybridCard(true)}</div></div>`;
   }
   if (ui.mapMode === 'tri') {
@@ -521,6 +534,7 @@ function viewMap() {
     const triSide = `<section class="card map-side-info"><p class="eyebrow">Triathlon · ${TRI.triWorld(S).emoji} ${h(TRI.triWorld(S).name)}</p><h3>${h(TRI.triWorld(S).race)}</h3>
       <p class="hint">${lim ? `${TRI.LANE_ICON[lim.lane]} <strong>${TRI.LANE_LABEL[lim.lane]}</strong> is your limiter.${lim.lane === 'run' ? ' Your running lives on the Run map.' : ''}` : '🌉 All three lanes are ready: the transition gate is open!'}</p>
       ${lim?.lane === 'run' ? '<button class="btn primary small" data-act="goto-run-map">Go to Run map</button>' : lim ? `<button class="btn primary small" data-act="lane-step" data-lane="${lim.lane}">Next ${lim.lane} session</button>` : '<button class="btn primary small" data-act="open-step" data-track="triGate" data-idx="0">Start the gate</button>'}</section>`;
+    prepareLaneMap('tri');
     return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${renderLaneMap(S, ui, 'tri')}</div><div class="map-side">${triSide}${triCard().replace('style="order:8"', '')}</div></div>`;
   }
   return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${ui.mapMode === 'grid' ? levelGrid() : renderMap(S, ui)}</div><div class="map-side">${sideInfo}${rebuild}
@@ -553,11 +567,64 @@ function triFollow(y) {
   if (frame.scrollHeight > frame.clientHeight + 4) frame.scrollTop = Math.max(0, (y / LANE_H) * svg.getBoundingClientRect().height - frame.clientHeight * 0.5);
   else { const r = svg.getBoundingClientRect(); window.scrollTo(0, Math.max(0, r.top + window.scrollY + (y / LANE_H) * r.height - window.innerHeight * 0.5)); }
 }
+// Where each lane character stood the last time the map was seen, so progress can be animated.
+const SEEN_KEY = 'stride-quest:laneSeen';
+const readSeen = () => { try { return JSON.parse(localStorage.getItem(SEEN_KEY)) || {}; } catch { return {}; } };
+const writeSeen = v => { try { localStorage.setItem(SEEN_KEY, JSON.stringify(v)); } catch { /* ignore */ } };
+const laneNow = id => { const cfg = LANE_MAPS[id]; return { ...Object.fromEntries(cfg.lanes.map(l => [l, cfg.value(S, l)])), world: cfg.world(S) }; };
+
+// Before drawing: put characters where they were last seen (if they have moved on since).
+function prepareLaneMap(id) {
+  if (ui.laneAnimating) return;
+  const seen = readSeen()[id], cur = laneNow(id);
+  ui.laneShown = { ...(ui.laneShown || {}), [id]: seen ? Object.fromEntries(LANE_MAPS[id].lanes.map(l => [l, Math.min(seen[l] ?? cur[l], cur[l])])) : null };
+}
+
 function afterTriRender() {
+  const id = ui.mapMode === 'hyb' ? 'hyb' : 'tri', cfg = LANE_MAPS[id];
   const frame = document.querySelector('.worldmap');
-  const w = ui.mapMode === 'hyb' ? S.hybrid.world : S.tri.world;
-  if (ui.mapScroll || ui.frameTop == null) { ui.mapScroll = false; triFollow(laneGateY(Math.min(w, 5)) + 120); }
-  else if (frame && frame.scrollHeight > frame.clientHeight + 4) frame.scrollTop = ui.frameTop;
+  const cur = laneNow(id), all = readSeen(), seen = all[id];
+  const shown = ui.laneShown?.[id];
+  const moves = shown ? cfg.lanes.filter(l => cur[l] > shown[l]) : [];
+  const focusY = () => { const ys = cfg.lanes.map(l => nodePoint(cfg, l, Math.min(cur[l] + 1, cfg.worlds.at(-1)[l])).y); return ys.reduce((a, b) => a + b, 0) / ys.length; };
+  if (!moves.length) {
+    if (ui.mapScroll || ui.frameTop == null) { ui.mapScroll = false; triFollow(focusY()); }
+    else if (frame && frame.scrollHeight > frame.clientHeight + 4) frame.scrollTop = ui.frameTop;
+    if (!seen || seen.world !== cur.world || cfg.lanes.some(l => seen[l] !== cur[l])) {
+      if (seen && cur.world > seen.world) worldCleared(id, seen.world);
+      all[id] = cur; writeSeen(all);
+    }
+    return;
+  }
+  // Animate each lane that moved, one after another, then celebrate.
+  ui.laneAnimating = true; ui.mapScroll = false;
+  const queue = [...moves];
+  const step = () => {
+    const lane = queue.shift();
+    if (!lane) {
+      ui.laneAnimating = false; ui.laneShown = { ...ui.laneShown, [id]: null };
+      if (seen && cur.world > seen.world) worldCleared(id, seen.world);
+      all[id] = cur; writeSeen(all);
+      return;
+    }
+    const from = shown[lane];
+    triFollow(nodePoint(cfg, lane, from).y);
+    setTimeout(() => moveCharacter(id, lane, from, cur[lane], {
+      follow: y => triFollow(y),
+      onDone: pt => {
+        sfx.unlockAudio(); sfx.levelDing(cur[lane]);
+        if (pt) celebrate(pt.x, pt.y - 70, lane === 'run' ? `Level ${cur[lane]}! 🏃` : `${cfg.icon[lane]} Stage up! 🎉`);
+        setTimeout(step, 900);
+      },
+    }), 500);
+  };
+  step();
+}
+
+function worldCleared(id, fromWorld) {
+  const cfg = LANE_MAPS[id];
+  confetti(); sfx.fanfare();
+  toast(`${cfg.worlds[fromWorld].name} cleared! Welcome to ${cfg.current(S).emoji} ${cfg.current(S).name}`);
 }
 function readTriForm(f) {
   const v = n => f.querySelector(`[name=${n}]:checked`)?.value;
@@ -757,6 +824,10 @@ function viewMe() {
     </section>
     <section class="card"><h3>Badges</h3><div class="badges">${Object.entries(E.BADGES).map(([k, b]) =>
       `<div class="badge ${S.badges[k] ? 'on' : ''}" title="${h(b.desc)}"><span>${b.emoji}</span>${h(b.name)}</div>`).join('')}</div></section>
+    <section class="card"><h3>Theme</h3>
+      <div class="seg">${[['light', '☀️ Light'], ['dark', '🌙 Dark'], ['auto', '🖥️ Auto']].map(([k, l]) => `<button class="${theme() === k ? 'on' : ''}" data-act="set-theme" data-t="${k}">${l}</button>`).join('')}</div>
+      <p class="hint">Auto follows your device's light/dark setting.</p>
+    </section>
     <section class="card"><h3>Training</h3>
       <p>${(S.profile.tracks || ['run']).map(k => ({ run: '🏃 Running', hybrid: '🏋️ Hybrid', tri: '🏊 Triathlon' })[k] + (k === (S.profile.primary || 'run') && (S.profile.tracks || []).length > 1 ? ' (leads your week)' : '')).join(' · ')}</p>
       <p class="hint">Days: ${K.schedule(S).days.map(d => K.DAY_NAMES[d]).join(', ')} · long session ${K.DAY_NAMES[K.schedule(S).longDay]}</p>
@@ -1089,6 +1160,7 @@ const actions = {
   reset() { if (confirm('Delete all progress in this browser?')) { store.clear(); localStorage.removeItem(CHAT_KEY); localStorage.removeItem(AVATAR_KEY); ui.avatarAt = null; ui.chat = []; S = E.newState(now()); render(); } },
   sound() { sfx.setSound(!sfx.soundOn()); if (sfx.soundOn()) { sfx.unlockAudio(); sfx.pop(); } render(); },
   quick(el) { sendChat(el.dataset.q); },
+  'set-theme'(el) { try { localStorage.setItem(THEME_KEY, el.dataset.t); } catch { /* ignore */ } applyTheme(el.dataset.t); render(); },
   'dream-ai'(el) { if (ui.ob.a.dreamAI) { ui.ob.a.dreamAI.accepted = el.dataset.v === '1'; renderOnboarding(); } },
   'sugg-apply'(el) {
     const m = ui.chat[+el.dataset.m], a = m?.actions?.[+el.dataset.a];
@@ -1101,7 +1173,7 @@ const actions = {
     toast(message); render();
   },
   'sugg-skip'(el) { const a = ui.chat[+el.dataset.m]?.actions?.[+el.dataset.a]; if (a) { a.label = ACT.describe(S, a, now())?.label || ''; a.status = 'skipped'; saveChat(); render(); } },
-  'lane-node'(el) { const p = { map: el.dataset.map, kind: el.dataset.kind, lane: el.dataset.lane, world: el.dataset.world }; ui.lanePopup = ui.lanePopup && JSON.stringify(ui.lanePopup) === JSON.stringify(p) ? null : p; render(); },
+  'lane-node'(el) { if (ui.laneAnimating) return; const p = { map: el.dataset.map, kind: el.dataset.kind, lane: el.dataset.lane, world: el.dataset.world, v: el.dataset.v }; ui.lanePopup = ui.lanePopup && JSON.stringify(ui.lanePopup) === JSON.stringify(p) ? null : p; render(); },
   'lane-bg'() { if (ui.lanePopup) { ui.lanePopup = null; render(); } },
   'block-switch'(el) { S = HYB.switchBlock(S, el.dataset.b, now()); S = HYB.refreshHybrid(S, now(), E.weekKey(now())); store.save(S); toast(el.dataset.b === 'deload' ? 'Deload week: recover and come back stronger 😮‍💨' : `${el.dataset.b === 'engine' ? '⚡ Engine' : '🏋️ Strength'} block started: ${BLOCK_WEEKS} weeks.`); render(); },
   'lane-step'(el) {

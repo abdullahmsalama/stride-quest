@@ -491,3 +491,29 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .block-bar span.deload { flex: .6; background: var(--info-soft); }
 .block-bar span.deload.on { background: var(--info); }
 .tri-avatar.resting .bob { opacity: .55; animation: none; }
+
+/* lane map characters: always alive, faster while travelling */
+.lane-ch { cursor: pointer; }
+.lane-ch .bob { animation: idle 2s ease-in-out infinite; }
+.lane-ch.moving .bob { animation: bob .18s ease-in-out infinite alternate; }
+.lane-ch.resting { opacity: .7; }
+.lane-ch .limb, .lane-ch .arm-stroke, .lane-ch .press, .lane-ch .pull, .lane-ch .wheel, .lane-ch .ripple, .lane-ch .kick { transform-box: fill-box; }
+.ch-run .limb { transform-origin: 50% 0; }
+.ch-run .leg-f, .ch-run .arm-b { animation: swing .6s ease-in-out infinite alternate; }
+.ch-run .leg-b, .ch-run .arm-f { animation: swing .6s ease-in-out infinite alternate-reverse; }
+.lane-ch.moving .ch-run .limb { animation-duration: .22s; }
+.ch-swim .arm-stroke { transform-origin: 50% 100%; animation: stroke .9s linear infinite; }
+.ch-swim .ripple { transform-origin: center; animation: ripple 1.6s ease-out infinite; }
+.ch-swim .kick { animation: blink .4s steps(2) infinite; }
+.lane-ch.moving .ch-swim .arm-stroke { animation-duration: .45s; }
+.ch-bike .wheel { transform-origin: center; animation: spin 1.1s linear infinite; }
+.lane-ch.moving .ch-bike .wheel { animation-duration: .3s; }
+.ch-lift .press { animation: press 1.1s ease-in-out infinite alternate; }
+.ch-ski .pull { transform-origin: 0% 100%; animation: pull .8s ease-in-out infinite alternate; }
+@keyframes stroke { from { transform: rotate(-40deg); } to { transform: rotate(320deg); } }
+@keyframes ripple { from { transform: scale(.7); opacity: .9; } to { transform: scale(1.3); opacity: .2; } }
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes press { from { transform: translateY(7px); } to { transform: translateY(0); } }
+@keyframes pull { from { transform: rotate(-30deg); } to { transform: rotate(35deg); } }
+@media (prefers-reduced-motion: reduce) { .lane-ch * { animation: none !important; } }
