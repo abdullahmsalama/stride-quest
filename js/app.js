@@ -18,7 +18,7 @@ import * as BG from './background.js';
 import * as TRI from './tri.js';
 import { renderLaneMap, gateY as laneGateY, TH as LANE_H, TW as LANE_W, MAPS as LANE_MAPS, nodePoint, moveCharacter, celebrate, signature, START_POINT } from './trimap.js';
 import * as HYB from './hybrid.js';
-import { HYBRID_WORLDS, BLOCK_WEEKS } from './data/hybrid.js';
+import { HYBRID_WORLDS, BLOCK_WEEKS, STRENGTH_STAGES } from './data/hybrid.js';
 import { TRI_WORLDS } from './data/tri.js';
 import { confetti } from './intro.js';
 
@@ -993,6 +993,25 @@ function viewCoach() {
     </section>`;
 }
 
+// What the app has saved for your lifts and how it read them: everything lives on this device only.
+function numbersCard() {
+  const a = S.answers || {};
+  const u = a.liftUnit === 'lb' ? 'lb' : 'kg';
+  const mode = a.liftMode === '1' ? '1-rep max' : a.liftMode === 'unknown' ? "didn't know" : '5 reps';
+  const val = v => (+v > 0 ? `${+v} ${u}` : '—');
+  const r = HYB.readLifts(a, S.profile.sex);
+  const cleared = S.hybrid.strength.stage > 0 ? STRENGTH_STAGES[S.hybrid.strength.stage - 1] : null;
+  const working = HYB.strengthStage(S);
+  const has = +a.squat5 > 0 || +a.deadlift5 > 0;
+  return `<section class="card"><h3>📏 My numbers</h3>
+      <p class="hint">Saved on this device only (no one else, including us, can see them).</p>
+      <div class="kv"><span>Bodyweight</span><b>${val(a.bodyweight)}</b><span>Squat (${mode})</span><b>${val(a.squat5)}</b><span>Deadlift (${mode})</span><b>${val(a.deadlift5)}</b><span>Strict pull-ups</span><b>${a.pullups !== '' && a.pullups != null ? +a.pullups : '—'}</b></div>
+      <p class="hint">${has && r.level ? `Read as: ${[r.sqRatio ? `squat ${r.sqRatio.toFixed(2)}× bodyweight` : '', r.dlRatio ? `deadlift ${r.dlRatio.toFixed(2)}×` : ''].filter(Boolean).join(', ')}${a.pullups == null || a.pullups === '' ? ' · no pull-ups given (caps the top stages)' : ''}.` : '⚠️ No lift numbers saved: your Strength lane was placed from experience and races only.'}
+        Strength now: ${cleared ? `cleared ${h(cleared.name)}, ` : ''}working on <strong>${h(working.name)}</strong> (${h(ST.sexText(working.target, S.profile.sex))}).</p>
+      <button class="btn" data-act="edit-numbers">Update my numbers</button>
+    </section>`;
+}
+
 function viewMe() {
   const hist = S.history.filter(x => x.kind === 'session' || x.kind === 'event' || x.kind === 'bonus' || x.kind === 'challenge').slice(-15).reverse();
   return `
@@ -1008,6 +1027,7 @@ function viewMe() {
     </section>
     <section class="card"><h3>Badges</h3><div class="badges">${Object.entries(E.BADGES).map(([k, b]) =>
       `<div class="badge ${S.badges[k] ? 'on' : ''}" title="${h(b.desc)}"><span>${b.emoji}</span>${h(b.name)}</div>`).join('')}</div></section>
+    ${HYB.hasHybrid(S) ? numbersCard() : ''}
     <section class="card"><h3>🏅 Sporting background</h3>
       <p class="hint">${S.background?.length ? h(BG.describe(S.background).join(' · ')) : 'Trained seriously in a sport before? Add it: former athletes get their technique credited and a comeback fast-track.'}</p>
       <button class="btn" data-act="edit-bg">${S.background?.length ? 'Edit' : 'Add my background'}</button>
@@ -1084,6 +1104,19 @@ function painButtons() {
 }
 
 const MODALS = {
+  numbers() {
+    const a = S.answers || {};
+    const unit = a.liftUnit === 'lb' ? 'lb' : 'kg';
+    const f = (name, label, v, suffix) => `<label class="field"><span>${label}</span><span class="with-unit"><input type="number" inputmode="decimal" name="${name}" value="${+v > 0 ? +v : ''}" min="0" step="0.5">${suffix ? `<em>${suffix}</em>` : ''}</span></label>`;
+    return `<form id="numbers-form"><h2>📏 Update my numbers</h2>
+      <p class="why">💡 Your Strength lane is re-placed with the same rules as the questionnaire. Recent, good-form numbers work best.</p>
+      <p class="q">Units</p>${radio('nUnit', [['kg', 'kg'], ['lb', 'lb']], unit)}
+      ${f('nBw', 'Bodyweight', a.bodyweight, '')}
+      <p class="q">Your lifts are</p>${radio('nMode', [['5', 'Weight for 5 good reps'], ['1', '1-rep max']], a.liftMode === '1' ? '1' : '5')}
+      ${f('nSq', 'Back squat', a.squat5, '')}${f('nDl', 'Deadlift', a.deadlift5, '')}
+      <label class="field"><span>Strict pull-ups in a row</span><input type="number" inputmode="numeric" name="nPu" value="${a.pullups !== '' && a.pullups != null ? +a.pullups : ''}" min="0" step="1"></label>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Update</button></div></form>`;
+  },
   painfree(m) {
     const checks = [
       ...(m.cleared ? ['A physio or doctor has cleared me to train'] : []),
@@ -1409,6 +1442,7 @@ const actions = {
   'map-me'() { followY(POINTS[ui.avatarAt ?? S.run.level].y); },
   'open-level'() { ui.modal = { type: 'level' }; renderModal(); },
   cleared() { ui.modal = { type: 'painfree', cleared: true }; renderModal(); },
+  'edit-numbers'() { ui.modal = { type: 'numbers' }; renderModal(); },
   painfree() { ui.modal = { type: 'painfree', cleared: false }; renderModal(); },
   'painfree-go'(el) {
     const f = el.closest('form');
@@ -1726,6 +1760,20 @@ document.addEventListener('submit', e => {
     toast(`Welcome to ${HYB.hybWorld(S).emoji} ${HYB.hybWorld(S).name}!`);
     return;
   }
+  if (f.id === 'numbers-form') {
+    const unit = f.querySelector('[name=nUnit]:checked')?.value || 'kg', mode = f.querySelector('[name=nMode]:checked')?.value || '5';
+    const num = n => (f[n].value.trim() === '' ? null : +f[n].value);
+    const bw = num('nBw'), sq = num('nSq'), dl = num('nDl'), pu = num('nPu');
+    if (!(bw > 0) || !(sq > 0 || dl > 0)) return toast('Add your bodyweight and at least one lift.');
+    const before = S.hybrid.strength.stage;
+    const ans = { ...(S.answers || {}), bodyweight: bw, squat5: sq ?? '', deadlift5: dl ?? '', pullups: pu ?? '', liftUnit: unit, liftMode: mode };
+    const fresh = HYB.placeHybrid(S, { ...ans, liftExp: ans.liftExp || 'lt1' }, t);
+    S.answers = ans;
+    if (fresh.strength.stage !== before) S.hybrid.strength = { stage: fresh.strength.stage, done: {} };
+    ui.modal = null; commit(S);
+    toast(fresh.strength.stage === before ? `Numbers saved. Strength stays at ${HYB.strengthStage(S).name}.` : `🏋️ Strength: now working on ${HYB.strengthStage(S).name} (was ${STRENGTH_STAGES[Math.min(before, HYB.STR_MAX - 1)].name}).`);
+    return;
+  }
   if (f.id === 'tri-form') {
     const a = { ...(ui.modal.a || {}), ...readTriForm(f) };
     a.triRaces = TRI_RACES.map(([k]) => k).filter(k => a[`race_${k}`]);
@@ -1816,7 +1864,7 @@ window.addEventListener('hashchange', () => {
   if (!ui.modal) render();
 });
 
-$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
 
 // ---------- installable app ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
