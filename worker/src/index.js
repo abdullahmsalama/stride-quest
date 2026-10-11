@@ -49,6 +49,17 @@ const LIFTS_SCHEMA = {
   required: ['confidence', 'summary'],
 };
 
+const CHECK = `You review an athlete's questionnaire answers (JSON) for likely MISTAKES before a training plan is built.
+Look for: unit mix-ups (kg vs lb, km vs miles, minutes vs hours, metres vs km), impossible or inconsistent numbers (e.g. a 10K pace faster than the 5K pace, a squat far above world records, a longest run much longer than weekly distance), and answers that contradict each other.
+Typical example: a bodyweight above about 130 with lifts in kg often means the bodyweight was typed in lb (176 lb = 80 kg). Do NOT judge ambition or fitness, and do not flag things that are simply unusual but possible. Return JSON only: {"issues": [{"field": string, "message": string}]} with at most 3 issues.
+"field" must be one of the input keys. "message" is one short, friendly sentence that says what looks off and asks a question. Return {"issues": []} when everything looks fine.`;
+
+const CHECK_SCHEMA = {
+  type: 'OBJECT',
+  properties: { issues: { type: 'ARRAY', items: { type: 'OBJECT', properties: { field: { type: 'STRING' }, message: { type: 'STRING' } }, required: ['field', 'message'] } } },
+  required: ['issues'],
+};
+
 const UNDERSTAND_SCHEMA = {
   type: 'OBJECT',
   properties: {
@@ -223,13 +234,13 @@ export default {
     try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400, headers); }
 
     if (body.mode === 'understand') {
-      const text = String(body.text || '').slice(0, 300).trim();
+      const text = String(body.text || '').slice(0, body.task === 'check' ? 2000 : 300).trim();
       if (!text) return json({ error: 'no text' }, 400, headers);
-      const lifts = body.task === 'lifts';
-      const sys = lifts ? UNDERSTAND_LIFTS : UNDERSTAND.replace('TODAY', new Date().toISOString().slice(0, 10));
+      const lifts = body.task === 'lifts', check = body.task === 'check';
+      const sys = check ? CHECK : lifts ? UNDERSTAND_LIFTS : UNDERSTAND.replace('TODAY', new Date().toISOString().slice(0, 10));
       for (const [name, call] of PROVIDERS) {
         try {
-          const raw = await call(env, sys, [{ role: 'user', content: text }], lifts ? LIFTS_SCHEMA : UNDERSTAND_SCHEMA);
+          const raw = await call(env, sys, [{ role: 'user', content: text }], check ? CHECK_SCHEMA : lifts ? LIFTS_SCHEMA : UNDERSTAND_SCHEMA);
           const result = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, ''));
           return json({ result, provider: name }, 200, headers);
         } catch { /* try the next provider */ }

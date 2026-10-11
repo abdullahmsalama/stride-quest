@@ -259,6 +259,20 @@ function hybridRaces(a) {
       `<label class="field"><span>Which one?</span><input type="text" name="otherName" value="${h(a.otherName || '')}" list="events-list" maxlength="60" placeholder="e.g. CrossFit Open"><datalist id="events-list">${OTHER_EVENTS.map(e => `<option value="${e}">`).join('')}</datalist></label>`)}`;
 }
 
+// Ask the AI to look over all the answers for likely mistakes (units, typos, contradictions).
+const CHECK_FIELDS = ['runsLast4w', 'weeklyKm', 'longestKm', 'longestTime', 'best5kText', 'best5kMode', 'best10kText', 'best10kMode', 'continuous', 'dream', 'dreamEvent', 'dreamDate',
+  'sex', 'bodyweight', 'squat5', 'deadlift5', 'pullups', 'liftUnit', 'liftMode', 'liftExp', 'row1000Text', 'swimDist', 'swimM', 'longestRide', 'rideKm', 'daysPerWeek'];
+async function checkAnswers() {
+  const a = ui.ob.a;
+  const facts = Object.fromEntries(CHECK_FIELDS.filter(k => a[k] !== undefined && a[k] !== '').map(k => [k, a[k]]));
+  const key = JSON.stringify(facts);
+  if (a.check?.for === key) return;
+  ui.ob.a.check = { for: key, issues: null };
+  const r = await understand('check', key);
+  ui.ob.a.check = { for: key, issues: Array.isArray(r?.issues) ? r.issues.filter(i => CHECK_FIELDS.includes(i.field)).slice(0, 3) : [] };
+  if (document.querySelector('.result')) renderOnboarding();
+}
+
 // Ask the AI to turn other lifts / tests into squat and deadlift estimates (non-blocking).
 async function readLifts() {
   const a = ui.ob.a, text = String(a.otherLifts || '').trim();
@@ -350,6 +364,7 @@ function renderOnboarding() {
         <p class="eyebrow">${h(w.name)}</p>
         <h2>Level ${lvl.n} · ${h(lvl.name)}</h2>
         <p>You qualify for Level ${preview.qualifying}. You start one level below it so the first wins come quickly. Pass the gates to climb back up fast.</p>
+        ${ui.ob.a.check?.issues?.length ? `<div class="check-box"><strong>🤖 Quick check before we start</strong>${ui.ob.a.check.issues.map(i => `<div class="check-item"><span>${h(i.message)}</span><button type="button" class="btn small" data-act="fix-field" data-field="${h(i.field)}">Fix it</button></div>`).join('')}<p class="hint">All correct? Just start your journey.</p></div>` : ''}
         ${dreamLine({ ...normalize(ui.ob.a), ...(ui.ob.a.dreamAI?.accepted ? { target: targetFromAI(ui.ob.a.dreamAI) || undefined, dreamDate: ui.ob.a.dreamDate || ui.ob.a.dreamAI.date || '' } : {}) }, preview.placed)}
         ${ui.ob.a.dreamAI ? `<div class="ai-read ${ui.ob.a.dreamAI.accepted ? '' : 'off'}"><span>🤖 Here's what I understood: <strong>${h(ui.ob.a.dreamAI.summary || '')}</strong></span>
           <div class="row">${ui.ob.a.dreamAI.accepted ? '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="0">Not quite</button>' : '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="1">Use this reading</button>'}</div></div>` : ''}
@@ -1306,6 +1321,10 @@ const actions = {
   },
   'set-theme'(el) { try { localStorage.setItem(THEME_KEY, el.dataset.t); } catch { /* ignore */ } applyTheme(el.dataset.t); render(); },
   'lifts-ai'(el) { if (ui.ob.a.liftsAI) { ui.ob.a.liftsAI.accepted = el.dataset.v === '1'; renderOnboarding(); } },
+  'fix-field'(el) {
+    const steps = obSteps(ui.ob.a), i = steps.findIndex(st => (st.body || '').includes(`name="${el.dataset.field}"`));
+    if (i >= 0) { ui.ob.step = i; renderOnboarding(); window.scrollTo(0, 0); setTimeout(() => document.querySelector(`[name="${el.dataset.field}"]`)?.focus(), 50); }
+  },
   'dream-ai'(el) { if (ui.ob.a.dreamAI) { ui.ob.a.dreamAI.accepted = el.dataset.v === '1'; renderOnboarding(); } },
   'sugg-apply'(el) {
     const m = ui.chat[+el.dataset.m], a = m?.actions?.[+el.dataset.a];
@@ -1486,7 +1505,9 @@ document.addEventListener('submit', e => {
     if (badTime) { badTime.focus(); return toast('Use mm:ss or h:mm:ss, for example 27:30 or 1:05:00.'); }
     if (f.querySelector('[name=dream]')) readDream();
     if (f.querySelector('[name=otherLifts]')) readLifts();
-    ui.ob.step++; renderOnboarding(); window.scrollTo(0, 0); return;
+    ui.ob.step++;
+    if (obSteps(ui.ob.a)[ui.ob.step]?.result) checkAnswers();
+    renderOnboarding(); window.scrollTo(0, 0); return;
   }
   if (f.id === 'hyb-form') {
     const fd = Object.fromEntries(new FormData(f).entries());
