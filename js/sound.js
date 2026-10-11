@@ -106,3 +106,64 @@ export function whoosh() {
     },
   };
 }
+
+// ---------- character sounds (lane maps) ----------
+function burst({ freq = 1200, q = 1, dur = 0.15, vol = 0.25, type = 'bandpass', delay = 0 } = {}) {
+  if (!ready()) return;
+  const t = ctx.currentTime + delay;
+  const src = noise(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  f.type = type; f.frequency.value = freq; f.Q.value = q;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f).connect(g).connect(master);
+  src.start(t); src.stop(t + dur + 0.05);
+}
+const splash = () => { burst({ freq: 1400, q: 0.7, dur: 0.22, vol: 0.32 }); burst({ freq: 500, q: 1, dur: 0.12, vol: 0.18, delay: 0.04 }); };
+const tick = () => tone(4200, { type: 'square', dur: 0.012, vol: 0.06 });
+const pull = () => burst({ freq: 700, q: 0.6, dur: 0.38, vol: 0.28, type: 'lowpass' });
+const heavyStep = () => tone(110, { type: 'sine', dur: 0.09, vol: 0.3, slideTo: 55 });
+export function clank() {
+  [523, 1437, 2381, 3301].forEach((f, i) => tone(f, { type: 'sine', dur: 0.5 - i * 0.08, vol: 0.12 }));
+  [587, 1611, 2690].forEach((f, i) => tone(f, { type: 'sine', dur: 0.4 - i * 0.08, vol: 0.1, delay: 0.16 }));
+}
+export function bell() { tone(2093, { type: 'sine', dur: 0.35, vol: 0.18 }); tone(2637, { type: 'sine', dur: 0.35, vol: 0.12, delay: 0.18 }); }
+export function bigSplash() { burst({ freq: 900, q: 0.5, dur: 0.5, vol: 0.4 }); burst({ freq: 2200, q: 0.8, dur: 0.3, vol: 0.2, delay: 0.08 }); }
+
+// A sound that loops while a character travels; returns a stop() function.
+export function moveLoop(lane) {
+  if (!ready()) return () => {};
+  const every = { swim: 420, bike: 75, run: 270, strength: 330, engine: 560 }[lane] || 300;
+  const play = { swim: splash, bike: tick, run: step, strength: heavyStep, engine: pull }[lane] || step;
+  const wind = lane === 'bike' ? whoosh() : null;
+  wind?.set(0.35);
+  const id = setInterval(play, every);
+  play();
+  return () => { clearInterval(id); wind?.stop(); };
+}
+
+// The arrival sound for each character.
+export function arrive(lane) {
+  if (!ready()) return;
+  if (lane === 'swim') bigSplash();
+  else if (lane === 'bike') bell();
+  else if (lane === 'strength') { clank(); setTimeout(playShout, 450); }
+  else if (lane === 'engine') { pull(); setTimeout(pull, 180); setTimeout(() => levelDing(4), 380); }
+  else levelDing(2);
+}
+
+// The athlete's own recorded (or uploaded) lifting shout, stored on this device.
+const SHOUT_KEY = 'stride-quest:shout';
+export const hasShout = () => { try { return !!localStorage.getItem(SHOUT_KEY); } catch { return false; } };
+export function saveShout(dataUrl) { localStorage.setItem(SHOUT_KEY, dataUrl); }
+export function clearShout() { try { localStorage.removeItem(SHOUT_KEY); } catch { /* ignore */ } }
+export function playShout() {
+  if (!soundOn()) return;
+  try { const url = localStorage.getItem(SHOUT_KEY); if (url) new Audio(url).play().catch(() => {}); } catch { /* ignore */ }
+}
+
+// Short spoken lines through the device's own voice (no recordings).
+export function say(text, { pitch = 1, rate = 1 } = {}) {
+  if (!soundOn() || typeof speechSynthesis === 'undefined') return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.pitch = pitch; u.rate = rate; u.volume = 1;
+  speechSynthesis.speak(u);
+}

@@ -247,7 +247,7 @@ export function renderMap(s, ui) {
         <path d="${pathTo(cur)}" fill="none" stroke="#e2703a" stroke-width="18" stroke-linecap="round"/>
         <path d="${pathTo(cur)}" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="10 9"/>
         ${RUN_LEVELS.map(l => nodeSvg(l, s)).join('')}
-        <g id="avatar" transform="translate(${p.x},${p.y - 16}) scale(1.45)">${RUNNER}</g>
+        <g id="avatar" transform="translate(${p.x},${p.y - 16}) scale(1.45)">${s.profile?.sex === 'f' ? RUNNER.replace('fill="#ff6b35"', 'fill="#ec407a"').replace('<circle cx="1" cy="-39"', '<path class="pony" d="M-4,-42 q-9,1 -10,10" stroke="#3e2723" stroke-width="4" fill="none" stroke-linecap="round"/><circle cx="1" cy="-39"') : RUNNER}</g>
       </svg>
       ${popup}
       </div>

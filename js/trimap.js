@@ -49,27 +49,29 @@ const STYLE = {
 };
 
 // ---------- characters (feet at 0,0) ----------
+const TOP = sex => (sex === 'f' ? '#ec407a' : '#ff6b35');
+const PONY = (sex, x, y, dir = -1) => (sex === 'f' ? `<path class="pony" d="M${x},${y} q${dir * 9},1 ${dir * 10},10" stroke="#3e2723" stroke-width="4" fill="none" stroke-linecap="round"/>` : '');
 const CHAR = {
-  swim: `<g class="ch-swim"><ellipse class="ripple" rx="18" ry="5" fill="rgba(255,255,255,.75)"/><g class="bob">
-      <ellipse cx="0" cy="-5" rx="14" ry="4.8" fill="#ff6b35"/><circle cx="13" cy="-8" r="5.2" fill="#f1c49b"/><path d="M8.5,-11 a5.2,5.2 0 0 1 9.2,0" fill="#ffd23f"/>
+  swim: sex => `<g class="ch-swim"><ellipse class="ripple" rx="18" ry="5" fill="rgba(255,255,255,.75)"/><g class="bob">
+      <ellipse cx="0" cy="-5" rx="14" ry="4.8" fill="${TOP(sex)}"/>${PONY(sex, 9, -9)}<circle cx="13" cy="-8" r="5.2" fill="#f1c49b"/><path d="M8.5,-11 a5.2,5.2 0 0 1 9.2,0" fill="#ffd23f"/>
       <g class="arm-stroke"><path d="M4,-7 L4,-22" stroke="#f1c49b" stroke-width="3.6" stroke-linecap="round"/></g>
       <g class="kick"><circle cx="-17" cy="-4" r="2.2" fill="#fff"/><circle cx="-20" cy="-7" r="1.6" fill="#fff"/></g></g></g>`,
-  bike: `<g class="ch-bike"><ellipse cy="1" rx="19" ry="3.5" fill="rgba(0,0,0,.25)"/><g class="bob">
+  bike: sex => `<g class="ch-bike"><ellipse cy="1" rx="19" ry="3.5" fill="rgba(0,0,0,.25)"/><g class="bob"><g class="wheelie">
       <g transform="translate(-11,-7)"><g class="wheel"><circle r="7.5" fill="none" stroke="#263238" stroke-width="2.4"/><path d="M-7,0H7M0,-7V7" stroke="#90a4ae" stroke-width="1.2"/></g></g>
       <g transform="translate(11,-7)"><g class="wheel"><circle r="7.5" fill="none" stroke="#263238" stroke-width="2.4"/><path d="M-7,0H7M0,-7V7" stroke="#90a4ae" stroke-width="1.2"/></g></g>
       <path d="M-11,-7 L-2,-7 L5,-17 L11,-7 M-2,-7 L-5,-18 M5,-17 L8,-21" stroke="#ff6b35" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-      <path d="M-5,-19 L4,-28" stroke="#29a0e0" stroke-width="5.5" stroke-linecap="round"/><path d="M3,-27 L8,-21" stroke="#f1c49b" stroke-width="3" stroke-linecap="round"/>
+      <path d="M-5,-19 L4,-28" stroke="${sex === 'f' ? '#ab47bc' : '#29a0e0'}" stroke-width="5.5" stroke-linecap="round"/><path d="M3,-27 L8,-21" stroke="#f1c49b" stroke-width="3" stroke-linecap="round"/>
       <path d="M-5,-19 L-1,-11 L-2,-7" stroke="#1e2b4d" stroke-width="3.6" fill="none" stroke-linecap="round" class="leg"/>
-      <circle cx="7" cy="-32" r="4.8" fill="#f1c49b"/><path d="M2,-33 a5,5 0 0 1 10,0Z" fill="#e53935"/></g></g>`,
-  run: `<g class="ch-run">${RUNNER}</g>`,
-  strength: `<g class="ch-lift"><ellipse rx="13" ry="3.6" fill="rgba(0,0,0,.28)"/><g class="bob">
+      ${PONY(sex, 3, -31)}<circle cx="7" cy="-32" r="4.8" fill="#f1c49b"/><path d="M2,-33 a5,5 0 0 1 10,0Z" fill="#e53935"/></g></g></g>`,
+  run: sex => `<g class="ch-run">${sex === 'f' ? RUNNER.replace('fill="#ff6b35"', `fill="${TOP(sex)}"`).replace('<circle cx="1" cy="-39"', `${PONY(sex, -4, -42)}<circle cx="1" cy="-39"`) : RUNNER}</g>`,
+  strength: sex => `<g class="ch-lift"><ellipse rx="13" ry="3.6" fill="rgba(0,0,0,.28)"/><g class="bob">
       <path d="M-5,0 L-5,-14 M5,0 L5,-14" stroke="#1e2b4d" stroke-width="4.8" stroke-linecap="round"/>
-      <rect x="-6.5" y="-31" width="13" height="18" rx="5" fill="#ff6b35"/><circle cx="0" cy="-37" r="6.3" fill="#f1c49b"/><path d="M-6,-40 a6.3,6.3 0 0 1 12,0" fill="#3e2723"/>
+      <rect x="-6.5" y="-31" width="13" height="18" rx="5" fill="${TOP(sex)}"/>${PONY(sex, -5, -40)}<circle cx="0" cy="-37" r="6.3" fill="#f1c49b"/><path d="M-6,-40 a6.3,6.3 0 0 1 12,0" fill="#3e2723"/>
       <g class="press"><path d="M-6,-29 L-10,-44 M6,-29 L10,-44" stroke="#f1c49b" stroke-width="3.6" stroke-linecap="round"/>
         <rect x="-22" y="-46.5" width="44" height="3" rx="1.5" fill="#546e7a"/><rect x="-24" y="-51" width="5" height="12" rx="1.5" fill="#263238"/><rect x="19" y="-51" width="5" height="12" rx="1.5" fill="#263238"/></g></g></g>`,
-  engine: `<g class="ch-ski"><ellipse rx="14" ry="3.6" fill="rgba(0,0,0,.28)"/><rect x="13" y="-48" width="6" height="48" rx="2" fill="#37474f"/><rect x="10" y="-8" width="12" height="8" rx="2" fill="#263238"/><g class="bob">
+  engine: sex => `<g class="ch-ski"><ellipse rx="14" ry="3.6" fill="rgba(0,0,0,.28)"/><rect x="13" y="-48" width="6" height="48" rx="2" fill="#37474f"/><rect x="10" y="-8" width="12" height="8" rx="2" fill="#263238"/><g class="bob">
       <path d="M-4,0 L-2,-14 M5,0 L4,-14" stroke="#1e2b4d" stroke-width="4.6" stroke-linecap="round"/>
-      <rect x="-6" y="-31" width="12" height="18" rx="5" fill="#29a0e0" transform="rotate(10 0 -14)"/><circle cx="3" cy="-37" r="6" fill="#f1c49b"/><rect x="-3" y="-41" width="12" height="2.6" rx="1.3" fill="#ff6b35"/>
+      <rect x="-6" y="-31" width="12" height="18" rx="5" fill="${sex === 'f' ? '#ab47bc' : '#29a0e0'}" transform="rotate(10 0 -14)"/>${PONY(sex, -2, -40)}<circle cx="3" cy="-37" r="6" fill="#f1c49b"/><rect x="-3" y="-41" width="12" height="2.6" rx="1.3" fill="#ff6b35"/>
       <g class="pull"><path d="M2,-28 L12,-40" stroke="#f1c49b" stroke-width="3.6" stroke-linecap="round"/><path d="M12,-40 L16,-46" stroke="#90a4ae" stroke-width="1.2"/></g></g></g>`,
 };
 
@@ -226,7 +228,7 @@ function avatar(s, cfg, lane, at) {
   const rest = cfg.resting(s, lane);
   return `<g id="ln-av-${cfg.id}-${lane}" class="lane-ch ${lim ? 'limiter' : ''} ${rest ? 'resting' : ''}" data-act="lane-node" data-map="${cfg.id}" data-kind="lane" data-lane="${lane}" transform="translate(${p.x.toFixed(1)},${(p.y - 6).toFixed(1)}) scale(1.25)">
       ${lim ? '<circle class="halo lim" cy="-18" r="26" fill="none" stroke="#e53935" stroke-width="2.5"/>' : ''}
-      ${CHAR[lane]}
+      ${CHAR[lane](s.profile.sex)}
       ${rest ? '<g transform="translate(14,-48)"><circle r="8" fill="#fff" stroke="#90a4ae"/><text y="4" text-anchor="middle" font-size="9">🔒</text></g>' : ''}
     </g>`;
 }
@@ -270,7 +272,7 @@ export function moveCharacter(id, lane, from, to, { onDone, follow } = {}) {
   for (let v = from + 1; v <= to; v++) { const p = document.getElementById(`ln-${id}-${lane}-${v}`); if (p) segEls.push(p); }
   if (!segEls.length) { onDone?.(); return; }
   const lens = segEls.map(p => p.getTotalLength()), total = lens.reduce((a, b) => a + b, 0);
-  const dur = Math.min(4000, 700 + total * 4);
+  const dur = Math.min(12000, 600 + segEls.length * 800); // about 0.8 s per node
   el.classList.add('moving');
   const t0 = performance.now();
   const frame = t => {
@@ -287,6 +289,22 @@ export function moveCharacter(id, lane, from, to, { onDone, follow } = {}) {
 }
 
 export const celebrate = (x, y, text) => bubble(x, y, text, { ttl: 2600 });
+export const START_POINT = { x: TW / 2, y: START_Y };
+const BURST = { swim: '💦', bike: '💨', run: '✨', strength: '💪', engine: '🔥' };
+// Each character's signature move on arrival + a little emoji burst.
+export function signature(id, lane) {
+  const el = document.getElementById(`ln-av-${id}-${lane}`);
+  if (!el) return;
+  el.classList.add('celebrate');
+  setTimeout(() => el.classList.remove('celebrate'), 1900);
+  const m = /translate\(([-\d.]+),([-\d.]+)\)/.exec(el.getAttribute('transform') || '');
+  if (!m) return;
+  const x = +m[1], y = +m[2];
+  for (let i = 0; i < 6; i++) {
+    const dx = (i - 2.5) * 12, delay = i * 70;
+    setTimeout(() => addToMap(`<text class="burst-emoji" x="${x + dx}" y="${y - 30}" text-anchor="middle" font-size="16">${BURST[lane] || '✨'}</text>`, 1300), delay);
+  }
+}
 export const valueOf = (s, id, lane) => MAPS[id].value(s, lane);
 export const worldOf = (s, id) => MAPS[id].world(s);
 
