@@ -128,7 +128,7 @@ function obSteps(a) {
       <div class="choices">${SELF_TEST.map(([k, l, ex]) => `${check(k, `${h(l)} <a href="${videoLink(ex)}" target="_blank" rel="noopener">demo</a>`, a.selfTest?.[k])}`).join('')}</div>` });
   }
   steps.push({ title: 'How much do you want to see?', why: 'Some people like every detail, some just want to know what to do next.', body:
-    radio('view', [['simple', 'Keep it simple: just tell me what to do next'], ['full', 'Show me everything: my week, levels and details']], a.view || 'simple') + '<p class="hint">You can switch any time on the Me tab.</p>' });
+    radio('view', [['simple', 'Keep it simple: just tell me what to do next'], ['full', 'Show me everything: my week, levels and details']], a.view || 'simple') + '<p class="hint">You can switch any time at the top of Today.</p>' });
   steps.push({ title: 'Your starting point', result: true });
   return steps;
 }
@@ -340,10 +340,12 @@ function viewToday() {
       <p class="hint">${prog.earned}/${prog.target} level XP · the gate test opens at ${prog.target}</p>
       ${S.profile.dream ? dreamLine(S.profile.dream, S.run.level, true) : ''}
     </section>`;
-  const simple = S.profile.view === 'simple' && !ui.showMore;
+  const simple = (S.profile.view || 'full') === 'simple';
+  const toggle = `<div class="seg today-seg" role="tablist">${[['simple', '✨ Just next'], ['full', '📋 Full day']].map(([k, l]) =>
+    `<button role="tab" class="${(simple ? 'simple' : 'full') === k ? 'on' : ''}" data-act="set-view" data-v="${k}">${l}</button>`).join('')}</div>`;
   if (simple) {
-    return `<div class="simple">${banners()}${hero}${p.today}
-      <button class="btn ghost wide" data-act="show-more">Show my week and more ▾</button></div>`;
+    return `${toggle}<div class="simple">${banners()}${hero}${p.today}
+      <button class="btn ghost wide" data-act="set-view" data-v="full">See my week and more ▾</button></div>`;
   }
   const boost = `<section class="card boost" ${o(3)}>
       <p class="eyebrow">Daily boost</p>
@@ -364,12 +366,12 @@ function viewToday() {
     </section>`;
   const modes = S.mode ? '' : `<section class="card modes" ${o(11)}><p class="hint">Not feeling 100% or short on time?</p><div class="row wrap">
       <button class="btn small" data-act="sick-start">🤒 I'm sick</button><button class="btn small" data-act="busy-start">🧳 Busy or travelling</button></div></section>`;
-  const less = S.profile.view === 'simple' ? `<button class="btn ghost wide" data-act="show-less" ${o(12)}>Back to simple view ▴</button>` : '';
+
   // Two columns on wide screens; on phones the wrappers dissolve and `order` restores one column.
-  return `<div class="cols">
+  return `${toggle}<div class="cols">
       <div class="col-main"><div ${o(1)}>${banners()}</div>${p.today}${p.week}${p.nextWeek}${levelSteps}</div>
       <div class="col-side">${hero}${boost}${install}${p.tracks}${daily}${modes}</div>
-    </div>${less}`;
+    </div>`;
 }
 
 const CLS_ICON = { long: '🛣️', hard: '⚡', test: '🏁', easy: '🏃', strength: '🧱', impact: '🦘', rest: '😴', done: '✅' };
@@ -619,9 +621,6 @@ function viewMe() {
     </section>
     <section class="card"><h3>Badges</h3><div class="badges">${Object.entries(E.BADGES).map(([k, b]) =>
       `<div class="badge ${S.badges[k] ? 'on' : ''}" title="${h(b.desc)}"><span>${b.emoji}</span>${h(b.name)}</div>`).join('')}</div></section>
-    <section class="card"><h3>View</h3>
-      <div class="seg">${[['simple', '✨ Simple: just what\'s next'], ['full', '📋 Full: everything']].map(([k, l]) => `<button class="${(S.profile.view || 'full') === k ? 'on' : ''}" data-act="set-view" data-v="${k}">${l}</button>`).join('')}</div>
-    </section>
     <section class="card"><h3>Training</h3>
       <p>${(S.profile.tracks || ['run']).map(k => ({ run: '🏃 Running', hybrid: '🏋️ Hybrid', tri: '🏊 Triathlon' })[k] + (k === (S.profile.primary || 'run') && (S.profile.tracks || []).length > 1 ? ' (leads your week)' : '')).join(' · ')}</p>
       <p class="hint">Days: ${K.schedule(S).days.map(d => K.DAY_NAMES[d]).join(', ')} · long session ${K.DAY_NAMES[K.schedule(S).longDay]}</p>
@@ -940,9 +939,7 @@ const actions = {
   reset() { if (confirm('Delete all progress in this browser?')) { store.clear(); localStorage.removeItem(CHAT_KEY); localStorage.removeItem(AVATAR_KEY); ui.avatarAt = null; ui.chat = []; S = E.newState(now()); render(); } },
   sound() { sfx.setSound(!sfx.soundOn()); if (sfx.soundOn()) { sfx.unlockAudio(); sfx.pop(); } render(); },
   quick(el) { sendChat(el.dataset.q); },
-  'show-more'() { ui.showMore = true; render(); },
-  'show-less'() { ui.showMore = false; render(); window.scrollTo(0, 0); },
-  'set-view'(el) { S.profile.view = el.dataset.v; ui.showMore = false; commit(S); },
+  'set-view'(el) { S.profile.view = el.dataset.v; commit(S); window.scrollTo(0, 0); },
   async install() { if (!installEvent) return; installEvent.prompt(); await installEvent.userChoice.catch(() => {}); installEvent = null; render(); },
   'install-hide'() { try { localStorage.setItem(INSTALL_KEY, 'hide'); } catch { /* ignore */ } render(); },
   'move-item'(el) {

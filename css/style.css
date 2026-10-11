@@ -445,3 +445,8 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 @media (min-width: 1000px) {
   .worldmap .map-hud { display: flex; flex-direction: column; align-items: flex-end; }
 }
+.today-seg { max-width: 420px; }
+@media (min-width: 1000px) { .today-seg { margin-bottom: 16px; } }
+/* selected half of any switch: clear in light and dark */
+.seg button.on { background: var(--brand-soft); color: var(--brand); box-shadow: inset 0 0 0 1.5px var(--brand); }
+.seg.mini label.on { background: var(--brand-soft); color: var(--brand); box-shadow: inset 0 0 0 1.5px var(--brand); }
