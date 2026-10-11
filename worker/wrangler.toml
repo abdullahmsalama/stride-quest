@@ -5,8 +5,8 @@ compatibility_date = "2025-09-01"
 [vars]
 # Comma-separated list of sites allowed to call the Worker (your GitHub Pages URL).
 # localhost is always allowed for testing.
-ALLOWED_ORIGINS = ""
-SITE_URL = ""
+ALLOWED_ORIGINS = "https://abdullahmsalama.github.io"
+SITE_URL = "https://abdullahmsalama.github.io/stride-quest/"
 RATE_PER_MINUTE = "10"
 # Model names change over time; update these if a provider retires one.
 GEMINI_MODELS = "gemini-flash-latest,gemini-3.8-flash,gemini-flash-lite-latest"
