@@ -157,7 +157,11 @@ export function saveShout(dataUrl) { localStorage.setItem(SHOUT_KEY, dataUrl); }
 export function clearShout() { try { localStorage.removeItem(SHOUT_KEY); } catch { /* ignore */ } }
 export function playShout() {
   if (!soundOn()) return;
-  try { const url = localStorage.getItem(SHOUT_KEY); if (url) new Audio(url).play().catch(() => {}); } catch { /* ignore */ }
+  // Your own clip if you added one; otherwise the device's voice says it.
+  let url = null;
+  try { url = localStorage.getItem(SHOUT_KEY); } catch { /* ignore */ }
+  if (url) new Audio(url).play().catch(() => say('Light weight, baby!', { pitch: 0.55, rate: 0.95 }));
+  else say('Light weight, baby!', { pitch: 0.55, rate: 0.95 });
 }
 
 // Short spoken lines through the device's own voice (no recordings).

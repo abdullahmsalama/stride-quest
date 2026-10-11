@@ -923,10 +923,10 @@ function viewMe() {
       <p class="hint">${S.profile.sex ? 'Times, lift targets and race standards use this category.' : '⚠️ Not set yet: standards use men\'s numbers until you pick.'}</p>
     </section>
     ${HYB.hasHybrid(S) ? `<section class="card"><h3>🏋️ Lifting shout</h3>
-      <p class="hint">Your lifter plays this when it reaches a new stage. Record yourself (or a friend) yelling "Light weight, baby!", or upload a clip you're allowed to use. Up to 3 seconds, stays on this device.</p>
+      <p class="hint">Your lifter plays this when it reaches a new stage. Without a clip, the device's voice says "Light weight, baby!". Record yourself (or a friend), or upload a clip. Up to 3 seconds, stays on this device.</p>
       <div class="row wrap"><button class="btn" data-act="shout-rec">${ui.recording ? '⏺ Recording…' : '🎤 Record (3 s)'}</button>
         <label class="btn">⬆️ Upload<input type="file" accept="audio/*" data-act="shout-file" hidden></label>
-        ${sfx.hasShout() ? '<button class="btn" data-act="shout-play">▶ Play</button><button class="btn ghost" data-act="shout-clear">Remove</button>' : ''}</div></section>` : ''}
+        <button class="btn" data-act="shout-play">▶ Play</button>${sfx.hasShout() ? '<button class="btn ghost" data-act="shout-clear">Remove my clip</button>' : ''}</div></section>` : ''}
     <section class="card"><h3>Theme</h3>
       <div class="seg">${[['light', '☀️ Light'], ['dark', '🌙 Dark'], ['auto', '🖥️ Auto']].map(([k, l]) => `<button class="${theme() === k ? 'on' : ''}" data-act="set-theme" data-t="${k}">${l}</button>`).join('')}</div>
       <p class="hint">Auto follows your device's light/dark setting.</p>
