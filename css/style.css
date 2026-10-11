@@ -572,3 +572,16 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .wk-day.wk-new::before { content: 'Next week'; position: absolute; top: -.7rem; right: .5rem; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 0 .4rem; background: var(--card, #fff); color: var(--muted, #6b7280); }
 .lane-skip { position: fixed; right: 16px; bottom: 92px; z-index: 60; background: rgba(20, 33, 61, .9); color: #fff; border: 0; border-radius: 999px; padding: 10px 16px; font: 700 14px var(--body); cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
 @media (min-width: 1000px) { .lane-skip { bottom: 28px; right: 28px; } }
+/* Travelling: seen from behind (swimmer from above); standing still: side-on. */
+.lane-ch .v-back { display: none; }
+.lane-ch.up .v-back { display: inline; }
+.lane-ch.up .v-side { display: none; }
+.lane-ch .lg, .lane-ch .ch-top path { transform-box: fill-box; }
+.ch-back .l1 { animation: stepup .3s ease-in-out infinite alternate; }
+.ch-back .l2 { animation: stepup .3s ease-in-out infinite alternate-reverse; }
+@keyframes stepup { from { transform: translateY(0); } to { transform: translateY(-3px); } }
+.ch-top .arm-a { transform-origin: 50% 100%; animation: armswap .5s ease-in-out infinite alternate; }
+.ch-top .arm-b { transform-origin: 50% 0; animation: armswap .5s ease-in-out infinite alternate-reverse; }
+@keyframes armswap { from { transform: scaleY(1); } to { transform: scaleY(-1); } }
+.ch-top .kick { animation: blink .3s steps(2) infinite; }
+.ch-top .ripple { transform-box: fill-box; transform-origin: center; animation: ripple 1.2s ease-out infinite; }

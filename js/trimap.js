@@ -85,6 +85,45 @@ const CHAR = {
       <g class="pull"><path d="M2,-28 L12,-40" stroke="#f1c49b" stroke-width="3.6" stroke-linecap="round"/><path d="M12,-40 L16,-46" stroke="#90a4ae" stroke-width="1.2"/></g></g></g>`,
 };
 
+// While travelling, characters face where they're going: seen from behind going up the path (from
+// above for the swimmer), side-on when the path turns sideways. Standing still, they're side-on as above.
+const HAIR = '#3e2723', SKIN = '#f1c49b';
+const BACK_PONY = sex => (sex === 'f' ? `<path class="pony" d="M0,-36 q3,6 0,11" stroke="${HAIR}" stroke-width="4" fill="none" stroke-linecap="round"/>` : '');
+const walker = (sex, { top, band, wide = 0 }) => `<g class="ch-back"><ellipse rx="${11 + wide}" ry="3.5" fill="rgba(0,0,0,.28)"/><g class="bob">
+      <path class="lg l1" d="M${-3 - wide / 2},-17 L${-3 - wide / 2},-3" stroke="#1e2b4d" stroke-width="${4.5 + wide / 2}" stroke-linecap="round"/>
+      <path class="lg l2" d="M${3 + wide / 2},-17 L${3 + wide / 2},-3" stroke="#1e2b4d" stroke-width="${4.5 + wide / 2}" stroke-linecap="round"/>
+      <path class="lg l2" d="M${-6 - wide},-30 L${-9 - wide},-20" stroke="${SKIN}" stroke-width="3.4" stroke-linecap="round"/>
+      <path class="lg l1" d="M${6 + wide},-30 L${9 + wide},-20" stroke="${SKIN}" stroke-width="3.4" stroke-linecap="round"/>
+      <rect x="${-6 - wide}" y="-33" width="${12 + wide * 2}" height="17" rx="5" fill="${top}"/>
+      <rect x="${-6 - wide}" y="-20" width="${12 + wide * 2}" height="5" rx="2" fill="#1e2b4d"/>
+      <circle cy="-39" r="6.5" fill="${HAIR}"/>${band ? `<rect x="-6.5" y="-42" width="13" height="2.6" rx="1.3" fill="${band}"/>` : ''}${BACK_PONY(sex)}</g></g>`;
+const BACK = {
+  swim: sex => `<g class="ch-top" transform="translate(0,-8)"><ellipse class="ripple" rx="12" ry="20" fill="rgba(255,255,255,.55)"/>
+      <path d="M-5,14 L0,6 L5,14" stroke="#fff" stroke-width="1.6" fill="none" opacity=".8"/>
+      <g class="kick"><circle cx="-2" cy="13" r="2" fill="#fff"/><circle cx="2.5" cy="15" r="1.5" fill="#fff"/></g>
+      <ellipse cy="1" rx="4.6" ry="11" fill="${TOP(sex)}"/>
+      <path class="arm-a" d="M-4.5,-6 L-6,-19" stroke="${SKIN}" stroke-width="3.2" stroke-linecap="round"/>
+      <path class="arm-b" d="M4.5,-6 L6,7" stroke="${SKIN}" stroke-width="3.2" stroke-linecap="round"/>
+      <circle cy="-9" r="4.6" fill="#ffd23f"/></g>`,
+  bike: sex => `<g class="ch-back"><ellipse rx="9" ry="3" fill="rgba(0,0,0,.28)"/><g class="bob">
+      <rect x="-2.3" y="-16" width="4.6" height="16" rx="2.3" fill="#263238"/><rect x="-3.5" y="-20" width="7" height="2.4" rx="1.2" fill="#ff6b35"/>
+      <path class="lg l1" d="M-4,-20 L-5,-11" stroke="#1e2b4d" stroke-width="3.6" stroke-linecap="round"/>
+      <path class="lg l2" d="M4,-20 L5,-11" stroke="#1e2b4d" stroke-width="3.6" stroke-linecap="round"/>
+      <path d="M-6,-27 L-10,-31 M6,-27 L10,-31" stroke="${SKIN}" stroke-width="3" stroke-linecap="round"/>
+      <ellipse cy="-25" rx="7" ry="8" fill="${sex === 'f' ? '#ab47bc' : '#29a0e0'}"/>${BACK_PONY(sex).replace('-36', '-31')}
+      <circle cy="-33" r="5" fill="#e53935"/><path d="M-3,-35 h6" stroke="#fff" stroke-width="1.2"/></g></g>`,
+  run: sex => walker(sex, { top: TOP(sex), band: '#29a0e0' }),
+  strength: sex => walker(sex, { top: TOP(sex), band: null, wide: 1.5 }),
+  engine: sex => walker(sex, { top: sex === 'f' ? '#ab47bc' : '#29a0e0', band: '#ff6b35' }),
+};
+// Heading from the direction of travel (dx, dy in map units): which view, and how to turn it.
+export function facing(lane, dx, dy) {
+  const ang = Math.atan2(dx, -dy) * 180 / Math.PI; // 0 = straight up the map, + = to the right
+  if (lane === 'swim') return { view: 'up', face: `rotate(${ang.toFixed(1)} 0 -8)` };
+  if (Math.abs(ang) <= 55) return { view: 'up', face: `rotate(${(ang * 0.35).toFixed(1)})` };
+  return { view: 'side', face: ang < 0 ? 'scale(-1,1)' : '' };
+}
+
 // ---------- the two maps ----------
 const TRI = {
   id: 'tri', worlds: TRI_WORLDS, lanes: T.LANES, icon: T.LANE_ICON, label: T.LANE_LABEL, gateTrack: 'triGate', gateWord: 'transition gate', openIcon: '🌉',
@@ -239,7 +278,7 @@ function avatar(s, cfg, lane, at) {
   const rest = cfg.resting(s, lane);
   return `<g id="ln-av-${cfg.id}-${lane}" class="lane-ch ${lim ? 'limiter' : ''} ${rest ? 'resting' : ''}" data-act="lane-node" data-map="${cfg.id}" data-kind="lane" data-lane="${lane}" transform="translate(${p.x.toFixed(1)},${(p.y - 6).toFixed(1)}) scale(1.25)">
       ${lim ? '<circle class="halo lim" cy="-18" r="26" fill="none" stroke="#e53935" stroke-width="2.5"/>' : ''}
-      ${CHAR[lane](s.profile.sex)}
+      <g class="face"><g class="v-side">${CHAR[lane](s.profile.sex)}</g><g class="v-back">${BACK[lane](s.profile.sex)}</g></g>
       ${rest ? '<g transform="translate(14,-48)"><circle r="8" fill="#fff" stroke="#90a4ae"/><text y="4" text-anchor="middle" font-size="9">🔒</text></g>' : ''}
     </g>`;
 }
@@ -289,6 +328,8 @@ export function moveCharacter(id, lane, from, to, { onDone, follow, skip } = {})
   const lens = segEls.map(p => p.getTotalLength()), total = lens.reduce((a, b) => a + b, 0);
   const dur = Math.min(12000, 600 + segEls.length * 800); // about 0.8 s per node
   el.classList.add('moving');
+  const face = el.querySelector('.face');
+  let hx = 0, hy = -1; // start heading up the map
   const t0 = performance.now();
   const frame = t => {
     const k = skip?.() ? 1 : Math.min(1, (t - t0) / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
@@ -296,9 +337,18 @@ export function moveCharacter(id, lane, from, to, { onDone, follow, skip } = {})
     while (i < lens.length - 1 && d > lens[i]) { d -= lens[i]; i++; }
     const pt = segEls[i].getPointAtLength(d);
     el.setAttribute('transform', `translate(${pt.x.toFixed(1)},${(pt.y - 6).toFixed(1)}) scale(1.25)`);
+    // Face the way we're going (a few units ahead on the path), smoothed so turns don't flicker.
+    const ahead = segEls[i].getPointAtLength(Math.min(lens[i], d + 6));
+    const dx = ahead.x - pt.x, dy = ahead.y - pt.y;
+    if (Math.hypot(dx, dy) > 0.5) {
+      hx = hx * 0.8 + dx * 0.2; hy = hy * 0.8 + dy * 0.2;
+      const f = facing(lane, hx, hy);
+      el.classList.toggle('up', f.view === 'up');
+      face?.setAttribute('transform', f.face);
+    }
     follow?.(pt.y);
     if (k < 1) requestAnimationFrame(frame);
-    else { el.classList.remove('moving'); onDone?.(pt); }
+    else { el.classList.remove('moving', 'up'); face?.removeAttribute('transform'); onDone?.(pt); } // side-on again on arrival
   };
   requestAnimationFrame(frame);
 }
