@@ -1194,6 +1194,8 @@ const actions = {
       ui.tab = 'map'; ui.mapMode = state.profile.primary === 'hybrid' ? 'hyb' : 'tri'; ui.mapScroll = true; ui.frameTop = null;
       saveAvatar(placed);
     }
+    // A new placement (first time or a retake) replays every lane map from START.
+    if (fresh) { writeSeen({}); ui.laneShown = {}; ui.laneAnimating = false; }
     commit(state);
     ui.mapMode = primaryMode();
     window.scrollTo(0, 0);
