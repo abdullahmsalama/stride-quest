@@ -14,6 +14,7 @@ import { parseTime, formatTime, raceMinutes, estimateKm } from './time.js';
 import { dreamTarget, weeksUntil, targetFromAI } from './goal.js';
 import * as ST from './standards.js';
 import { APP_VERSION } from './config.js';
+import * as BG from './background.js';
 import * as TRI from './tri.js';
 import { renderLaneMap, gateY as laneGateY, TH as LANE_H, TW as LANE_W, MAPS as LANE_MAPS, nodePoint, moveCharacter, celebrate, signature, START_POINT } from './trimap.js';
 import * as HYB from './hybrid.js';
@@ -136,6 +137,7 @@ function obSteps(a) {
         <p class="q">A target event or date? <span class="hint">optional</span></p>
         <label class="field"><span>Event</span><input type="text" name="dreamEvent" value="${h(a.dreamEvent || '')}" maxlength="60" placeholder="e.g. Berlin Marathon, Hyrox Dubai"></label>
         <label class="field"><span>Date</span><input type="date" name="dreamDate" value="${h(a.dreamDate || '')}"></label>` },
+    { title: 'Your sporting background', why: 'Former athletes keep their technique for life and come back faster: we credit that.', body: backgroundQuestions(a) },
     { title: 'How many times did you run in the last 4 weeks?', why: 'Recent running tells us more than your best day ever.', body: radio('runsLast4w', RUNS, a.runsLast4w) },
     { title: 'Longest you can run without stopping?', why: 'Sets your first level so it feels doable.', body: radio('continuous', CONTINUOUS, a.continuous) },
     { title: 'Your running volume', why: 'Keeps your first weeks at a safe load.', body: `${num('weeklyKm', 'Roughly how many km per week lately?', a.weeklyKm, 'km')}
@@ -193,6 +195,16 @@ function dreamLine(a, level, compact = false) {
 const SWIM_DIST = [['none', "I can't swim yet"], ['25', '25 m'], ['100', '100 m'], ['200', '200 m'], ['400', '400 m'], ['750', '750 m'], ['1500', '1.5 km'], ['1900', '1.9 km'], ['3800', '3.8 km or more']];
 const RIDES = [['none', 'Not recently'], ['30', '30 min'], ['60', '1 hour'], ['10', '10 km'], ['20', '20 km'], ['40', '40 km'], ['90', '90 km'], ['180', '180 km or more']];
 const TRI_RACES = [['supersprint', 'Super Sprint'], ['sprint', 'Sprint'], ['olympic', 'Olympic'], ['half', '70.3'], ['full', 'Full distance']];
+function backgroundQuestions(a) {
+  return `<p class="q">Have you trained seriously in a sport before? <span class="hint">optional, pick all that apply</span></p>
+    <div class="choices">${BG.SPORTS.map(([k, l]) => `<div class="race-opt"><div class="race-head">${check(`bg_${k}`, h(l), a[`bg_${k}`])}</div>
+      ${a[`bg_${k}`] ? `<div class="race-detail bg-detail">
+        <label class="field"><span>Level</span>${select(`bglvl_${k}`, BG.LEVELS, a[`bglvl_${k}`] || 'club')}</label>
+        <label class="field"><span>How long</span>${select(`bgyrs_${k}`, BG.YEARS, a[`bgyrs_${k}`] || '3')}</label>
+        <label class="field"><span>Last trained seriously</span>${select(`bgsince_${k}`, BG.SINCE, a[`bgsince_${k}`] || '1to3')}</label></div>` : ''}</div>`).join('')}</div>`;
+}
+const backgroundOf = a => BG.SPORTS.map(([k]) => k).filter(k => a[`bg_${k}`]).map(k => ({ sport: k, level: a[`bglvl_${k}`] || 'club', years: a[`bgyrs_${k}`] || '3', since: a[`bgsince_${k}`] || '1to3' }));
+
 function hybQuestions(a) {
   return `<p class="q">Where do you train?</p>${radio('gym', [['full', 'Gym with sled, rower, SkiErg'], ['gym', 'Gym with barbells, no sled or ergs'], ['home', 'Home: dumbbells / kettlebells'], ['none', 'No equipment yet']], a.gym || 'full')}
     <p class="q">Lifting experience</p>${radio('liftExp', [['none', 'New to lifting'], ['lt1', 'Under 1 year'], ['y1_3', '1-3 years'], ['y3', 'More than 3 years']], a.liftExp || 'lt1')}
@@ -230,6 +242,7 @@ function hybridCard(onMap = false) {
     <p class="block-line">${blockLine}</p>
     <div class="block-bar">${Array.from({ length: BLOCK_WEEKS }, (_, i) => `<span class="${b.type !== 'deload' && i < b.week ? 'on' : ''}"></span>`).join('')}<span class="deload ${b.type === 'deload' ? 'on' : ''}"></span></div>
     <div class="lane-bars">${st.map(l => `<div class="${l.ok ? 'ok' : lim?.lane === l.lane ? 'lim' : ''}"><span>${HYB.LANE_ICON[l.lane]}</span><b>${h(l.lane === 'run' ? `Level ${S.run.level}` : l.have >= (l.lane === 'strength' ? HYB.STR_MAX : HYB.ENG_MAX) ? 'All done' : `${ST.sexText((l.lane === 'strength' ? HYB.strengthStage(S) : HYB.engineStage(S)).target, S.profile.sex)} next`)}</b><em>${h(w.name)} needs ${h(ST.sexText(HYB.laneTarget(l.lane, l.need), S.profile.sex))} ${l.ok ? '✓' : lim?.lane === l.lane ? '· limiter' : ''}</em></div>`).join('')}</div>
+    ${['strength', 'engine', 'run'].some(l => BG.fast(S, l)) ? `<p class="hint">⚡ Comeback fast-track on ${['strength', 'engine', 'run'].filter(l => BG.fast(S, l)).map(l => HYB.LANE_ICON[l]).join(' ')}: gates open straight away, prove it and move on.</p>` : ''}
     <p class="hint">${S.hybrid.finished ? 'Pro League conquered 👑' : lim ? `${HYB.LANE_ICON[lim.lane]} ${HYB.LANE_LABEL[lim.lane]} is your limiter.${lim.lane !== 'run' && !HYB.inFocus(S, lim.lane) ? ` ${lim.lane === 'engine' ? 'An' : 'A'} ${HYB.LANE_LABEL[lim.lane]} block would move it most.` : ''}` : '🏁 All lanes ready: your race gate is open!'}</p>
     <div class="row wrap">${onMap ? '' : '<button class="btn small" data-act="goto-hyb-map">Open Hybrid map</button>'}
       ${b.type !== 'deload' ? `<button class="btn ghost small" data-act="block-switch" data-b="${other}">Switch to ${other} block</button><button class="btn ghost small" data-act="block-switch" data-b="deload">Deload now</button>` : `<button class="btn ghost small" data-act="block-switch" data-b="${b.next}">Start ${b.next} block now</button>`}</div>
@@ -243,6 +256,7 @@ function triCard() {
   const st = TRI.laneStatus(S);
   return `<section class="card tri-card" style="order:8"><p class="eyebrow">Triathlon · ${w.emoji} ${h(w.name)}</p>
     <div class="lane-bars">${st.map(l => `<div class="${l.ok ? 'ok' : lim?.lane === l.lane ? 'lim' : ''}"><span>${TRI.LANE_ICON[l.lane]}</span><b>${h(l.lane === 'run' ? `Level ${S.run.level}` : l.have >= (l.lane === 'swim' ? TRI.SWIM_MAX : TRI.BIKE_MAX) ? 'All done' : `${(l.lane === 'swim' ? TRI.swimStage(S) : TRI.bikeStage(S)).target} gate next`)}</b><em>${h(w.name)} needs ${h(TRI.laneTarget(l.lane, l.need))} ${l.ok ? '✓' : lim?.lane === l.lane ? '· limiter' : ''}</em></div>`).join('')}</div>
+    ${['swim', 'bike', 'run'].some(l => BG.fast(S, l)) ? `<p class="hint">⚡ Comeback fast-track on ${['swim', 'bike', 'run'].filter(l => BG.fast(S, l)).map(l => TRI.LANE_ICON[l]).join(' ')}: gates open straight away, prove it and move on.</p>` : ''}
     <p class="hint">${S.tri.finished ? 'Full distance conquered 🏆' : lim ? `${TRI.LANE_ICON[lim.lane]} ${TRI.LANE_LABEL[lim.lane]} is your limiter: it moves your triathlon most right now.` : '🌉 All lanes ready: your transition gate is open!'}</p>
     <button class="btn small" data-act="goto-tri-map">Open Tri map</button></section>`;
 }
@@ -377,6 +391,7 @@ function renderOnboarding() {
               <div class="row"><button type="button" class="btn ghost small" data-act="lifts-ai" data-v="${ui.ob.a.liftsAI.accepted ? 0 : 1}">${ui.ob.a.liftsAI.accepted ? 'Not quite' : 'Use this estimate'}</button></div></div>` : ''}`; })() : ''}
         ${(ui.ob.a.tracks || []).includes('tri') ? (() => { const tri = TRI.placeTri(preview.state, normalize(ui.ob.a)); const w = TRI_WORLDS[tri.world];
           return `<div class="dream-box"><strong>🏊🚴🏃 Triathlon: ${w.emoji} ${h(w.name)}</strong><br><span class="hint">Swim: ${h(TRI.laneTarget('swim', tri.swim.stage + 1))} next · Bike: ${h(TRI.laneTarget('bike', tri.bike.stage + 1))} next · Run: your Run level${tri.learnToSwim ? ' · starting with swim lessons' : ''}</span></div>`; })() : ''}
+        ${backgroundOf(ui.ob.a).length ? `<div class="dream-box">🏅 <strong>Welcome back, athlete.</strong><br><span class="hint">${h(BG.describe(backgroundOf(ui.ob.a)).join(' · '))}. Your technique is credited and your gates open early while you climb back: muscle memory is real.</span></div>` : ''}
         <p><strong>Prep Track:</strong> P${ps.n} ${h(ps.name)} (${h(ps.focus)})</p>
         ${normalize(ui.ob.a).longestEstimated ? `<p class="hint">Longest run estimated at about ${normalize(ui.ob.a).longestKm} km from its time.</p>` : ''}
         ${normalize(ui.ob.a).hybridRaces.length ? `<p class="hint">Races on record: ${h(normalize(ui.ob.a).hybridRaces.map(raceLabel).join(', '))}. They count toward your Hybrid placement.</p>` : ''}
@@ -496,7 +511,7 @@ function viewToday() {
     : `<p class="eyebrow">${hello} · ${h(E.worldOf(lvl).name)}</p>
       <h2>Level ${lvl.n} · ${h(lvl.name)} <span class="stars">${'⭐'.repeat(S.run.stars[lvl.n] || 0)}</span></h2>
       <div class="bar"><div style="width:${pct}%"></div></div>
-      <p class="hint">${prog.earned}/${prog.target} level XP · the gate test opens at ${prog.target}</p>`;
+      <p class="hint">${prog.earned}/${prog.target} level XP · the gate test opens at ${prog.target}${prog.fast ? ' · ⚡ comeback fast-track' : ''}</p>`;
   const hero = `<section class="card hero" ${o(2)}>${heroMain}
       ${S.profile.dream ? dreamLine(S.profile.dream, S.run.level, true) : ''}
       ${mode !== 'world' ? `<button class="btn small hero-btn" data-act="goto-${mode}-map">Open my map</button>` : ''}
@@ -939,6 +954,10 @@ function viewMe() {
     </section>
     <section class="card"><h3>Badges</h3><div class="badges">${Object.entries(E.BADGES).map(([k, b]) =>
       `<div class="badge ${S.badges[k] ? 'on' : ''}" title="${h(b.desc)}"><span>${b.emoji}</span>${h(b.name)}</div>`).join('')}</div></section>
+    <section class="card"><h3>🏅 Sporting background</h3>
+      <p class="hint">${S.background?.length ? h(BG.describe(S.background).join(' · ')) : 'Trained seriously in a sport before? Add it: former athletes get their technique credited and a comeback fast-track.'}</p>
+      <button class="btn" data-act="edit-bg">${S.background?.length ? 'Edit' : 'Add my background'}</button>
+    </section>
     <section class="card"><h3>Race category</h3>
       <div class="seg">${[['m', "Men's"], ['f', "Women's"], ['x', 'Prefer not']].map(([k, l]) => `<button class="${(S.profile.sex || '') === k ? 'on' : ''}" data-act="set-sex" data-v="${k}">${l}</button>`).join('')}</div>
       <p class="hint">${S.profile.sex ? 'Times, lift targets and race standards use this category.' : '⚠️ Not set yet: standards use men\'s numbers until you pick.'}</p>
@@ -1000,6 +1019,10 @@ function painButtons() {
 }
 
 const MODALS = {
+  background(m) {
+    return `<form id="bg-form"><h2>🏅 Sporting background</h2><p class="why">💡 Skills stay for life, fitness comes back faster. We credit your technique and open gates early while you climb back.</p>
+      ${backgroundQuestions(m.a)}<div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`;
+  },
   addHyb(m) {
     return `<form id="hyb-form"><h2>🏋️⚙️🏃 Add the Hybrid track</h2><p class="why">💡 Your running already counts: the run lane is your Run Track. These questions set the Strength and Engine lanes.</p>
       ${hybQuestions(m.a)}<div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Place me</button></div></form>`;
@@ -1234,6 +1257,7 @@ const actions = {
     state.profile.view = a.view === 'full' ? 'full' : 'simple';
     state.tri = tracks.includes('tri') ? TRI.placeTri(state, a) : state.tri || null;
     state.hybrid = tracks.includes('hybrid') ? HYB.refreshHybrid({ ...state, hybrid: HYB.placeHybrid(state, a, now()) }, now(), E.weekKey(now())).hybrid : state.hybrid || null;
+    state = E.applyBackground(state, backgroundOf(ui.ob.a)); // former athletes: technique credited, fast-track on
     const ai = a.dreamAI?.accepted ? a.dreamAI : null;
     state.profile.dream = { text: String(a.dream || '').trim().slice(0, 160), event: String(a.dreamEvent || ai?.event || '').trim().slice(0, 60),
       date: a.dreamDate || (/^\d{4}-\d{2}-\d{2}$/.test(ai?.date || '') ? ai.date : ''), summary: ai?.summary || '',
@@ -1295,6 +1319,11 @@ const actions = {
   reset() { if (confirm('Delete all progress in this browser?')) { store.clear(); localStorage.removeItem(CHAT_KEY); localStorage.removeItem(AVATAR_KEY); ui.avatarAt = null; ui.chat = []; S = E.newState(now()); render(); } },
   sound() { sfx.setSound(!sfx.soundOn()); if (sfx.soundOn()) { sfx.unlockAudio(); sfx.pop(); } render(); },
   quick(el) { sendChat(el.dataset.q); },
+  'edit-bg'() {
+    const a = {};
+    (S.background || []).forEach(b => { a[`bg_${b.sport}`] = true; a[`bglvl_${b.sport}`] = b.level; a[`bgyrs_${b.sport}`] = b.years; a[`bgsince_${b.sport}`] = b.since; });
+    ui.modal = { type: 'background', a }; renderModal();
+  },
   'coach-mode'(el) { ui.smartCoach = el.dataset.v === '1'; try { localStorage.setItem('stride-quest:smartCoach', ui.smartCoach ? '1' : '0'); } catch { /* ignore */ } render(); },
   async 'shout-rec'() {
     if (ui.recording) return;
@@ -1472,7 +1501,8 @@ function readDraft() {
 document.addEventListener('change', async e => {
   const el = e.target;
   if (el.closest('#nc-form') && el.name !== 'msg' && el.name !== 'myName') { readDraft(); renderModal(); return; }
-  if (el.closest('#ob-form') && (el.name?.startsWith('tr_') || el.name?.startsWith('hx_') || /Mode$/.test(el.name || '') || el.name === 'swimDist' || el.name === 'bikeAccess' || el.name === 'liftMode' || el.name === 'liftUnit')) { collectOb(); renderOnboarding(); return; }
+  if (el.closest('#bg-form') && el.name?.startsWith('bg_')) { ui.modal.a = { ...ui.modal.a, ...Object.fromEntries(new FormData(el.form).entries()), [el.name]: el.checked }; BG.SPORTS.forEach(([k]) => { if (!el.form.querySelector(`[name=bg_${k}]`)?.checked) delete ui.modal.a[`bg_${k}`]; }); renderModal(); return; }
+  if (el.closest('#ob-form') && (el.name?.startsWith('bg_') || el.name?.startsWith('tr_') || el.name?.startsWith('hx_') || /Mode$/.test(el.name || '') || el.name === 'swimDist' || el.name === 'bikeAccess' || el.name === 'liftMode' || el.name === 'liftUnit')) { collectOb(); renderOnboarding(); return; }
   if (el.closest('#tri-form') && (el.name === 'swimDist' || el.name === 'bikeAccess')) { ui.modal.a = { ...ui.modal.a, ...readTriForm(el.closest('form')) }; renderModal(); return; }
   if (el.dataset.act === 'speak-toggle') ui.speakReplies = el.checked;
   if (el.dataset.act === 'shout-file' && el.files[0]) {
@@ -1517,6 +1547,14 @@ document.addEventListener('submit', e => {
     ui.ob.step++;
     if (obSteps(ui.ob.a)[ui.ob.step]?.result) checkAnswers();
     renderOnboarding(); window.scrollTo(0, 0); return;
+  }
+  if (f.id === 'bg-form') {
+    const a = { ...Object.fromEntries(new FormData(f).entries()) };
+    BG.SPORTS.forEach(([k]) => { a[`bg_${k}`] = !!f.querySelector(`[name=bg_${k}]`)?.checked; });
+    ui.modal = null;
+    commit(E.applyBackground(S, backgroundOf(a)));
+    toast(BG.isFormerAthlete(S) ? 'Background saved: technique credited, comeback fast-track on ⚡' : 'Background saved.');
+    return;
   }
   if (f.id === 'hyb-form') {
     const fd = Object.fromEntries(new FormData(f).entries());
@@ -1605,7 +1643,7 @@ window.addEventListener('hashchange', () => {
   if (!ui.modal) render();
 });
 
-$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
 
 // ---------- installable app ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;

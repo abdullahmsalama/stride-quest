@@ -4,6 +4,7 @@ import { dayKey } from './engine.js';
 // Who the runner is right now, for picking the right tone.
 export function audience(s) {
   if (s.rebuild.active) return 'rebuild';
+  if ((s.background || []).some(b => b.since && b.since !== 'now' && b.level !== 'rec')) return 'comeback';
   if (s.refresher || s.run.reclaim) return 'comeback';
   if (s.run.level === 1 && (s.answers?.runsLast4w ?? 0) === 0) return 'starter';
   if (s.run.level <= 3) return 'beginner';

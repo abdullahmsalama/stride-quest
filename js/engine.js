@@ -4,6 +4,7 @@ import { RUN_LEVELS, PREP_STAGES, REBUILD_STAGES, WORLDS, DAILY_ORDERS } from '.
 import * as TRI from './tri.js';
 import * as HYB from './hybrid.js';
 import * as ST from './standards.js';
+import * as BG from './background.js';
 
 export const DAY = 864e5;
 export const XP = { run: 30, swim: 30, bike: 30, lift: 30, engine: 30, maint: 25, prep: 20, slot: 20, rest: 10, gate: 100, proveit: 30, painCheck: 5, daily: 5, restDay: 10, weekBonus: 50 };
@@ -155,15 +156,15 @@ function earnedInLevel(steps, done) {
 
 // Run gate: needs 70% of the level's step XP. Prep/rebuild gates: 2 of the 3 sessions.
 export function gateUnlocked(s, track) {
-  if (track === 'run') { const st = runLevel(s.run.level).steps; return earnedInLevel(st, s.run.done) >= levelXpTarget(st); }
+  if (track === 'run') { const st = runLevel(s.run.level).steps; return earnedInLevel(st, s.run.done) >= levelXpTarget(st) * (BG.fast(s, 'run') ? 0.5 : 1); }
   if (track === 'prep') return Object.keys(s.prep.done).length >= 2;
   if (track === 'rebuild') return !s.rebuild.redFlag && Object.keys(s.rebuild.done).length >= 2;
   if (track === 'refresher') return true;
-  if (track === 'swim') return Object.keys(s.tri.swim.done).length >= 2;
-  if (track === 'bike') return Object.keys(s.tri.bike.done).length >= 2;
+  if (track === 'swim') return BG.fast(s, 'swim') || Object.keys(s.tri.swim.done).length >= 2;
+  if (track === 'bike') return BG.fast(s, 'bike') || Object.keys(s.tri.bike.done).length >= 2;
   if (track === 'triGate') return TRI.lanesReady(s);
-  if (track === 'strength') return Object.keys(s.hybrid.strength.done).length >= 2;
-  if (track === 'engine') return Object.keys(s.hybrid.engine.done).length >= 2;
+  if (track === 'strength') return BG.fast(s, 'strength') || Object.keys(s.hybrid.strength.done).length >= 2;
+  if (track === 'engine') return BG.fast(s, 'engine') || Object.keys(s.hybrid.engine.done).length >= 2;
   if (track === 'hyGate') return HYB.lanesReady(s);
   if (track === 'hyMaint') return true;
   return false;
@@ -171,7 +172,26 @@ export function gateUnlocked(s, track) {
 
 export function levelProgress(s) {
   const steps = runLevel(s.run.level).steps;
-  return { earned: earnedInLevel(steps, s.run.done), target: levelXpTarget(steps) };
+  return { earned: earnedInLevel(steps, s.run.done), target: Math.round(levelXpTarget(steps) * (BG.fast(s, 'run') ? 0.5 : 1) / 10) * 10, fast: BG.fast(s, 'run') };
+}
+
+// Former athletes: credit the technique they kept, then put Tri / Hybrid worlds where the lanes now are.
+export function applyBackground(state, background) {
+  const s = clone(state);
+  s.background = (background || []).filter(b => b && b.sport && b.level);
+  if (s.tri) {
+    s.tri.swim.stage = Math.max(s.tri.swim.stage, BG.skillFloor(s.background, 'swim'));
+    s.tri.bike.stage = Math.max(s.tri.bike.stage, BG.skillFloor(s.background, 'bike'));
+    const w = [0, 1, 2, 3, 4, 5].findIndex(i => TRI.laneStatus(s, i).some(l => !l.ok));
+    s.tri.world = Math.max(s.tri.world, w < 0 ? 5 : w);
+  }
+  if (s.hybrid) {
+    s.hybrid.strength.stage = Math.max(s.hybrid.strength.stage, BG.skillFloor(s.background, 'strength'));
+    s.hybrid.engine.stage = Math.max(s.hybrid.engine.stage, BG.skillFloor(s.background, 'engine'));
+    const w = [0, 1, 2, 3, 4, 5].findIndex(i => HYB.laneStatus(s, i).some(l => !l.ok));
+    s.hybrid.world = Math.max(s.hybrid.world, w < 0 ? 5 : w);
+  }
+  return s;
 }
 
 // ---------- XP helpers ----------
@@ -786,6 +806,7 @@ export function coachContext(s, now) {
     const lim = TRI.limiter(s);
     lines.push(`Triathlon: world "${TRI.triWorld(s).name}"; swim ${TRI.swimStage(s).name} (${TRI.swimStage(s).target}), bike ${TRI.bikeStage(s).name} (${TRI.bikeStage(s).target}), run = Run Track level ${s.run.level}. ${lim ? `Limiter: ${lim.lane}.` : 'All lanes ready: transition gate open.'}${s.tri.learnToSwim ? ' Cannot swim yet: suggest lessons with a coach, never swim alone.' : ''}`);
   }
+  if (s.background?.length) lines.push(`Sporting background: ${BG.describe(s.background).join('; ')}. ${BG.isFormerAthlete(s) ? 'RETURNING ATHLETE: talk to them as an experienced athlete coming back; their technique is credited and gates open early while they climb back.' : ''}`);
   if (s.profile.sex) lines.push(`Race category: ${ST.SEX_LABEL[s.profile.sex]}. Use this category's weights and time standards.`);
   if (HYB.hasHybrid(s)) {
     const lim = HYB.limiter(s), b = s.hybrid.block;
