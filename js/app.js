@@ -197,8 +197,9 @@ function hybQuestions(a) {
     <p class="q">Your current lifts <span class="hint">optional</span></p>
     <p class="hint">The heaviest weight you can lift with good form, either for 5 clean reps or as a single max rep.</p>
     ${radio('liftMode', [['5', 'For 5 clean reps'], ['1', 'As a 1-rep max'], ['unknown', "I don't know my numbers"]], a.liftMode || '5')}
-    ${num('bodyweight', 'Your bodyweight', a.bodyweight, 'kg')}
-    ${a.liftMode === 'unknown' ? '' : `${num('squat5', 'Heaviest back squat', a.squat5, 'kg')}${num('deadlift5', 'Heaviest deadlift', a.deadlift5, 'kg')}`}${num('pullups', 'Strict pull-ups in a row', a.pullups, 'reps')}
+    <div class="seg mini unit-seg">${[['kg', 'kg'], ['lb', 'lb']].map(([v, l]) => `<label class="${(a.liftUnit || 'kg') === v ? 'on' : ''}"><input type="radio" name="liftUnit" value="${v}" ${(a.liftUnit || 'kg') === v ? 'checked' : ''} hidden>${l}</label>`).join('')}</div>
+    ${num('bodyweight', 'Your bodyweight', a.bodyweight, a.liftUnit || 'kg')}
+    ${a.liftMode === 'unknown' ? '' : `${num('squat5', 'Heaviest back squat', a.squat5, a.liftUnit || 'kg')}${num('deadlift5', 'Heaviest deadlift', a.deadlift5, a.liftUnit || 'kg')}`}${num('pullups', 'Strict pull-ups in a row', a.pullups, 'reps')}
     <label class="field"><span>Other lifts or tests you know <span class="hint">optional, the AI turns them into estimates</span></span><textarea name="otherLifts" rows="2" maxlength="200" placeholder="e.g. leg press 150 kg x 8, goblet squat 24 kg x 10, bench 60 kg">${h(a.otherLifts || '')}</textarea></label>
     ${timeField('row1000Text', '1000 m row time', a.row1000Text, 'm:ss, e.g. 3:55')}
     <p class="q">Start with which block?</p>${radio('startBlock', [['auto', 'Let the app choose'], ['engine', '⚡ Engine block'], ['strength', '🏋️ Strength block']], a.startBlock || 'auto')}`;
@@ -353,7 +354,8 @@ function renderOnboarding() {
         ${ui.ob.a.dreamAI ? `<div class="ai-read ${ui.ob.a.dreamAI.accepted ? '' : 'off'}"><span>🤖 Here's what I understood: <strong>${h(ui.ob.a.dreamAI.summary || '')}</strong></span>
           <div class="row">${ui.ob.a.dreamAI.accepted ? '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="0">Not quite</button>' : '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="1">Use this reading</button>'}</div></div>` : ''}
         ${(ui.ob.a.tracks || []).includes('hybrid') ? (() => { const hy = HYB.placeHybrid(preview.state, normalize(ui.ob.a), now()); const w = HYBRID_WORLDS[hy.world];
-          return `<div class="dream-box"><strong>🏋️⚙️🏃 Hybrid: ${w.emoji} ${h(w.name)}</strong><br><span class="hint">Strength: ${h(ST.sexText(HYB.laneTarget('strength', hy.strength.stage + 1), ui.ob.a.sex))} next · Engine: ${h(HYB.laneTarget('engine', hy.engine.stage + 1))} next · starting with a ${hy.block.type === 'engine' ? '⚡ Engine' : '🏋️ Strength'} block</span></div>
+          const lr = HYB.readLifts(normalize(ui.ob.a), ui.ob.a.sex);
+          return `<div class="dream-box"><strong>🏋️⚙️🏃 Hybrid: ${w.emoji} ${h(w.name)}</strong>${lr.level ? `<br><span class="hint">Read as: ${[lr.sqRatio ? `squat ${lr.sqRatio.toFixed(1)}x bodyweight` : '', lr.dlRatio ? `deadlift ${lr.dlRatio.toFixed(1)}x` : ''].filter(Boolean).join(' · ')} (bodyweight ${Math.round(lr.bwKg)} kg). Wrong? Check kg / lb.</span>` : ''}<br><span class="hint">Strength: ${h(ST.sexText(HYB.laneTarget('strength', hy.strength.stage + 1), ui.ob.a.sex))} next · Engine: ${h(HYB.laneTarget('engine', hy.engine.stage + 1))} next · starting with a ${hy.block.type === 'engine' ? '⚡ Engine' : '🏋️ Strength'} block</span></div>
             ${ui.ob.a.liftsAI ? `<div class="ai-read ${ui.ob.a.liftsAI.accepted ? '' : 'off'}"><span>🤖 I read your lifts as: <strong>${h(ui.ob.a.liftsAI.summary || '')}</strong>${ui.ob.a.liftsAI.confidence === 'low' ? ' <em class="hint">(rough estimate)</em>' : ''}</span>
               <div class="row"><button type="button" class="btn ghost small" data-act="lifts-ai" data-v="${ui.ob.a.liftsAI.accepted ? 0 : 1}">${ui.ob.a.liftsAI.accepted ? 'Not quite' : 'Use this estimate'}</button></div></div>` : ''}`; })() : ''}
         ${(ui.ob.a.tracks || []).includes('tri') ? (() => { const tri = TRI.placeTri(preview.state, normalize(ui.ob.a)); const w = TRI_WORLDS[tri.world];
@@ -1445,7 +1447,7 @@ function readDraft() {
 document.addEventListener('change', async e => {
   const el = e.target;
   if (el.closest('#nc-form') && el.name !== 'msg' && el.name !== 'myName') { readDraft(); renderModal(); return; }
-  if (el.closest('#ob-form') && (el.name?.startsWith('tr_') || el.name?.startsWith('hx_') || /Mode$/.test(el.name || '') || el.name === 'swimDist' || el.name === 'bikeAccess' || el.name === 'liftMode')) { collectOb(); renderOnboarding(); return; }
+  if (el.closest('#ob-form') && (el.name?.startsWith('tr_') || el.name?.startsWith('hx_') || /Mode$/.test(el.name || '') || el.name === 'swimDist' || el.name === 'bikeAccess' || el.name === 'liftMode' || el.name === 'liftUnit')) { collectOb(); renderOnboarding(); return; }
   if (el.closest('#tri-form') && (el.name === 'swimDist' || el.name === 'bikeAccess')) { ui.modal.a = { ...ui.modal.a, ...readTriForm(el.closest('form')) }; renderModal(); return; }
   if (el.dataset.act === 'speak-toggle') ui.speakReplies = el.checked;
   if (el.dataset.act === 'shout-file' && el.files[0]) {
@@ -1478,6 +1480,8 @@ document.addEventListener('submit', e => {
     collectOb();
     if (f.querySelector('[name^=tr_]') && !(ui.ob.a.tracks || []).length) return toast('Pick at least one thing you train for.');
     if (f.querySelector('[name^=d_]') && (ui.ob.a.days || K.defaultDays(3)).length < 2) return toast('Pick at least 2 training days.');
+    if (f.bodyweight && (ui.ob.a.liftUnit || 'kg') === 'kg' && +f.bodyweight.value > 130 && !ui.ob.lbWarned) { ui.ob.lbWarned = true; f.bodyweight.focus(); return toast('Bodyweight over 130 kg: did you mean lb? Switch to lb above, or tap Next again to keep kg.'); }
+    if (f.squat5 && f.bodyweight && +f.bodyweight.value > 0 && +f.squat5.value / +f.bodyweight.value > 3.2 && !ui.ob.ratioWarned) { ui.ob.ratioWarned = true; return toast('That squat is over 3x your bodyweight: are the units the same (kg or lb) for both? Tap Next again to keep it.'); }
     const badTime = [...f.querySelectorAll('.time-field input[type=text]')].find(i => i.value.trim() && parseTime(i.value) == null);
     if (badTime) { badTime.focus(); return toast('Use mm:ss or h:mm:ss, for example 27:30 or 1:05:00.'); }
     if (f.querySelector('[name=dream]')) readDream();

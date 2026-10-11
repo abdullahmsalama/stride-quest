@@ -13,7 +13,7 @@ const withHybrid = (s, a) => { s.profile.tracks = [...new Set([...(s.profile.tra
 test('placement from lifts relative to bodyweight, a row time and races', () => {
   const s = withHybrid(runner(), { liftExp: 'y3', bodyweight: 80, squat5: 100, deadlift5: 130, pullups: 6, row1000: 3.9, gym: 'full',
     hybridRaces: [{ event: 'Hyrox', division: 'open', format: 'pair' }] });
-  assert.equal(s.hybrid.strength.stage, 4); // squat 1.25 x and deadlift 1.6 x bodyweight -> working on Strength Endurance
+  assert.equal(s.hybrid.strength.stage, 5); // squat 1.25 x and deadlift 1.6 x bodyweight -> Strong Hybrid gate next (a quick win)
   assert.equal(s.hybrid.engine.stage, 3);
   assert.ok(s.hybrid.world >= 3); // a finished Doubles race puts you at Solo Stadium or beyond
 });
@@ -123,4 +123,17 @@ test('women lift and row standards are scaled in placement', () => {
   const f = H.placeHybrid({ ...runner(), profile: { ...runner().profile, sex: 'f' } }, { ...a, sex: 'f' }, MON);
   assert.ok(f.strength.stage > m.strength.stage);
   assert.ok(f.engine.stage >= m.engine.stage);
+});
+
+test('lifts: units, single lifts and strong squatters', () => {
+  // squat 2x bodyweight, no deadlift given -> top strength, not "squat 3/4 BW"
+  assert.equal(H.readLifts({ bodyweight: 80, squat5: 170 }, 'm').level, 7);
+  // same lifter typing bodyweight in lb by mistake would read low...
+  assert.ok(H.readLifts({ bodyweight: 176, squat5: 170 }, 'm').level <= 4);
+  // ...but with lb selected for everything it reads right
+  assert.equal(H.readLifts({ liftUnit: 'lb', bodyweight: 176, squat5: 375, deadlift5: 420 }, 'm').level, 7);
+  // pull-ups only cap the very top, and only when given
+  assert.equal(H.readLifts({ bodyweight: 80, squat5: 170, deadlift5: 200, pullups: 3 }, 'm').level, 6);
+  const s = withHybrid(runner(), { liftExp: 'y3', bodyweight: 80, squat5: 170 });
+  assert.equal(s.hybrid.strength.stage, 6);
 });

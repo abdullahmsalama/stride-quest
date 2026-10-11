@@ -100,19 +100,9 @@ export function placeHybrid(s, a, now) {
   const h = newHybrid(now, start);
   h.gym = a.gym || 'full';
   // Strength: from lifts relative to bodyweight when given, else from experience.
-  // A 1-rep max is converted to a 5-rep weight (about 86% of the max).
-  const k = String(a.liftMode) === '1' ? 0.86 : 1;
-  const bw = +a.bodyweight, sq = +a.squat5 * k, dl = +a.deadlift5 * k, pu = +a.pullups;
+  const read = readLifts(a, s.profile.sex);
   let str = EXPERIENCE[a.liftExp] ?? 0;
-  if (bw > 30 && (sq || dl)) {
-    const lf = liftFactor(a.sex || s.profile.sex);
-    const r = (x, k) => x && x >= k * lf * bw;
-    if (r(dl, 1.75) && r(sq, 1.5) && pu >= 8) str = 7;
-    else if (r(sq, 1.25) && r(dl, 1.5)) str = Math.max(str, 5);
-    else if (r(sq, 1) && r(dl, 1.25) && pu >= 3) str = Math.max(str, 4);
-    else if (r(sq, 0.75) && r(dl, 1)) str = Math.max(str, 3);
-    else str = Math.max(str, 2);
-  }
+  if (read.level) str = Math.max(str, read.level);
   // Engine: from a 1000 m row, finished races and the running level.
   const row = +a.row1000; // minutes
   const rf = rowFactor(a.sex || s.profile.sex);
@@ -137,6 +127,22 @@ export function placeHybrid(s, a, now) {
   else if (races.length) world = Math.max(world, 2);
   h.world = Math.min(world, HYBRID_WORLDS.length - 1);
   return h;
+}
+
+// Lifts -> strength level ("stages cleared"). Each lift counts on its own; with both, the average.
+// Weights in lb are converted; a 1-rep max becomes a 5-rep weight (about 86%). Pull-ups only cap the very top.
+export function readLifts(a, sex) {
+  const toKg = String(a.liftUnit) === 'lb' ? 0.4536 : 1;
+  const k = String(a.liftMode) === '1' ? 0.86 : 1;
+  const bw = +a.bodyweight * toKg, sq = +a.squat5 * toKg * k, dl = +a.deadlift5 * toKg * k, pu = a.pullups === '' || a.pullups == null ? null : +a.pullups;
+  if (!(bw > 30) || !(sq || dl)) return { level: 0 };
+  const lf = liftFactor(a.sex || sex);
+  const sqR = sq / bw / lf, dlR = dl / bw / lf; // relative to the men's scale
+  const fromSq = sqR >= 1.5 ? 7 : sqR >= 1.25 ? 6 : sqR >= 1 ? 4 : sqR >= 0.75 ? 3 : 2;
+  const fromDl = dlR >= 1.75 ? 7 : dlR >= 1.5 ? 6 : dlR >= 1.25 ? 4 : dlR >= 1 ? 3 : 2;
+  let level = sq && dl ? Math.round((fromSq + fromDl) / 2) : sq ? fromSq : fromDl;
+  if (level >= 7 && pu != null && pu < 8) level = 6;
+  return { level, sqRatio: sq ? sq / bw : null, dlRatio: dl ? dl / bw : null, bwKg: bw, suspicious: bw > 130 && toKg === 1 };
 }
 
 // Start with the lane that is further behind.
