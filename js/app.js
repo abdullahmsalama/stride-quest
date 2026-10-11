@@ -381,6 +381,9 @@ function afterMapRender() {
   } else if (levelChanged) saveAvatar(ui.avatarAt);
 }
 
+// Coach replies may use **bold** and *italics*; everything else stays escaped text.
+const md = t => h(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|\s)\*(\S[^*]*?)\*(?=\s|$|[.,!?])/g, '$1<em>$2</em>');
+
 // ---------- challenge tab ----------
 const ago = ts => { const d = Math.floor((now() - ts) / 864e5); return d <= 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`; };
 const hue = id => [...String(id)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
@@ -482,7 +485,7 @@ function openIncoming() {
 function viewCoach() {
   const msgs = ui.chat.length ? ui.chat : [{ role: 'assistant', content: `Hey${S.profile.name ? ' ' + S.profile.name : ''}! I'm your coach. Ask me what to do today, how a drill works, or how you're feeling.` }];
   return `<section class="chat">
-      <div class="chat-log">${msgs.map(m => `<div class="msg ${m.role}">${h(m.content)}${m.provider === 'offline' ? '<span class="tag">offline coach</span>' : ''}</div>`).join('')}
+      <div class="chat-log">${msgs.map(m => `<div class="msg ${m.role}">${md(m.content)}${m.provider === 'offline' ? '<span class="tag">offline coach</span>' : ''}</div>`).join('')}
         ${ui.thinking ? '<div class="msg assistant typing"><span></span><span></span><span></span></div>' : ''}</div>
       <div class="quick">${['What should I do today?', 'I feel sore', 'Explain my level', 'How fast should easy runs be?'].map(q => `<button class="pill" data-act="quick" data-q="${h(q)}">${h(q)}</button>`).join('')}</div>
       <form id="chat-form" class="chat-input">

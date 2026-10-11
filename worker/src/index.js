@@ -56,21 +56,30 @@ async function withTimeout(url, init) {
   finally { clearTimeout(t); }
 }
 
+// Tries each Gemini model in GEMINI_MODELS (comma-separated) until one answers.
 async function gemini(env, system, messages) {
   if (!env.GEMINI_API_KEY) throw new Error('no key');
-  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const models = (env.GEMINI_MODELS || 'gemini-flash-latest').split(',').map(m => m.trim()).filter(Boolean);
+  const errs = [];
+  for (const model of models) {
+    try { return await geminiModel(env, model, system, messages); } catch (e) { errs.push(`${model}: ${e.message}`); }
+  }
+  throw new Error(errs.join('; '));
+}
+
+async function geminiModel(env, model, system, messages) {
   const res = await withTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-      generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
+      generationConfig: { temperature: 0.7, maxOutputTokens: 1500 }, // room for the model's thinking tokens
     }),
   });
-  if (!res.ok) throw new Error(`gemini ${res.status}`);
+  if (!res.ok) throw new Error(`${res.status}`);
   const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+  const text = data.candidates?.[0]?.content?.parts?.filter(p => !p.thought).map(p => p.text || '').join('').trim();
   if (!text) throw new Error('gemini empty');
   return text;
 }
@@ -98,6 +107,10 @@ const PROVIDERS = [
   ['groq', (env, sys, msgs) => {
     if (!env.GROQ_API_KEY) throw new Error('no key');
     return openaiStyle('https://api.groq.com/openai/v1/chat/completions', env.GROQ_API_KEY, env.GROQ_MODEL || 'llama-3.3-70b-versatile', sys, msgs);
+  }],
+  ['xai', (env, sys, msgs) => {
+    if (!env.XAI_API_KEY) throw new Error('no key'); // optional, usually paid
+    return openaiStyle('https://api.x.ai/v1/chat/completions', env.XAI_API_KEY, env.XAI_MODEL || 'grok-3-mini', sys, msgs);
   }],
   ['openrouter', (env, sys, msgs) => {
     if (!env.OPENROUTER_API_KEY) throw new Error('no key');
