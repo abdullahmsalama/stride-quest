@@ -8,18 +8,28 @@ import { DECO, G, shadow, RUNNER, rng, addToMap, bubble } from './map.js';
 import * as T from './tri.js';
 import * as H from './hybrid.js';
 import { sexText } from './standards.js';
+import { WHY } from './engine.js';
 
 export const TW = 400;
 const BAND = 420;
-export const TH = 6 * BAND + 220;
+const TOP_PAD = 170; // room above the last gate for the FINISH line
+const FINISH_Y = 96;
 const LANE_X = [72, 200, 328];
+// The map grows with its number of worlds. These are live exports: they follow the map being drawn.
+export let TH = 6 * BAND + 220 + TOP_PAD;
+let START_Y = TH - 90;
+export let START_POINT = { x: TW / 2, y: START_Y };
+function geo(cfg) {
+  const h = cfg.worlds.length * BAND + 220 + TOP_PAD;
+  if (h !== TH) { TH = h; START_Y = TH - 90; START_POINT = { x: TW / 2, y: START_Y }; }
+}
 const bandBottom = i => TH - 220 - i * BAND;
 export const gateY = i => bandBottom(i) - BAND + 78;
-const START_Y = TH - 90;
 // Short labels for the map pills (full text is in the popup).
 const SHORT = { 'Bodyweight basics': 'Bodyweight', 'Dumbbell basics': 'Dumbbells', 'Squat 0.75 x bodyweight': 'Squat ¾ BW', 'Squat 1 x bodyweight': 'Squat 1x BW',
   'Carries + lunges': 'Carries', 'Squat 1.25 x bodyweight': 'Squat 1¼ BW', 'Deadlift 1.75 x bodyweight': 'DL 1¾ BW', '20 min cardio': '20 min', '1000 m row': 'Row 1 km',
   '30 min steady mix': '30 min mix', 'Run after stations': 'Run+station', 'Half race simulation': 'Half sim', 'Full simulation': 'Full sim', 'Full sim under goal time': 'Sim < goal',
+  'Deadlift 2 x bodyweight': 'DL 2x BW', 'Squat 2 x bodyweight': 'Squat 2x BW', 'Elite-pace simulation': 'Elite sim', 'Championship simulation': 'Champ sim',
   '1500 m + open water': '1500 m + OW' };
 const short = t => SHORT[t] || t;
 const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -89,8 +99,8 @@ const TRI = {
 };
 const HYB = {
   id: 'hyb', worlds: HYBRID_WORLDS, lanes: H.LANES, icon: H.LANE_ICON, label: H.LANE_LABEL, gateTrack: 'hyGate', gateWord: 'race gate', openIcon: '🏁',
-  bandFill: ['#d6dee2', '#e8dccf', '#ffe2b8', '#cfe9d0', '#ffd2c2', '#ffe48f'],
-  themes: [['dumbbell', 'kettlebell', 'plate', 'dumbbell'], ['cone', 'lamp', 'kettlebell', 'roundTree'], ['flagpole', 'cone', 'dumbbell', 'flagpole'], ['flagpole', 'lamp', 'roundTree', 'cone'], ['flame', 'kettlebell', 'plate', 'flame'], ['trophy', 'flagpole', 'flame', 'trophy']],
+  bandFill: ['#d6dee2', '#e8dccf', '#ffe2b8', '#cfe9d0', '#ffd2c2', '#ffe48f', '#d9d2f5', '#c9e4f7'],
+  themes: [['dumbbell', 'kettlebell', 'plate', 'dumbbell'], ['cone', 'lamp', 'kettlebell', 'roundTree'], ['flagpole', 'cone', 'dumbbell', 'flagpole'], ['flagpole', 'lamp', 'roundTree', 'cone'], ['flame', 'kettlebell', 'plate', 'flame'], ['trophy', 'flagpole', 'flame', 'trophy'], ['flame', 'trophy', 'lamp', 'plate'], ['flagpole', 'trophy', 'flagpole', 'flame']],
   further: 'A bigger arena further up.',
   world: s => s.hybrid.world, finished: s => s.hybrid.finished, status: H.laneStatus, ready: H.lanesReady, limiter: H.limiter, target: H.laneTarget,
   value: (s, l) => (l === 'strength' ? s.hybrid.strength.stage : l === 'engine' ? s.hybrid.engine.stage : s.run.level),
@@ -106,6 +116,7 @@ const maxVal = (cfg, lane) => reqs(cfg, lane).at(-1);
 
 // Node for "value v reached" in a lane (v = stages cleared, or the Run level).
 export function nodePoint(cfg, lane, v) {
+  geo(cfg);
   const li = cfg.lanes.indexOf(lane);
   if (v <= 0) return { x: LANE_X[li], y: START_Y };
   const r = reqs(cfg, lane);
@@ -121,7 +132,7 @@ export function nodePoint(cfg, lane, v) {
 function lanePoints(cfg, lane) {
   const pts = [];
   for (let v = 0; v <= maxVal(cfg, lane); v++) pts.push(nodePoint(cfg, lane, v));
-  pts.push({ x: pts.at(-1).x, y: 24 });
+  pts.push({ x: pts.at(-1).x, y: FINISH_Y });
   return pts;
 }
 function segs(pts) {
@@ -204,7 +215,7 @@ function gateNode(s, cfg, i) {
   const w = cfg.worlds[i];
   const passed = i < cfg.world(s) || (cfg.finished(s) && i === cfg.world(s));
   const current = i === cfg.world(s) && !cfg.finished(s);
-  const open = current && cfg.ready(s);
+  const open = current && cfg.ready(s) && !s.rebuild?.active; // a ready gate stays shut during Rebuild
   const color = passed ? '#7cb342' : open ? '#ff6b35' : '#8d6e63';
   const dream = s.profile?.dream?.target?.track === (cfg.id === 'tri' ? 'tri' : 'hybrid') && s.profile.dream.target.world === i;
   const y = gateY(i);
@@ -236,6 +247,7 @@ function avatar(s, cfg, lane, at) {
 // `ui.laneShown` lets the app draw avatars at their last-seen spot, then animate to the new one.
 export function renderLaneMap(s, ui, id) {
   const cfg = MAPS[id];
+  geo(cfg);
   const pts = Object.fromEntries(cfg.lanes.map(l => [l, lanePoints(cfg, l)]));
   const shown = ui.laneShown?.[id] || {};
   const popup = ui.lanePopup?.map === id ? popupHtml(s, cfg, ui.lanePopup) : '';
@@ -255,6 +267,9 @@ export function renderLaneMap(s, ui, id) {
         <g><rect x="20" y="${START_Y - 7}" width="${TW - 40}" height="14" fill="url(#lane-checker)"/>
           <defs><pattern id="lane-checker" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#fff"/><rect width="4" height="4" fill="#222"/><rect x="4" y="4" width="4" height="4" fill="#222"/></pattern></defs>
           <text x="${TW / 2}" y="${START_Y + 40}" text-anchor="middle" font-family="Barlow Condensed, sans-serif" font-weight="800" font-size="20" fill="#14213d">START</text></g>
+        <g><rect x="20" y="${FINISH_Y - 7}" width="${TW - 40}" height="14" fill="url(#lane-checker)"/>
+          <rect x="${TW / 2 - 70}" y="${FINISH_Y - 62}" width="140" height="36" rx="18" fill="#14213d"/>
+          <text x="${TW / 2}" y="${FINISH_Y - 37}" text-anchor="middle" font-family="Barlow Condensed, sans-serif" font-weight="800" font-size="21" fill="#fff">🏁 FINISH</text></g>
         ${cfg.worlds.map((_, i) => gateNode(s, cfg, i)).join('')}
         ${cfg.lanes.map(l => nodes(s, cfg, l)).join('')}
         ${cfg.lanes.map(l => avatar(s, cfg, l, shown[l] ?? cfg.value(s, l))).join('')}
@@ -289,7 +304,6 @@ export function moveCharacter(id, lane, from, to, { onDone, follow } = {}) {
 }
 
 export const celebrate = (x, y, text) => bubble(x, y, text, { ttl: 2600 });
-export const START_POINT = { x: TW / 2, y: START_Y };
 const BURST = { swim: '💦', bike: '💨', run: '✨', strength: '💪', engine: '🔥' };
 // Each character's signature move on arrival + a little emoji burst.
 export function signature(id, lane) {
@@ -315,11 +329,12 @@ function popupHtml(s, cfg, p) {
     const i = +p.world, w = cfg.worlds[i];
     const st = cfg.status(s, i);
     const current = i === cfg.world(s) && !cfg.finished(s);
-    const open = current && cfg.ready(s);
+    const rb = s.rebuild?.active, open = current && cfg.ready(s) && !rb;
     x = TW / 2; y = gateY(i);
     html = `<p class="eyebrow">${w.emoji} ${esc(w.name)} · ${cfg.gateWord}</p><h3>${esc(w.race)}</h3>
       <ul class="lane-check">${st.map(l => `<li>${l.ok ? '✅' : '⬜'} ${cfg.icon[l.lane]} ${cfg.label[l.lane]}: ${esc(sexText(cfg.target(l.lane, l.need), s.profile.sex))}</li>`).join('')}</ul>
       ${i < cfg.world(s) || (cfg.finished(s) && i === cfg.world(s)) ? '<p class="hint">Cleared ✅</p>' : open ? `<button class="btn primary small" data-act="open-step" data-track="${cfg.gateTrack}" data-idx="0">Start the ${cfg.gateWord}</button>`
+        : current && rb ? `<p class="hint">🔒 ${esc(s.rebuild.redFlag ? WHY.redFlag : WHY.rebuild)}</p><button class="btn primary small" data-act="${s.rebuild.redFlag ? 'cleared' : 'painfree'}">${s.rebuild.redFlag ? "I've been cleared" : "I'm pain-free now"}</button>`
         : current ? '<p class="hint">Opens when all three lanes reach their flags.</p>' : `<p class="hint">🔒 ${cfg.further}</p>`}`;
   } else if (p.kind === 'node' && +p.v !== cfg.value(s, p.lane) + 1) {
     const lane = p.lane, v = +p.v, pt = nodePoint(cfg, lane, v);
@@ -341,7 +356,7 @@ function popupHtml(s, cfg, p) {
       const rest = cfg.resting(s, lane);
       html = `<p class="eyebrow">${cfg.icon[lane]} ${cfg.label[lane]}</p><h3>${v >= max ? 'Path complete' : `${esc(stage.name)} · ${esc(sexText(stage.target, s.profile.sex))}`}</h3>
         <p class="hint">${v >= need ? `Ready for ${esc(cur.name)} ✅` : `${esc(cur.name)} needs ${esc(sexText(cfg.target(lane, need), s.profile.sex))}.`}</p>
-        ${rest ? `<p class="hint">🔒 Maintaining this block: it builds again in a ${esc(cfg.label[lane])} block.</p>` : v < max ? `<button class="btn primary small" data-act="lane-step" data-lane="${lane}">Next ${esc(cfg.label[lane].toLowerCase())} session</button>` : ''}`;
+        ${s.rebuild?.redFlag ? `<p class="hint">🔒 ${esc(WHY.redFlag)}</p><button class="btn primary small" data-act="cleared">I've been cleared</button>` : rest ? `<p class="hint">🔒 Maintaining this block: it builds again in a ${esc(cfg.label[lane])} block.</p>` : v < max ? `<button class="btn primary small" data-act="lane-step" data-lane="${lane}">Next ${esc(cfg.label[lane].toLowerCase())} session</button>` : ''}`;
     }
   }
   const below = y < 380;

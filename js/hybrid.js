@@ -3,7 +3,7 @@
 import { STRENGTH_STAGES, ENGINE_STAGES, HYBRID_WORLDS, MAINTENANCE, BLOCK_WEEKS } from './data/hybrid.js';
 import { liftFactor, rowFactor } from './standards.js';
 
-export const STR_MAX = STRENGTH_STAGES.length; // 7
+export const STR_MAX = STRENGTH_STAGES.length; // 9
 export const ENG_MAX = ENGINE_STAGES.length;
 export const LANES = ['strength', 'engine', 'run'];
 export const LANE_LABEL = { strength: 'Strength', engine: 'Engine', run: 'Run' };
@@ -122,7 +122,11 @@ export function placeHybrid(s, a, now) {
   const probe = { ...s, hybrid: h };
   let world = HYBRID_WORLDS.findIndex((_, i) => laneStatus(probe, i).some(l => !l.ok));
   if (world < 0) world = HYBRID_WORLDS.length - 1;
-  if (big.some(r => r.division === 'pro')) world = Math.max(world, 5);
+  // Race bosses can't be skipped: strong lanes alone reach Solo Stadium (first solo race), a solo
+  // finish reaches Strong Finish, a Pro finish starts at Pro League and can reach Elite Series.
+  const pro = big.some(r => r.division === 'pro'), solo = big.some(r => r.format === 'solo');
+  world = Math.min(world, pro ? 6 : solo ? 4 : 3);
+  if (pro) world = Math.max(world, 5);
   else if (big.some(r => r.format === 'solo')) world = Math.max(world, 4);
   else if (big.length) world = Math.max(world, 3);
   else if (races.length) world = Math.max(world, 2);
@@ -130,7 +134,7 @@ export function placeHybrid(s, a, now) {
   return h;
 }
 
-// Lifts -> strength level ("stages cleared"). Each lift counts on its own; with both, the average.
+// Lifts -> strength level ("stages cleared"). Each lift counts on its own; with both, the average (rounded down).
 // Weights in lb are converted; a 1-rep max becomes a 5-rep weight (about 86%). Pull-ups only cap the very top.
 export function readLifts(a, sex) {
   const toKg = String(a.liftUnit) === 'lb' ? 0.4536 : 1;
@@ -139,10 +143,13 @@ export function readLifts(a, sex) {
   if (!(bw > 30) || !(sq || dl)) return { level: 0 };
   const lf = liftFactor(a.sex || sex);
   const sqR = sq / bw / lf, dlR = dl / bw / lf; // relative to the men's scale
-  const fromSq = sqR >= 1.5 ? 7 : sqR >= 1.25 ? 6 : sqR >= 1 ? 4 : sqR >= 0.75 ? 3 : 2;
-  const fromDl = dlR >= 1.75 ? 7 : dlR >= 1.5 ? 6 : dlR >= 1.25 ? 4 : dlR >= 1 ? 3 : 2;
-  let level = sq && dl ? Math.round((fromSq + fromDl) / 2) : sq ? fromSq : fromDl;
-  if (level >= 7 && pu != null && pu < 8) level = 6;
+  const fromSq = sqR >= 2 ? 9 : sqR >= 1.75 ? 8 : sqR >= 1.5 ? 7 : sqR >= 1.25 ? 6 : sqR >= 1 ? 4 : sqR >= 0.75 ? 3 : 2;
+  const fromDl = dlR >= 2.25 ? 9 : dlR >= 2 ? 8 : dlR >= 1.75 ? 7 : dlR >= 1.5 ? 6 : dlR >= 1.25 ? 4 : dlR >= 1 ? 3 : 2;
+  let level = sq && dl ? Math.floor((fromSq + fromDl) / 2) : sq ? fromSq : fromDl;
+  // Pull-ups only cap the top: 8 for Pro Strength, 12 for Elite, 15 for World-Class.
+  // Above Pro Strength the gates ask for both lifts and pull-ups, so placement does too.
+  if (pu != null) level = Math.min(level, pu < 8 ? 6 : pu < 12 ? 7 : pu < 15 ? 8 : 9);
+  if (!(sq && dl) || pu == null) level = Math.min(level, 7);
   return { level, sqRatio: sq ? sq / bw : null, dlRatio: dl ? dl / bw : null, bwKg: bw, suspicious: bw > 130 && toKg === 1 };
 }
 

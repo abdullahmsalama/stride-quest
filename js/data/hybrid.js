@@ -39,6 +39,16 @@ export const STRENGTH_STAGES = [
     { type: 'lift', title: 'Deadlift 6 x 2 heavy', ex: ['deadlift'] },
     { type: 'lift', title: 'Pro-weight sled + wall balls', ex: ['sled_push', 'wall_ball'] },
     { type: 'gate', title: 'Gate: deadlift 1.75 x bodyweight for 3, squat 1.5 x for 3, 8 strict pull-ups', ex: ['deadlift', 'back_squat', 'pullup'] }] },
+  { n: 7, name: 'Elite Strength', target: 'Deadlift 2 x bodyweight', steps: [
+    { type: 'lift', title: 'Squat wave: 3-2-1 heavy, then 3 x 3 back-off', ex: ['back_squat'] },
+    { type: 'lift', title: 'Deadlift 5 x 2 heavy + weighted pull-ups 4 x 5', ex: ['deadlift', 'pullup'] },
+    { type: 'lift', title: 'Elite-weight sled push / pull + heavy sandbag lunges', ex: ['sled_push', 'sled_pull', 'sandbag_lunge'] },
+    { type: 'gate', title: 'Gate: deadlift 2 x bodyweight for 2, squat 1.75 x for 2, 12 strict pull-ups', ex: ['deadlift', 'back_squat', 'pullup'] }] },
+  { n: 8, name: 'World-Class Strength', target: 'Squat 2 x bodyweight', steps: [
+    { type: 'lift', title: 'Squat singles at 90-95%, then speed sets 6 x 2', ex: ['back_squat'] },
+    { type: 'lift', title: 'Deadlift singles at 90-95% + heavy carries', ex: ['deadlift', 'farmers_carry'] },
+    { type: 'lift', title: 'Strength under fatigue: heavy sled after a 1 km run', ex: ['sled_push', 'compromised_run'] },
+    { type: 'gate', title: 'Gate: squat 2 x bodyweight for 1, deadlift 2.25 x for 1, 15 strict pull-ups', ex: ['back_squat', 'deadlift', 'pullup'] }] },
 ];
 
 // Engine ladder: aerobic base, ergs, threshold, then running on tired legs.
@@ -78,6 +88,16 @@ export const ENGINE_STAGES = [
     { type: 'engine', title: 'VO2 intervals: 6 x 3 min hard', ex: ['erg_intervals'] },
     { type: 'engine', title: 'Pro-weight station practice', ex: ['race_sim'] },
     { type: 'gate', title: 'Gate: full simulation under your goal time', ex: ['race_sim'] }] },
+  { n: 7, name: 'Elite Engine', target: 'Elite-pace simulation', steps: [
+    { type: 'engine', title: 'Run 10 x 1 km at elite race pace, 60s rest', ex: ['threshold_mix'] },
+    { type: 'engine', title: 'Stations at Pro weights, race pace, 3 rounds', ex: ['race_sim'] },
+    { type: 'engine', title: 'Double day: easy 45 min + VO2 6 x 3 min', ex: ['easy_erg', 'erg_intervals'] },
+    { type: 'gate', title: 'Gate: full Pro-weight simulation at elite pace, negative split', ex: ['race_sim'] }] },
+  { n: 8, name: 'World-Class Engine', target: 'Championship simulation', steps: [
+    { type: 'engine', title: 'Race-pace 8 x (1 km run + station), no slowdown', ex: ['compromised_run', 'race_sim'] },
+    { type: 'engine', title: 'Lactate threshold 4 x 10 min (run or erg)', ex: ['threshold_mix'] },
+    { type: 'engine', title: 'Long aerobic 90 min + strides', ex: ['easy_erg'] },
+    { type: 'gate', title: 'Gate: championship simulation, every run within 5 s of goal pace', ex: ['race_sim'] }] },
 ];
 
 // Worlds. Each needs a Strength stage, an Engine stage and a Run Track level ("stages cleared").
@@ -94,6 +114,10 @@ export const HYBRID_WORLDS = [
     gate: { title: 'Boss: a solo race at your goal time', detail: 'Pace the runs, stay smooth on the stations.', boss: true } },
   { n: 5, id: 'pro', name: 'Pro League', emoji: '👑', strength: 6, engine: 6, run: 8, race: 'Pro division',
     gate: { title: 'Boss: Pro division race', detail: 'Hyrox Pro or the heaviest division of your race. Check its official weights.', boss: true } },
+  { n: 6, id: 'elite', name: 'Elite Series', emoji: '💎', strength: 7, engine: 7, run: 10, race: 'Pro race at a podium time',
+    gate: { title: 'Boss: a Pro race at an age-group podium or qualifying time', detail: 'Hyrox Pro (or your race\'s heaviest division) finished in a qualifying time for its championships.', boss: true } },
+  { n: 7, id: 'worlds', name: 'World Championships', emoji: '🌍', strength: 8, engine: 8, run: 11, race: 'Championship / Elite race',
+    gate: { title: 'Boss: race the World Championships or an Elite race', detail: 'The top of the ladder: Hyrox World Championships, Elite 15, or your sport\'s championship.', boss: true } },
 ];
 
 // Maintenance and deload sessions (generated each week by the block).

@@ -7,7 +7,7 @@ export function dreamTarget(text) {
   const t = String(text || '').toLowerCase();
   if (!t.trim()) return null;
   if (/hyrox|alpha ?x|crossfit|tough mudder|spartan|deka|hybrid/.test(t)) {
-    const world = /\bpro\b/.test(t) ? 5 : timeIn(t) ? 4 : /doubles|pairs?|relay/.test(t) ? 2 : /hyrox|alpha ?x/.test(t) ? 3 : null;
+    const world = /world champ|elite ?15|\belite\b/.test(t) ? 7 : /podium|qualif/.test(t) ? 6 : /\bpro\b/.test(t) ? 5 : timeIn(t) ? 4 : /doubles|pairs?|relay/.test(t) ? 2 : /hyrox|alpha ?x/.test(t) ? 3 : null;
     return { track: 'hybrid', level: null, world, label: 'Hybrid goal' };
   }
   if (/triathlon|ironman|70\.3|sprint tri|olympic tri|\btri\b/.test(t)) {

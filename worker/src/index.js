@@ -276,7 +276,7 @@ export default {
     try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400, headers); }
 
     if (body.mode === 'understand') {
-      const text = String(body.text || '').slice(0, body.task === 'check' ? 2000 : 300).trim();
+      const text = String(body.text || '').slice(0, body.task === 'check' ? 2400 : 700).trim();
       if (!text) return json({ error: 'no text' }, 400, headers);
       const lifts = body.task === 'lifts', check = body.task === 'check';
       const sys = check ? CHECK : lifts ? UNDERSTAND_LIFTS : UNDERSTAND.replace('TODAY', new Date().toISOString().slice(0, 10));

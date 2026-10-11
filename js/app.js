@@ -220,13 +220,14 @@ function hybQuestions(a) {
 }
 
 function triQuestions(a) {
-  const yn = (name, cur) => radio(name, [['yes', 'Yes'], ['no', 'Not yet']], cur || 'no');
-  return `<p class="q">How far can you swim without stopping?</p>${radio('swimDist', SWIM_DIST, a.swimDist || '100')}
+  // No pre-ticked answer: a skipped question never caps the swim you told us about.
+  const yn = (name, cur) => radio(name, [['yes', 'Yes'], ['no', 'Not yet']], cur);
+  return `<p class="q">How far can you swim without stopping?</p>${radio('swimDist', SWIM_DIST, +a.swimM > 0 ? a.swimDist : a.swimDist || '100')}
     ${num('swimM', 'Or type it exactly (replaces the choice above)', a.swimM, 'm')}
-    ${a.swimDist && a.swimDist !== 'none' ? `<p class="q">Do you swim freestyle (front crawl)?</p>${yn('freestyle', a.freestyle)}
+    ${(a.swimDist && a.swimDist !== 'none') || +a.swimM > 0 ? `<p class="q">Do you swim freestyle (front crawl)?</p>${yn('freestyle', a.freestyle)}
       <p class="q">Have you swum in open water (lake or sea)?</p>${yn('openWater', a.openWater)}` : '<div class="banner info">No problem! You start with water comfort. Lessons with a swim coach are the fastest, safest way: we track your progress alongside.</div>'}
     <p class="q">Your bike</p>${radio('bikeAccess', [['road', 'Road or tri bike'], ['other', 'Another bike (hybrid, mountain bike)'], ['trainer', 'Indoor trainer only'], ['none', 'No bike yet']], a.bikeAccess || 'road')}
-    ${a.bikeAccess !== 'none' ? `<p class="q">Longest ride lately?</p>${radio('longestRide', RIDES, a.longestRide || '60')}${num('rideKm', 'Or type it exactly (replaces the choice above)', a.rideKm, 'km')}` : ''}
+    ${a.bikeAccess !== 'none' ? `<p class="q">Longest ride lately?</p>${radio('longestRide', RIDES, +a.rideKm > 0 ? a.longestRide : a.longestRide || '60')}${num('rideKm', 'Or type it exactly (replaces the choice above)', a.rideKm, 'km')}` : ''}
     <p class="q">Pool sessions possible per week?</p>${radio('poolPerWeek', [['0', 'None'], ['1', '1'], ['2', '2'], ['3', '3 or more']], a.poolPerWeek || '2')}
     <p class="q">Triathlons finished <span class="hint">optional</span></p><div class="choices">${TRI_RACES.map(([k, l]) => check(`race_${k}`, l, a[`race_${k}`])).join('')}</div>`;
 }
@@ -243,7 +244,7 @@ function hybridCard(onMap = false) {
     <div class="block-bar">${Array.from({ length: BLOCK_WEEKS }, (_, i) => `<span class="${b.type !== 'deload' && i < b.week ? 'on' : ''}"></span>`).join('')}<span class="deload ${b.type === 'deload' ? 'on' : ''}"></span></div>
     <div class="lane-bars">${st.map(l => `<div class="${l.ok ? 'ok' : lim?.lane === l.lane ? 'lim' : ''}"><span>${HYB.LANE_ICON[l.lane]}</span><b>${h(l.lane === 'run' ? `Level ${S.run.level}` : l.have >= (l.lane === 'strength' ? HYB.STR_MAX : HYB.ENG_MAX) ? 'All done' : `${ST.sexText((l.lane === 'strength' ? HYB.strengthStage(S) : HYB.engineStage(S)).target, S.profile.sex)} next`)}</b><em>${h(w.name)} needs ${h(ST.sexText(HYB.laneTarget(l.lane, l.need), S.profile.sex))} ${l.ok ? '✓' : lim?.lane === l.lane ? '· limiter' : ''}</em></div>`).join('')}</div>
     ${['strength', 'engine', 'run'].some(l => BG.fast(S, l)) ? `<p class="hint">⚡ Comeback fast-track on ${['strength', 'engine', 'run'].filter(l => BG.fast(S, l)).map(l => HYB.LANE_ICON[l]).join(' ')}: gates open straight away, prove it and move on.</p>` : ''}
-    <p class="hint">${S.hybrid.finished ? 'Pro League conquered 👑' : lim ? `${HYB.LANE_ICON[lim.lane]} ${HYB.LANE_LABEL[lim.lane]} is your limiter.${lim.lane !== 'run' && !HYB.inFocus(S, lim.lane) ? ` ${lim.lane === 'engine' ? 'An' : 'A'} ${HYB.LANE_LABEL[lim.lane]} block would move it most.` : ''}` : '🏁 All lanes ready: your race gate is open!'}</p>
+    <p class="hint">${S.hybrid.finished ? 'World Championships conquered 🌍' : lim ? `${HYB.LANE_ICON[lim.lane]} ${HYB.LANE_LABEL[lim.lane]} is your limiter.${lim.lane !== 'run' && !HYB.inFocus(S, lim.lane) ? ` ${lim.lane === 'engine' ? 'An' : 'A'} ${HYB.LANE_LABEL[lim.lane]} block would move it most.` : ''}` : S.rebuild.active ? gateLockedLine() : '🏁 All lanes ready: your race gate is open!'}</p>
     <div class="row wrap">${onMap ? '' : '<button class="btn small" data-act="goto-hyb-map">Open Hybrid map</button>'}
       ${b.type !== 'deload' ? `<button class="btn ghost small" data-act="block-switch" data-b="${other}">Switch to ${other} block</button><button class="btn ghost small" data-act="block-switch" data-b="deload">Deload now</button>` : `<button class="btn ghost small" data-act="block-switch" data-b="${b.next}">Start ${b.next} block now</button>`}</div>
     ${S.hybrid.speedFocus ? '<p class="banner info">⚡ <strong>Speed focus:</strong> your next blocks lean on engine and race-pace work to bring your race time down.</p>' : ''}
@@ -257,7 +258,7 @@ function triCard() {
   return `<section class="card tri-card" style="order:8"><p class="eyebrow">Triathlon · ${w.emoji} ${h(w.name)}</p>
     <div class="lane-bars">${st.map(l => `<div class="${l.ok ? 'ok' : lim?.lane === l.lane ? 'lim' : ''}"><span>${TRI.LANE_ICON[l.lane]}</span><b>${h(l.lane === 'run' ? `Level ${S.run.level}` : l.have >= (l.lane === 'swim' ? TRI.SWIM_MAX : TRI.BIKE_MAX) ? 'All done' : `${(l.lane === 'swim' ? TRI.swimStage(S) : TRI.bikeStage(S)).target} gate next`)}</b><em>${h(w.name)} needs ${h(TRI.laneTarget(l.lane, l.need))} ${l.ok ? '✓' : lim?.lane === l.lane ? '· limiter' : ''}</em></div>`).join('')}</div>
     ${['swim', 'bike', 'run'].some(l => BG.fast(S, l)) ? `<p class="hint">⚡ Comeback fast-track on ${['swim', 'bike', 'run'].filter(l => BG.fast(S, l)).map(l => TRI.LANE_ICON[l]).join(' ')}: gates open straight away, prove it and move on.</p>` : ''}
-    <p class="hint">${S.tri.finished ? 'Full distance conquered 🏆' : lim ? `${TRI.LANE_ICON[lim.lane]} ${TRI.LANE_LABEL[lim.lane]} is your limiter: it moves your triathlon most right now.` : '🌉 All lanes ready: your transition gate is open!'}</p>
+    <p class="hint">${S.tri.finished ? 'Full distance conquered 🏆' : lim ? `${TRI.LANE_ICON[lim.lane]} ${TRI.LANE_LABEL[lim.lane]} is your limiter: it moves your triathlon most right now.` : S.rebuild.active ? gateLockedLine() : '🌉 All lanes ready: your transition gate is open!'}</p>
     <button class="btn small" data-act="goto-tri-map">Open Tri map</button></section>`;
 }
 
@@ -278,34 +279,54 @@ function hybridRaces(a) {
 // Ask the AI to look over all the answers for likely mistakes (units, typos, contradictions).
 const CHECK_FIELDS = ['runsLast4w', 'weeklyKm', 'longestKm', 'longestTime', 'best5kText', 'best5kMode', 'best10kText', 'best10kMode', 'continuous', 'dream', 'dreamEvent', 'dreamDate',
   'sex', 'bodyweight', 'squat5', 'deadlift5', 'pullups', 'liftUnit', 'liftMode', 'liftExp', 'row1000Text', 'swimDist', 'swimM', 'longestRide', 'rideKm', 'daysPerWeek'];
-async function checkAnswers() {
+// What the AI is doing on the result screen: busy / ok / off (unreachable), per task.
+ui.ai = {};
+async function aiRun(task, text) {
+  ui.ai[task] = 'busy'; refreshAiStatus();
+  const r = await understand(task, text);
+  ui.ai[task] = r ? 'ok' : 'off';
+  refreshAiStatus();
+  return r;
+}
+function aiStatusLine() {
+  const st = Object.values(ui.ai);
+  if (!st.length) return '';
+  const cls = st.includes('busy') ? 'busy' : st.every(x => x === 'off') ? 'off' : 'ok';
+  const txt = cls === 'busy' ? '🤖 The AI is reading your answers…' : cls === 'off' ? '🤖 The AI couldn\'t be reached: your placement uses the rules only (it still works).' : '🤖 The AI read your answers ✓';
+  return `<p class="ai-status ${cls}" id="ai-status">${txt}</p>`;
+}
+function refreshAiStatus() { const el = document.getElementById('ai-status'); if (el) el.outerHTML = aiStatusLine(); }
+// "Not quite? Tell the AI": a correction box that sends the athlete's own words back for a second reading.
+const aiFixBox = (task, prompt) => `<div class="ai-fix"><input type="text" id="ai-note-${task}" maxlength="240" placeholder="${h(prompt)}"><button type="button" class="btn small" data-act="ai-fix" data-task="${task}">Read again</button></div>`;
+
+async function checkAnswers(note = '') {
   const a = ui.ob.a;
   const facts = Object.fromEntries(CHECK_FIELDS.filter(k => a[k] !== undefined && a[k] !== '').map(k => [k, a[k]]));
   const key = JSON.stringify(facts);
-  if (a.check?.for === key) return;
+  if (a.check?.for === key && !note) return;
   ui.ob.a.check = { for: key, issues: null };
-  const r = await understand('check', key);
-  ui.ob.a.check = { for: key, issues: Array.isArray(r?.issues) ? r.issues.filter(i => CHECK_FIELDS.includes(i.field)).slice(0, 3) : [] };
+  const r = await aiRun('check', note ? `${key}\nThe athlete adds: ${note}` : key);
+  ui.ob.a.check = { for: key, note, issues: Array.isArray(r?.issues) ? r.issues.filter(i => CHECK_FIELDS.includes(i.field)).slice(0, 3) : [] };
   if (document.querySelector('.result')) renderOnboarding();
 }
 
 // Ask the AI to turn other lifts / tests into squat and deadlift estimates (non-blocking).
-async function readLifts() {
+async function readLifts(note = '') {
   const a = ui.ob.a, text = String(a.otherLifts || '').trim();
-  if (!text || a.liftsAI?.for === text) return;
-  const r = await understand('lifts', `${text}${a.bodyweight ? ` (bodyweight ${a.bodyweight} kg)` : ''}`);
-  if (!r || (!r.squat5Kg && !r.deadlift5Kg && !r.pullups)) return;
+  if (!text || (a.liftsAI?.for === text && !note)) return;
+  const r = await aiRun('lifts', `${text}${a.bodyweight ? ` (bodyweight ${a.bodyweight} ${a.liftUnit === 'lb' ? 'lb' : 'kg'})` : ''}${note ? `. Correction from the athlete: ${note}` : ''}`);
+  if (!r || (!r.squat5Kg && !r.deadlift5Kg && !r.pullups)) { if (note && document.querySelector('.result')) { toast('The AI could not read that. Try the numbers, e.g. "squat 100 kg x 5".'); } return; }
   ui.ob.a.liftsAI = { for: text, ...r, accepted: true };
   if (document.querySelector('.result')) renderOnboarding();
 }
 
 // Ask the AI what the dream means (non-blocking). The result screen shows it for a yes / not quite.
-async function readDream() {
+async function readDream(note = '') {
   const a = ui.ob.a, text = [a.dream, a.dreamEvent].filter(Boolean).join(' · ');
-  if (!text || a.dreamAI?.for === text) return;
-  const r = await understand('dream', text);
-  if (!r || r.track === 'none') return;
-  ui.ob.a.dreamAI = { for: text, ...r, accepted: true };
+  if (!text || (a.dreamAI?.for === text && !note)) return;
+  const r = await aiRun('dream', note ? `${text}. Correction from the athlete about what they mean: ${note}` : text);
+  if (!r || r.track === 'none') { if (note) toast('The AI could not read that. Try naming the race and the time, e.g. "Hyrox Open under 1:20".'); return; }
+  ui.ob.a.dreamAI = { for: text, ...r, accepted: true, note };
   if (ui.ob && !S.placedAt || ui.retake) { const res = document.querySelector('.result'); if (res) renderOnboarding(); }
 }
 
@@ -342,9 +363,10 @@ function collectOb() {
   const form = $('#ob-form');
   if (!form) return;
   const a = ui.ob.a;
+  const radios = new Set();
   for (const el of form.elements) {
     if (!el.name) continue;
-    if (el.type === 'radio') { if (el.checked) a[el.name] = el.value; }
+    if (el.type === 'radio') { radios.add(el.name); if (el.checked) a[el.name] = el.value; }
     else if (el.type === 'checkbox') {
       if (el.name.startsWith('tr_')) {
         const k = el.name.slice(3);
@@ -359,6 +381,8 @@ function collectOb() {
       else a[el.name] = el.checked;
     } else a[el.name] = el.value;
   }
+  // A single-choice question left empty (tapped again to clear) forgets its answer.
+  for (const n of radios) if (!form.querySelector(`[name="${n}"]:checked`)) delete a[n];
 }
 
 function renderOnboarding() {
@@ -380,15 +404,19 @@ function renderOnboarding() {
         <p class="eyebrow">${h(w.name)}</p>
         <h2>Level ${lvl.n} · ${h(lvl.name)}</h2>
         <p>You qualify for Level ${preview.qualifying}. You start one level below it so the first wins come quickly. Pass the gates to climb back up fast.</p>
-        ${ui.ob.a.check?.issues?.length ? `<div class="check-box"><strong>🤖 Quick check before we start</strong>${ui.ob.a.check.issues.map(i => `<div class="check-item"><span>${h(i.message)}</span><button type="button" class="btn small" data-act="fix-field" data-field="${h(i.field)}">Fix it</button></div>`).join('')}<p class="hint">All correct? Just start your journey.</p></div>` : ''}
+        ${aiStatusLine()}
+        ${ui.ob.a.check?.issues?.length ? `<div class="check-box"><strong>🤖 Quick check before we start</strong>${ui.ob.a.check.issues.map(i => `<div class="check-item"><span>${h(i.message)}</span><button type="button" class="btn small" data-act="fix-field" data-field="${h(i.field)}">Fix it</button></div>`).join('')}<p class="hint">All correct? Just start your journey. Or explain to the AI:</p>${aiFixBox('check', 'e.g. "my lifts are in lb" or "the 44 is my ride, not my run"')}</div>`
+          : ui.ob.a.check?.issues ? `<details class="ai-more"><summary>Something looks wrong? Tell the AI</summary>${aiFixBox('check', 'e.g. "my lifts are in lb" or "I ride 44 km, not 20"')}</details>` : ''}
         ${dreamLine({ ...normalize(ui.ob.a), ...(ui.ob.a.dreamAI?.accepted ? { target: targetFromAI(ui.ob.a.dreamAI) || undefined, dreamDate: ui.ob.a.dreamDate || ui.ob.a.dreamAI.date || '' } : {}) }, preview.placed)}
         ${ui.ob.a.dreamAI ? `<div class="ai-read ${ui.ob.a.dreamAI.accepted ? '' : 'off'}"><span>🤖 Here's what I understood: <strong>${h(ui.ob.a.dreamAI.summary || '')}</strong></span>
-          <div class="row">${ui.ob.a.dreamAI.accepted ? '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="0">Not quite</button>' : '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="1">Use this reading</button>'}</div></div>` : ''}
+          <div class="row">${ui.ob.a.dreamAI.accepted ? '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="0">Not quite</button>' : '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="1">Use this reading</button>'}</div>
+          ${!ui.ob.a.dreamAI.accepted ? aiFixBox('dream', 'What did you mean? e.g. "Hyrox Pro, not Open, by next June"') : ''}</div>` : ''}
         ${(ui.ob.a.tracks || []).includes('hybrid') ? (() => { const hy = HYB.placeHybrid(preview.state, normalize(ui.ob.a), now()); const w = HYBRID_WORLDS[hy.world];
           const lr = HYB.readLifts(normalize(ui.ob.a), ui.ob.a.sex);
           return `<div class="dream-box"><strong>🏋️⚙️🏃 Hybrid: ${w.emoji} ${h(w.name)}</strong>${lr.level ? `<br><span class="hint">Read as: ${[lr.sqRatio ? `squat ${lr.sqRatio.toFixed(1)}x bodyweight` : '', lr.dlRatio ? `deadlift ${lr.dlRatio.toFixed(1)}x` : ''].filter(Boolean).join(' · ')} (bodyweight ${Math.round(lr.bwKg)} kg). Wrong? Check kg / lb.</span>` : ''}<br><span class="hint">Strength: ${h(ST.sexText(HYB.laneTarget('strength', hy.strength.stage + 1), ui.ob.a.sex))} next · Engine: ${h(HYB.laneTarget('engine', hy.engine.stage + 1))} next · starting with a ${hy.block.type === 'engine' ? '⚡ Engine' : '🏋️ Strength'} block</span></div>
             ${ui.ob.a.liftsAI ? `<div class="ai-read ${ui.ob.a.liftsAI.accepted ? '' : 'off'}"><span>🤖 I read your lifts as: <strong>${h(ui.ob.a.liftsAI.summary || '')}</strong>${ui.ob.a.liftsAI.confidence === 'low' ? ' <em class="hint">(rough estimate)</em>' : ''}</span>
-              <div class="row"><button type="button" class="btn ghost small" data-act="lifts-ai" data-v="${ui.ob.a.liftsAI.accepted ? 0 : 1}">${ui.ob.a.liftsAI.accepted ? 'Not quite' : 'Use this estimate'}</button></div></div>` : ''}`; })() : ''}
+              <div class="row"><button type="button" class="btn ghost small" data-act="lifts-ai" data-v="${ui.ob.a.liftsAI.accepted ? 0 : 1}">${ui.ob.a.liftsAI.accepted ? 'Not quite' : 'Use this estimate'}</button></div>
+              ${!ui.ob.a.liftsAI.accepted ? aiFixBox('lifts', 'Correct it, e.g. "those were in lb" or "bench 100 kg for 3"') : ''}</div>` : ''}`; })() : ''}
         ${(ui.ob.a.tracks || []).includes('tri') ? (() => { const tri = TRI.placeTri(preview.state, normalize(ui.ob.a)); const w = TRI_WORLDS[tri.world];
           return `<div class="dream-box"><strong>🏊🚴🏃 Triathlon: ${w.emoji} ${h(w.name)}</strong><br><span class="hint">Swim: ${h(TRI.laneTarget('swim', tri.swim.stage + 1))} next · Bike: ${h(TRI.laneTarget('bike', tri.bike.stage + 1))} next · Run: your Run level${tri.learnToSwim ? ' · starting with swim lessons' : ''}</span></div>`; })() : ''}
         ${backgroundOf(ui.ob.a).length ? `<div class="dream-box">🏅 <strong>Welcome back, athlete.</strong><br><span class="hint">${h(BG.describe(backgroundOf(ui.ob.a)).join(' · '))}. Your technique is credited and your gates open early while you climb back: muscle memory is real.</span></div>` : ''}
@@ -450,8 +478,8 @@ function banners() {
   if (TRI.hasTri(S) && S.tri.learnToSwim && S.tri.swim.stage === 0) out.push('<div class="banner info"><strong>🏊 Learning to swim?</strong> Lessons with a coach are the fastest, safest start. Never swim alone; choose a lifeguarded pool.</div>');
   if (S.mode?.type === 'sick') out.push(`<div class="banner warn"><strong>🤒 Sick mode.</strong> ${S.mode.where === 'above' ? 'Only easy movement, and only if you feel like it.' : 'Full rest: no training.'} Your streak is frozen, nothing is lost. <button class="link" data-act="mode-end">I'm better</button></div>`);
   if (S.mode?.type === 'busy') out.push(`<div class="banner info"><strong>🧳 Busy mode.</strong> Only Key sessions this week; short versions count. <button class="link" data-act="mode-end">Back to normal</button></div>`);
-  if (S.rebuild.active && S.rebuild.redFlag) out.push(`<div class="banner danger"><strong>Running is paused.</strong> You reported warning signs. Please see a physio or doctor. Gentle mobility is still open. <button class="link" data-act="cleared">I've been cleared</button></div>`);
-  else if (S.rebuild.active) out.push(`<div class="banner warn"><strong>Rebuild Track · R${S.rebuild.stage + 1} ${h(REBUILD_STAGES[S.rebuild.stage].name)}.</strong> Your Run level ${S.rebuild.savedRunLevel} is saved. Keep pain at 2/10 or less.${S.rebuild.seeProfessional ? ' Not medical advice: a physio check is a good idea.' : ''}</div>`);
+  if (S.rebuild.active && S.rebuild.redFlag) out.push(`<div class="banner danger"><strong>Running is paused.</strong> You reported warning signs. Please see a physio or doctor. Gentle mobility is still open. <strong>Locked for now:</strong> runs, swim, bike, lifting and race gates. <button class="link" data-act="cleared">I've been cleared</button></div>`);
+  else if (S.rebuild.active) out.push(`<div class="banner warn"><strong>Rebuild Track · R${S.rebuild.stage + 1} ${h(REBUILD_STAGES[S.rebuild.stage].name)}.</strong> Your Run level ${S.rebuild.savedRunLevel} is saved. Keep pain at 2/10 or less.${S.rebuild.seeProfessional ? ' Not medical advice: a physio check is a good idea.' : ''} <strong>Locked for now:</strong> race gates (and hard runs) until the Rebuild Track is done. <button class="link" data-act="painfree">I'm pain-free now</button></div>`);
   if (S.refresher) out.push(S.refresher.reason === 'illness'
     ? `<div class="banner info"><strong>💛 Recovery plan.</strong> Easy health checks first, then you're back on your map${S.run.reclaim ? ` to reclaim Level ${S.run.reclaim}` : ''}. Feeling great early? The Prove It run fast-tracks you.</div>`
     : `<div class="banner info"><strong>Refresher course.</strong> Welcome back! Start with the Prove It run: hit it and you skip the rest.</div>`);
@@ -461,6 +489,9 @@ function banners() {
   return out.join('');
 }
 
+// A ready gate is still locked during the Rebuild Track: say so instead of "open".
+const gateLockedLine = () => (S.rebuild.redFlag ? '🔒 All lanes ready, but the race gate stays locked until you\'re cleared. <button class="link" data-act="cleared">I\'ve been cleared</button>'
+  : '🔒 All lanes ready, but the race gate is locked while you\'re on the Rebuild Track. <button class="link" data-act="painfree">I\'m pain-free now</button>');
 const STATUS_ICON = { done: '✅', provisional: '⏳', open: '<span class="dot"></span>', locked: '🔒', slot: '🧱' };
 const TYPE_LABEL = { run: 'Run', swim: 'Swim', bike: 'Bike', lift: 'Lift', engine: 'Engine', maint: 'Maintain', prep: 'Prep', slot: 'Prep slot', rest: 'Rest', gate: 'Gate', proveit: 'Prove It' };
 
@@ -469,7 +500,7 @@ function stepRow(track, st) {
   return `<li class="step ${st.status} t-${st.type}">
       <button ${clickable ? `data-act="open-step" data-track="${track}" data-idx="${st.idx}"` : 'disabled'}>
         <span class="icon">${STATUS_ICON[st.status]}</span>
-        <span class="txt"><span class="type">${TYPE_LABEL[st.type]}${st.boss ? ' · Boss' : ''}</span>${h(st.title)}${st.swapped ? ' <em class="hint">(swapped)</em>' : ''}${st.status === 'provisional' ? '<em class="hint"> waiting for the morning check</em>' : ''}</span>
+        <span class="txt"><span class="type">${TYPE_LABEL[st.type]}${st.boss ? ' · Boss' : ''}</span>${h(st.title)}${st.swapped ? ' <em class="hint">(swapped)</em>' : ''}${st.status === 'provisional' ? '<em class="hint"> waiting for the morning check</em>' : ''}${st.lockReason ? `<em class="lock-why">🔒 ${h(st.lockReason)}</em>` : ''}</span>
         <span class="xp">${st.xp ? `+${st.xp}` : ''}</span>
       </button></li>`;
 }
@@ -504,7 +535,7 @@ function viewToday() {
   const mode = primaryMode();
   const heroMain = mode === 'hyb' ? (() => { const w = HYB.hybWorld(S), b = S.hybrid.block.type, lim = HYB.limiter(S);
       return `<p class="eyebrow">${hello} · Hybrid</p><h2>${w.emoji} ${h(w.name)}</h2>
-        <p class="hint">${b === 'deload' ? '😮‍💨 Deload week' : b === 'engine' ? '⚡ Engine block' : '🏋️ Strength block'} · ${lim ? `limiter: ${HYB.LANE_ICON[lim.lane]} ${HYB.LANE_LABEL[lim.lane]}` : 'race gate open 🏁'} · Run Level ${lvl.n}</p>`; })()
+        <p class="hint">${b === 'deload' ? '😮‍💨 Deload week' : b === 'engine' ? '⚡ Engine block' : '🏋️ Strength block'} · ${lim ? `limiter: ${HYB.LANE_ICON[lim.lane]} ${HYB.LANE_LABEL[lim.lane]}` : S.rebuild.active ? 'race gate locked 🔒 (Rebuild)' : 'race gate open 🏁'} · Run Level ${lvl.n}</p>`; })()
     : mode === 'tri' ? (() => { const w = TRI.triWorld(S), lim = TRI.limiter(S);
       return `<p class="eyebrow">${hello} · Triathlon</p><h2>${w.emoji} ${h(w.name)}</h2>
         <p class="hint">${lim ? `limiter: ${TRI.LANE_ICON[lim.lane]} ${TRI.LANE_LABEL[lim.lane]}` : 'transition gate open 🌉'} · Run Level ${lvl.n}</p>`; })()
@@ -609,7 +640,7 @@ function viewMap() {
   if (ui.mapMode === 'tri') {
     const lim = TRI.limiter(S);
     const triSide = `<section class="card map-side-info"><p class="eyebrow">Triathlon · ${TRI.triWorld(S).emoji} ${h(TRI.triWorld(S).name)}</p><h3>${h(TRI.triWorld(S).race)}</h3>
-      <p class="hint">${lim ? `${TRI.LANE_ICON[lim.lane]} <strong>${TRI.LANE_LABEL[lim.lane]}</strong> is your limiter.${lim.lane === 'run' ? ' Your running lives on the Run map.' : ''}` : '🌉 All three lanes are ready: the transition gate is open!'}</p>
+      <p class="hint">${lim ? `${TRI.LANE_ICON[lim.lane]} <strong>${TRI.LANE_LABEL[lim.lane]}</strong> is your limiter.${lim.lane === 'run' ? ' Your running lives on the Run map.' : ''}` : S.rebuild.active ? gateLockedLine() : '🌉 All three lanes are ready: the transition gate is open!'}</p>
       ${lim?.lane === 'run' ? '<button class="btn primary small" data-act="goto-run-map">Go to Run map</button>' : lim ? `<button class="btn primary small" data-act="lane-step" data-lane="${lim.lane}">Next ${lim.lane} session</button>` : '<button class="btn primary small" data-act="open-step" data-track="triGate" data-idx="0">Start the gate</button>'}</section>`;
     prepareLaneMap('tri');
     return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${renderLaneMap(S, ui, 'tri')}</div><div class="map-side">${triSide}${triCard().replace('style="order:8"', '')}</div></div>`;
@@ -712,13 +743,21 @@ function playLanes(id, cfg, cur, all, seen, shown, moves, focusLane, focusY) {
           stop();
           sfx.arrive(lane);
           signature(id, lane);
-          if (pt) celebrate(pt.x, pt.y - 72, !seen ? `${cfg.icon[lane]} ${lane === 'strength' ? 'LIGHT WEIGHT!' : 'Here I am!'}` : lane === 'run' ? `Level ${cur[lane]}! 🏃` : lane === 'strength' ? 'LIGHT WEIGHT! 💪' : `${cfg.icon[lane]} Stage up! 🎉`);
-          setTimeout(step, 2100);
+          if (pt) celebrate(pt.x, pt.y - 72, `${!seen ? (lane === 'strength' ? 'LIGHT WEIGHT! ' : '') : lane === 'strength' ? 'LIGHT WEIGHT! 💪 ' : ''}${arrivalLabel(cfg, lane, cur[lane])}`);
+          setTimeout(step, 2800);
         },
       });
     }, 900);
   };
   step();
+}
+
+// "🚴 40 km ✓ → next 90 km": what the character just cleared and what it works on now.
+function arrivalLabel(cfg, lane, v) {
+  if (lane === 'run') return `🏃 Level ${v}`;
+  const done = cfg.stageAt(lane, v), max = cfg.max(lane);
+  const short = t => ST.sexText(String(t || ''), S.profile.sex).replace(/^(Swim|Ride|Run) /i, '');
+  return `${cfg.icon[lane]} ${done ? `${short(done.target)} ✓` : 'Start'}${v < max ? ` → next ${short(cfg.stage(S, lane).target)}` : ' · path complete!'}`;
 }
 
 function worldCleared(id, fromWorld) {
@@ -1019,6 +1058,21 @@ function painButtons() {
 }
 
 const MODALS = {
+  painfree(m) {
+    const checks = [
+      ...(m.cleared ? ['A physio or doctor has cleared me to train'] : []),
+      'Walking, stairs and daily life are pain-free',
+      '10 single-leg hops on each leg: pain 2/10 or less',
+      'No extra pain or stiffness the morning after activity',
+    ];
+    return `<form id="pf-form" onsubmit="return false"><h2>${m.cleared ? '🩺 Cleared to train?' : '💚 Pain-free now?'}</h2>
+      <p class="why">💡 A quick safety check before the locks come off. Not medical advice: if in doubt, stay on the Rebuild Track.</p>
+      ${checks.map((c, i) => `<label class="choice"><input type="checkbox" name="pf${i}"><span>${h(c)}</span></label>`).join('')}
+      <p class="hint">Back to training puts you one level below your saved Run level (Level ${S.rebuild.savedRunLevel || S.run.level}), with a fast reclaim. Race gates and hard sessions unlock.</p>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Not yet</button>
+        ${m.cleared ? '<button type="button" class="btn ghost" data-act="painfree-go" data-mode="gradual">Cleared, but go gradually</button>' : ''}
+        <button type="button" class="btn primary" data-act="painfree-go">Back to training</button></div></form>`;
+  },
   background(m) {
     return `<form id="bg-form"><h2>🏅 Sporting background</h2><p class="why">💡 Skills stay for life, fitness comes back faster. We credit your technique and open gates early while you climb back.</p>
       ${backgroundQuestions(m.a)}<div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`;
@@ -1312,7 +1366,18 @@ const actions = {
   'map-bg'() { if (ui.mapPopup && !ui.mapRunning) { ui.mapPopup = null; render(); } },
   'map-me'() { followY(POINTS[ui.avatarAt ?? S.run.level].y); },
   'open-level'() { ui.modal = { type: 'level' }; renderModal(); },
-  cleared() { if (confirm('Confirm a physio or doctor has cleared you to train?')) commit(E.clearRedFlag(S, now())); },
+  cleared() { ui.modal = { type: 'painfree', cleared: true }; renderModal(); },
+  painfree() { ui.modal = { type: 'painfree', cleared: false }; renderModal(); },
+  'painfree-go'(el) {
+    const f = el.closest('form');
+    if ([...f.querySelectorAll('input[type=checkbox]')].some(c => !c.checked)) { toast('Tick every box first, or keep going with the Rebuild Track 💛'); return; }
+    if (S.rebuild.redFlag) S = E.clearRedFlag(S, now());
+    if (el.dataset.mode === 'gradual') { ui.modal = null; renderModal(); commit(S); toast('Cleared ✅ Rebuild sessions are open again. Step by step 💪'); return; }
+    const saved = S.rebuild.savedRunLevel;
+    ui.modal = null; renderModal();
+    commit(E.leaveRebuild(S, now()));
+    toast(`Welcome back! Run Level ${S.run.level} now, with a fast reclaim to Level ${saved} 💪`);
+  },
   'report-pain'() { ui.modal = { type: 'rebuildPrompt' }; renderModal(); },
   export() { store.exportFile(S); },
   retake() { if (confirm('Retake the assessment? Your XP and badges stay; your level is set again.')) { ui.retake = true; ui.ob = { step: 0, a: { ...(S.answers || {}) } }; render(); } },
@@ -1359,6 +1424,15 @@ const actions = {
   'fix-field'(el) {
     const steps = obSteps(ui.ob.a), i = steps.findIndex(st => (st.body || '').includes(`name="${el.dataset.field}"`));
     if (i >= 0) { ui.ob.step = i; renderOnboarding(); window.scrollTo(0, 0); setTimeout(() => document.querySelector(`[name="${el.dataset.field}"]`)?.focus(), 50); }
+  },
+  async 'ai-fix'(el) {
+    const task = el.dataset.task, note = $(`#ai-note-${task}`)?.value.trim();
+    if (!note) { toast('Type a few words for the AI first.'); return; }
+    el.disabled = true; el.textContent = 'Reading…';
+    collectOb();
+    await (task === 'dream' ? readDream(note) : task === 'lifts' ? readLifts(note) : checkAnswers(note));
+    if (task === 'check' && !ui.ob.a.check?.issues?.length) toast('🤖 The AI found nothing else to fix. If the numbers are still off, change them with Back.');
+    if (document.querySelector('.result')) renderOnboarding();
   },
   'dream-ai'(el) { if (ui.ob.a.dreamAI) { ui.ob.a.dreamAI.accepted = el.dataset.v === '1'; renderOnboarding(); } },
   'sugg-apply'(el) {
@@ -1497,6 +1571,25 @@ function readDraft() {
   d.msg = f.msg.value;
   if (f.myName) d.myName = f.myName.value;
 }
+
+// Enter in an AI correction box sends it (instead of submitting the questionnaire).
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || !e.target.closest?.('.ai-fix')) return;
+  e.preventDefault();
+  e.target.closest('.ai-fix').querySelector('button')?.click();
+}, true);
+
+// Tapping the selected answer of a single-choice question again clears it.
+document.addEventListener('pointerdown', e => {
+  const r = e.target.closest('label.choice')?.querySelector('input[type=radio]');
+  if (r) r.dataset.was = r.checked ? '1' : '';
+}, true);
+document.addEventListener('click', e => {
+  const r = e.target;
+  if (r.type !== 'radio' || !r.closest('label.choice')) return;
+  if (r.dataset.was === '1') { r.checked = false; r.dispatchEvent(new Event('change', { bubbles: true })); }
+  r.dataset.was = '';
+}, true);
 
 document.addEventListener('change', async e => {
   const el = e.target;
@@ -1643,7 +1736,7 @@ window.addEventListener('hashchange', () => {
   if (!ui.modal) render();
 });
 
-$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
 
 // ---------- installable app ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;

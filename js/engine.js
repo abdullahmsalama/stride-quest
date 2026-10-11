@@ -5,6 +5,8 @@ import * as TRI from './tri.js';
 import * as HYB from './hybrid.js';
 import * as ST from './standards.js';
 import * as BG from './background.js';
+import { TRI_WORLDS } from './data/tri.js';
+import { HYBRID_WORLDS } from './data/hybrid.js';
 
 export const DAY = 864e5;
 export const XP = { run: 30, swim: 30, bike: 30, lift: 30, engine: 30, maint: 25, prep: 20, slot: 20, rest: 10, gate: 100, proveit: 30, painCheck: 5, daily: 5, restDay: 10, weekBonus: 50 };
@@ -134,16 +136,31 @@ export function trackSteps(s, track) {
     if (st.prepReq != null && s.prep.level < st.prepReq && st.alt) step = { ...step, ...st.alt, title: ST.sexText(st.alt.title, sex), detail: ST.sexText(st.alt.detail, sex), swapped: true };
     const d = done[idx];
     let status = d ? (d.provisional ? 'provisional' : 'done') : 'open';
-    if (status === 'open' && st.type === 'gate' && !gateOpen) status = 'locked';
+    // Every lock carries a plain reason, shown wherever the step is.
+    let why = null;
+    const lock = reason => { status = 'locked'; why = reason; };
+    if (status === 'open' && st.type === 'gate' && !gateOpen) lock(gateWhy(s, track));
     if (status === 'open' && track === 'run' && st.type === 'slot') status = 'slot';
-    if (track === 'rebuild' && s.rebuild.redFlag && status === 'open' && !(s.rebuild.stage === 0 && idx === 1)) status = 'locked';
-    if ((track === 'swim' || track === 'bike') && s.rebuild.redFlag && status === 'open') status = 'locked';
-    if (track === 'triGate' && s.rebuild.active && status === 'open') status = 'locked'; // races wait until rebuilt
-    if ((track === 'hyGate') && s.rebuild.active && status === 'open') status = 'locked';
-    if ((track === 'strength' || track === 'engine') && status === 'open' && !HYB.inFocus(s, track)) { status = 'locked'; step = { ...step, held: true }; }
-    if ((track === 'strength' || track === 'engine' || track === 'hyMaint') && s.rebuild.redFlag && status === 'open') status = 'locked';
+    if (track === 'rebuild' && s.rebuild.redFlag && status === 'open' && !(s.rebuild.stage === 0 && idx === 1)) lock(WHY.redFlag);
+    if ((track === 'swim' || track === 'bike') && s.rebuild.redFlag && status === 'open') lock(WHY.redFlag);
+    if ((track === 'triGate' || track === 'hyGate') && s.rebuild.active && status === 'open') lock(s.rebuild.redFlag ? WHY.redFlag : WHY.rebuild); // races wait until rebuilt
+    if ((track === 'strength' || track === 'engine') && status === 'open' && !HYB.inFocus(s, track)) { lock(WHY.held(track)); step = { ...step, held: true }; }
+    if ((track === 'strength' || track === 'engine' || track === 'hyMaint') && s.rebuild.redFlag && status === 'open') lock(WHY.redFlag);
+    if (why) step = { ...step, lockReason: why };
     return { ...step, status, xp: XP[st.type] || 0 };
   });
+}
+
+export const WHY = {
+  redFlag: 'Paused: you reported warning signs. Once a physio or doctor clears you, tap "I\'ve been cleared".',
+  rebuild: 'Races wait while you\'re on the Rebuild Track. Finish it, or tap "I\'m pain-free" if the pain has gone.',
+  held: lane => `This is a ${lane === 'strength' ? 'Engine' : 'Strength'} block: ${lane} is on maintenance and builds again next block.`,
+};
+function gateWhy(s, track) {
+  if (track === 'run') { const p = levelProgress(s); return `Earn ${p.target} XP in this level first (${p.earned} so far).`; }
+  if (track === 'triGate' || track === 'hyGate') return 'Opens when all three lanes reach this world\'s flags.';
+  if (track === 'rebuild' && s.rebuild.redFlag) return WHY.redFlag;
+  return 'Do 2 of the sessions above first.';
 }
 
 export function levelXpTarget(steps) {
@@ -182,14 +199,14 @@ export function applyBackground(state, background) {
   if (s.tri) {
     s.tri.swim.stage = Math.max(s.tri.swim.stage, BG.skillFloor(s.background, 'swim'));
     s.tri.bike.stage = Math.max(s.tri.bike.stage, BG.skillFloor(s.background, 'bike'));
-    const w = [0, 1, 2, 3, 4, 5].findIndex(i => TRI.laneStatus(s, i).some(l => !l.ok));
-    s.tri.world = Math.max(s.tri.world, w < 0 ? 5 : w);
+    const n = TRI_WORLDS.length, w = [...Array(n).keys()].findIndex(i => TRI.laneStatus(s, i).some(l => !l.ok));
+    s.tri.world = Math.max(s.tri.world, w < 0 ? n - 1 : w);
   }
   if (s.hybrid) {
     s.hybrid.strength.stage = Math.max(s.hybrid.strength.stage, BG.skillFloor(s.background, 'strength'));
     s.hybrid.engine.stage = Math.max(s.hybrid.engine.stage, BG.skillFloor(s.background, 'engine'));
-    const w = [0, 1, 2, 3, 4, 5].findIndex(i => HYB.laneStatus(s, i).some(l => !l.ok));
-    s.hybrid.world = Math.max(s.hybrid.world, w < 0 ? 5 : w);
+    const n = HYBRID_WORLDS.length, w = [...Array(n).keys()].findIndex(i => HYB.laneStatus(s, i).some(l => !l.ok));
+    s.hybrid.world = Math.max(s.hybrid.world, w < 0 ? n - 1 : w);
   }
   return s;
 }
@@ -395,7 +412,7 @@ function passGate(s, track, now, msgs, opts = {}) {
     if (r.tier === 'slow') { s.hybrid.speedFocus = true; s.hybrid.block.next = 'engine'; msgs.push('You finished, that counts! Next up: some speed work to move faster through the stations and runs.'); }
     badge(s, 'hybrid_gate', now, msgs);
     if (w.gate.boss) badge(s, 'first_boss', now, msgs);
-    if (s.hybrid.world >= 5) { s.hybrid.finished = true; msgs.push(`👑 ${w.name} conquered!`); return; }
+    if (s.hybrid.world >= HYBRID_WORLDS.length - 1) { s.hybrid.finished = true; msgs.push(`👑 ${w.name} conquered!`); return; }
     s.hybrid.world += 1;
     msgs.push(`🏁 ${w.name} cleared! Welcome to ${HYB.hybWorld(s).emoji} ${HYB.hybWorld(s).name}`);
   } else if (track === 'triGate') {
@@ -414,7 +431,7 @@ function passGate(s, track, now, msgs, opts = {}) {
     if (r.tier === 'slow') { s.tri.speedFocus = true; msgs.push('Finished! Next up: some pace work on your limiter to move faster.'); }
     badge(s, 'tri_gate', now, msgs);
     if (w.gate.boss) badge(s, 'first_boss', now, msgs);
-    if (s.tri.world >= 5) { s.tri.finished = true; msgs.push(`🏆 ${w.name} conquered. Full-distance triathlete!`); return; }
+    if (s.tri.world >= TRI_WORLDS.length - 1) { s.tri.finished = true; msgs.push(`🏆 ${w.name} conquered. Full-distance triathlete!`); return; }
     s.tri.world += 1;
     msgs.push(`🌉 ${w.name} cleared! Welcome to ${TRI.triWorld(s).emoji} ${TRI.triWorld(s).name}`);
   } else if (track === 'rebuild') {
@@ -488,6 +505,19 @@ export function enterRebuild(state, { redFlag = false, now }) {
   s.refresher = null;
   s.pending = [];
   s.history.push({ ts: now, kind: 'event', title: 'Entered Rebuild Track', xp: 0 });
+  return s;
+}
+
+// Pain gone before the Rebuild Track is finished: back to training, one level below the saved
+// one with a quick reclaim (the same landing as finishing R4).
+export function leaveRebuild(state, now) {
+  const s = clone(state);
+  if (!s.rebuild.active) return s;
+  const saved = s.rebuild.savedRunLevel || s.run.level;
+  const back = Math.max(1, saved - 1);
+  s.run = { ...s.run, level: back, done: {}, startedAt: now, gatePassed: false, reclaim: saved > back ? saved : s.run.reclaim };
+  s.rebuild = { active: false, stage: 0, done: {}, savedRunLevel: null, redFlag: false };
+  s.history.push({ ts: now, kind: 'event', title: 'Pain-free: back from the Rebuild Track', xp: 0 });
   return s;
 }
 

@@ -185,3 +185,17 @@ test('daily orders are stable per day and award once', () => {
   state = E.completeOrder(state, i, T0);
   assert.equal(state.xp, E.XP.daily);
 });
+
+test('locked steps say why, and pain-free athletes can leave the Rebuild Track', () => {
+  const T0 = new Date(2026, 9, 12, 8).getTime();
+  let { state } = E.placeFromAnswers(E.newState(T0), { continuous: '30-45', longestKm: 10, best5k: 26, runsLast4w: 12, pain: 'none', daysPerWeek: 3 }, T0);
+  const saved = state.run.level;
+  const gate = E.trackSteps(state, 'run').find(st => st.type === 'gate');
+  assert.match(gate.lockReason, /Earn \d+ XP/);
+  state = E.enterRebuild(state, { redFlag: true, now: T0 });
+  assert.ok(E.trackSteps(state, 'rebuild').filter(st => st.status === 'locked').every(st => /physio or doctor/.test(st.lockReason)));
+  state = E.leaveRebuild(E.clearRedFlag(state, T0), T0);
+  assert.equal(state.rebuild.active, false);
+  assert.equal(state.run.level, Math.max(1, saved - 1));
+  assert.equal(state.run.reclaim, saved);
+});

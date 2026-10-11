@@ -137,3 +137,28 @@ test('lifts: units, single lifts and strong squatters', () => {
   const s = withHybrid(runner(), { liftExp: 'y3', bodyweight: 80, squat5: 170 });
   assert.equal(s.hybrid.strength.stage, 7); // 2x bodyweight squat: the whole strength ladder
 });
+
+test('the top strength stages need both lifts and pull-ups', () => {
+  const r = a => H.readLifts({ bodyweight: 80, liftUnit: 'kg', liftMode: '5', ...a }, 'm');
+  assert.equal(r({ squat5: 180 }).level, 7); // one lift: capped at Pro Strength cleared
+  assert.equal(r({ squat5: 165, deadlift5: 185 }).level, 7); // no pull-ups given
+  assert.equal(r({ squat5: 165, deadlift5: 185, pullups: 12 }).level, 8);
+  assert.equal(r({ squat5: 165, deadlift5: 185, pullups: 5 }).level, 6);
+});
+
+test('Hybrid has worlds above Pro League', async () => {
+  const { HYBRID_WORLDS } = await import('../js/data/hybrid.js');
+  assert.deepEqual(HYBRID_WORLDS.slice(-3).map(w => w.name), ['Pro League', 'Elite Series', 'World Championships']);
+  assert.equal(H.STR_MAX, 9);
+  assert.equal(H.ENG_MAX, 9);
+});
+
+test('placement never skips a race boss you have not done', () => {
+  const T0 = new Date(2026, 9, 12, 8).getTime();
+  const { state } = E.placeFromAnswers(E.newState(T0), { continuous: '60+', longestKm: 21, best5k: 20, runsLast4w: 14, pain: 'none', daysPerWeek: 4 }, T0);
+  state.profile.tracks = ['run', 'hybrid']; state.profile.sex = 'm';
+  const strong = { liftExp: 'y3', bodyweight: 80, squat5: 130, deadlift5: 160, pullups: 15, liftUnit: 'kg', liftMode: '5', row1000: 3.4 };
+  assert.equal(H.placeHybrid(state, strong, T0).world, 3); // no races: Solo Stadium
+  assert.equal(H.placeHybrid(state, { ...strong, hybridRaces: [{ event: 'Hyrox', division: 'open', format: 'solo' }] }, T0).world, 4);
+  assert.equal(H.placeHybrid(state, { ...strong, hybridRaces: [{ event: 'Hyrox', division: 'pro', format: 'solo' }] }, T0).world, 5);
+});

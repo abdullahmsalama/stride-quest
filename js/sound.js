@@ -1,4 +1,5 @@
-// Tiny synthesized sound effects (Web Audio API, no audio files).
+// Sound effects: mostly synthesized (Web Audio API); the swimmer uses short public-domain water
+// recordings from Wikimedia Commons (sounds/), with the synth as a fallback while they load.
 const KEY = 'stride-quest:sound';
 let ctx = null, master = null;
 
@@ -17,6 +18,7 @@ export function unlockAudio() {
     master = ctx.createGain();
     master.gain.value = soundOn() ? 1 : 0;
     master.connect(ctx.destination);
+    loadClips();
   }
   if (ctx.state === 'suspended') ctx.resume();
 }
@@ -58,6 +60,25 @@ function noise() {
   src.buffer = noiseBuf;
   src.loop = true;
   return src;
+}
+
+// Recorded clips, decoded once after the first tap.
+const CLIP_FILES = { stroke: 'sounds/stroke.mp3', stroke2: 'sounds/stroke2.mp3', splash: 'sounds/splash.mp3', pool: 'sounds/pool.mp3' };
+const clips = {};
+function loadClips() {
+  for (const [k, url] of Object.entries(CLIP_FILES)) {
+    fetch(url).then(r => r.arrayBuffer()).then(b => new Promise((ok, no) => ctx.decodeAudioData(b, ok, no)))
+      .then(buf => { clips[k] = buf; }).catch(() => { /* synth fallback */ });
+  }
+}
+function clip(name, { vol = 0.8, rate = 1, loop = false } = {}) {
+  if (!ready() || !clips[name]) return null;
+  const src = ctx.createBufferSource(), g = ctx.createGain();
+  src.buffer = clips[name]; src.playbackRate.value = rate; src.loop = loop;
+  g.gain.value = vol;
+  src.connect(g).connect(master);
+  src.start();
+  return { stop(fade = 0.3) { const t = ctx.currentTime; g.gain.setTargetAtTime(0, t, fade / 3); src.stop(t + fade + 0.05); } };
 }
 
 // Speech bubble pop.
@@ -117,7 +138,14 @@ function burst({ freq = 1200, q = 1, dur = 0.15, vol = 0.25, type = 'bandpass', 
   src.connect(f).connect(g).connect(master);
   src.start(t); src.stop(t + dur + 0.05);
 }
-const splash = () => { burst({ freq: 1400, q: 0.7, dur: 0.22, vol: 0.32 }); burst({ freq: 500, q: 1, dur: 0.12, vol: 0.18, delay: 0.04 }); };
+// One freestyle stroke: a real water recording (alternating arms, slightly varied), or a soft
+// low-passed swish while the clips load.
+let arm = 0;
+const splash = () => {
+  arm ^= 1;
+  if (clip(arm ? 'stroke' : 'stroke2', { vol: 0.55, rate: 0.92 + Math.random() * 0.16 })) return;
+  burst({ freq: 600, q: 0.4, dur: 0.35, vol: 0.12, type: 'lowpass' });
+};
 const tick = () => tone(4200, { type: 'square', dur: 0.012, vol: 0.06 });
 const pull = () => burst({ freq: 700, q: 0.6, dur: 0.38, vol: 0.28, type: 'lowpass' });
 const heavyStep = () => tone(110, { type: 'sine', dur: 0.09, vol: 0.3, slideTo: 55 });
@@ -126,18 +154,19 @@ export function clank() {
   [587, 1611, 2690].forEach((f, i) => tone(f, { type: 'sine', dur: 0.4 - i * 0.08, vol: 0.1, delay: 0.16 }));
 }
 export function bell() { tone(2093, { type: 'sine', dur: 0.35, vol: 0.18 }); tone(2637, { type: 'sine', dur: 0.35, vol: 0.12, delay: 0.18 }); }
-export function bigSplash() { burst({ freq: 900, q: 0.5, dur: 0.5, vol: 0.4 }); burst({ freq: 2200, q: 0.8, dur: 0.3, vol: 0.2, delay: 0.08 }); }
+export function bigSplash() { if (clip('splash', { vol: 0.8 })) return; burst({ freq: 900, q: 0.5, dur: 0.5, vol: 0.4 }); burst({ freq: 2200, q: 0.8, dur: 0.3, vol: 0.2, delay: 0.08 }); }
 
 // A sound that loops while a character travels; returns a stop() function.
 export function moveLoop(lane) {
   if (!ready()) return () => {};
-  const every = { swim: 420, bike: 75, run: 270, strength: 330, engine: 560 }[lane] || 300;
+  const every = { swim: 640, bike: 75, run: 270, strength: 330, engine: 560 }[lane] || 300;
   const play = { swim: splash, bike: tick, run: step, strength: heavyStep, engine: pull }[lane] || step;
   const wind = lane === 'bike' ? whoosh() : null;
   wind?.set(0.35);
+  const pool = lane === 'swim' ? clip('pool', { vol: 0.35, loop: true }) : null; // pool-hall ambience under the strokes
   const id = setInterval(play, every);
   play();
-  return () => { clearInterval(id); wind?.stop(); };
+  return () => { clearInterval(id); wind?.stop(); pool?.stop(0.6); };
 }
 
 // The arrival sound for each character.

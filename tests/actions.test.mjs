@@ -73,7 +73,7 @@ test('coach can fix a misread placement through the same rules, or step back', a
   const before = s.hybrid.strength.stage;
   const fix = { type: 'update_numbers', bodyweightKg: 80, squat5Kg: 180 };
   const d = A.describe(s, fix, MON);
-  assert.match(d.detail, /Strength: .* → Pro Strength/);
+  assert.match(d.detail, /Strength: .* → Elite Strength/);
   const after = A.apply(s, fix, MON).state;
   assert.ok(after.hybrid.strength.stage > before);
   assert.equal(A.describe(after, fix, MON), null); // nothing left to change
