@@ -4,12 +4,13 @@ import { EXERCISES, videoLink } from './data/exercises.js';
 import * as store from './store.js';
 import { askCoach, canListen, canSpeak, listen, speak } from './coach.js';
 import * as M from './motivation.js';
-import { renderMap, runAvatar, mapPageY, POINTS } from './map.js';
+import { renderMap, runAvatar, mapPageY, POINTS, H as MAP_H } from './map.js';
 import { playPlacementIntro } from './intro.js';
 import * as sfx from './sound.js';
 import * as CH from './challenges.js';
 import * as K from './calendar.js';
 import { parseTime, formatTime, raceMinutes, estimateKm } from './time.js';
+import { dreamTarget, weeksUntil } from './goal.js';
 import { confetti } from './intro.js';
 
 // ---------- state ----------
@@ -88,33 +89,46 @@ const num = (name, label, cur, unit) => `<label class="field"><span>${h(label)}<
 
 function obSteps(a) {
   const steps = [
-    { title: "Let's find your starting level", body: `
+    { welcome: true, title: "Let's build your plan", body: `
+        <p class="lead">A few quick questions so your plan fits <strong>you</strong>: where you are today, what you dream of, and how your week looks.</p>
+        <ol class="welcome-list"><li><span>🎯</span><div><strong>Your dream</strong><br><span class="hint">What you want to achieve</span></div></li>
+          <li><span>📍</span><div><strong>Where you are today</strong><br><span class="hint">So the first level is a win, not a struggle</span></div></li>
+          <li><span>📅</span><div><strong>Your week</strong><br><span class="hint">Which days you can train</span></div></li></ol>
+        <p class="hint">About 2 minutes. Your answers stay on this device.</p>` },
+    { title: 'About you', why: 'So we only show the tracks you care about.', body: `
         <label class="field"><span>Your name (optional)</span><input type="text" name="name" value="${h(a.name || '')}" maxlength="40" autocomplete="given-name"></label>
         <p class="q">What do you train for? <span class="hint">Pick one or more</span></p>
         <div class="choices">${TRACKS.map(([k, l]) => check(`tr_${k}`, l, (a.tracks || ['run']).includes(k))).join('')}</div>
-        ${(a.tracks || []).length > 1 ? `<p class="q">Which one leads your week?</p>${radio('primary', TRACKS.filter(([k]) => a.tracks.includes(k)), a.primary || a.tracks[0])}` : ''}
-        <p class="q">Main goal</p>${radio('goal', GOALS, a.goal)}` },
-    { title: 'How many times did you run in the last 4 weeks?', body: radio('runsLast4w', RUNS, a.runsLast4w) },
-    { title: 'Longest you can run without stopping?', body: radio('continuous', CONTINUOUS, a.continuous) },
-    { title: 'Your running volume', body: `${num('weeklyKm', 'Roughly how many km per week lately?', a.weeklyKm, 'km')}
+        ${(a.tracks || []).length > 1 ? `<p class="q">Which one leads your week?</p>${radio('primary', TRACKS.filter(([k]) => a.tracks.includes(k)), a.primary || a.tracks[0])}` : ''}` },
+    { title: 'What do you dream of achieving?', why: 'Your plan works backwards from here. Dream big: we make it step by step.', body: `
+        <label class="field"><span>In your own words</span><textarea name="dream" rows="2" maxlength="160" placeholder="e.g. Run a sub-50 10K · Finish my first marathon · Hyrox Pro under 1:15 · Run 30 min without stopping">${h(a.dream || '')}</textarea></label>
+        <p class="q">Which is closest?</p>${radio('goal', GOALS, a.goal)}
+        <p class="q">A target event or date? <span class="hint">optional</span></p>
+        <label class="field"><span>Event</span><input type="text" name="dreamEvent" value="${h(a.dreamEvent || '')}" maxlength="60" placeholder="e.g. Berlin Marathon, Hyrox Dubai"></label>
+        <label class="field"><span>Date</span><input type="date" name="dreamDate" value="${h(a.dreamDate || '')}"></label>` },
+    { title: 'How many times did you run in the last 4 weeks?', why: 'Recent running tells us more than your best day ever.', body: radio('runsLast4w', RUNS, a.runsLast4w) },
+    { title: 'Longest you can run without stopping?', why: 'Sets your first level so it feels doable.', body: radio('continuous', CONTINUOUS, a.continuous) },
+    { title: 'Your running volume', why: 'Keeps your first weeks at a safe load.', body: `${num('weeklyKm', 'Roughly how many km per week lately?', a.weeklyKm, 'km')}
         <p class="q">Longest run in the last 2 months?</p><p class="hint">Distance, time, or both.</p>
         ${num('longestKm', 'Distance', a.longestKm, 'km')}${timeField('longestTime', 'Time', a.longestTime, 'h:mm:ss, e.g. 1:05:00')}` },
-    { title: 'Recent best times (optional)', body: `<p class="hint">Last 6 months. Type mm:ss (or h:mm:ss), as a total time or your pace per km. Leave empty if you don't know.</p>
+    { title: 'Recent best times (optional)', why: 'Fine-tunes your level and, later, your paces.', body: `<p class="hint">Last 6 months. Type mm:ss (or h:mm:ss), as a total time or your pace per km. Leave empty if you don't know.</p>
         ${timeField('best5kText', 'Best 5K', a.best5kText ?? (a.best5k ? formatTime(a.best5k) : ''), (a.best5kMode || 'time') === 'pace' ? 'pace, e.g. 5:30' : 'e.g. 27:30', 'best5kMode', a.best5kMode)}
         ${timeField('best10kText', 'Best 10K', a.best10kText ?? (a.best10k ? formatTime(a.best10k) : ''), (a.best10kMode || 'time') === 'pace' ? 'pace, e.g. 5:45' : 'e.g. 58:00 or 1:02:30', 'best10kMode', a.best10kMode)}
         <div class="choices">${check('halfDone', 'I have finished a half marathon', a.halfDone)}${check('marathonDone', 'I have finished a marathon', a.marathonDone)}${check('ultraDone', 'I have finished an ultra', a.ultraDone)}</div>
         ${(a.tracks || []).includes('hybrid') ? hybridRaces(a) : ''}` },
-    { title: 'Any pain or injury right now?', body: `${radio('pain', [['none', 'No pain'], ['mild', 'Mild or nagging (3/10 or less)'], ['more', 'More than that, or a diagnosed injury']], a.pain)}
+    { title: 'Any pain or injury right now?', why: 'Safety first: if something hurts, we rebuild before we push.', body: `${radio('pain', [['none', 'No pain'], ['mild', 'Mild or nagging (3/10 or less)'], ['more', 'More than that, or a diagnosed injury']], a.pain)}
         <label class="field"><span>Where? (optional)</span><input type="text" name="painWhere" value="${h(a.painWhere || '')}" maxlength="60" placeholder="e.g. left knee, right Achilles"></label>
         <p class="q">Any of these?</p><div class="choices">${RED_FLAGS.map(([k, l]) => check(`rf_${k}`, h(l), (a.redFlags || []).includes(k))).join('')}</div>` },
-    { title: 'Which days can you train?', body: `<p class="hint">Pick at least 2. You can move sessions any time.</p>
+    { title: 'Which days can you train?', why: 'We build your week around your life, not the other way round.', body: `<p class="hint">Pick at least 2. You can move sessions any time.</p>
         <div class="day-picker">${K.DAY_NAMES.map((d, i) => `<label class="day-chip"><input type="checkbox" name="d_${i}" ${(a.days || K.defaultDays(3)).includes(i) ? 'checked' : ''}><span>${d}</span></label>`).join('')}</div>
         <label class="field"><span>Best day for your longest session</span><select name="longDay">${K.DAY_NAMES.map((d, i) => `<option value="${i}" ${(a.longDay ?? 5) === i ? 'selected' : ''}>${d}</option>`).join('')}</select></label>` },
   ];
   if (E.qualifyingLevel(normalize(a)) >= 3) {
-    steps.push({ title: 'Quick body check', body: `<p class="hint">Tick what you can do today. Not sure? Try it now. Each has a demo link.</p>
+    steps.push({ title: 'Quick body check', why: 'Strong landings and ankles come before speed work.', body: `<p class="hint">Tick what you can do today. Not sure? Try it now. Each has a demo link.</p>
       <div class="choices">${SELF_TEST.map(([k, l, ex]) => `${check(k, `${h(l)} <a href="${videoLink(ex)}" target="_blank" rel="noopener">demo</a>`, a.selfTest?.[k])}`).join('')}</div>` });
   }
+  steps.push({ title: 'How much do you want to see?', why: 'Some people like every detail, some just want to know what to do next.', body:
+    radio('view', [['simple', 'Keep it simple: just tell me what to do next'], ['full', 'Show me everything: my week, levels and details']], a.view || 'simple') + '<p class="hint">You can switch any time on the Me tab.</p>' });
   steps.push({ title: 'Your starting point', result: true });
   return steps;
 }
@@ -123,6 +137,24 @@ const cap = w => w ? w[0].toUpperCase() + w.slice(1) : '';
 const FORMAT_LABEL = { solo: 'Solo', pair: 'Pair', relay: 'Relay' };
 const raceLabel = r => [r.event, cap(r.division || r.category), r.event === 'Hyrox' && r.format === 'pair' ? 'Doubles' : FORMAT_LABEL[r.format]]
   .filter(Boolean).join(' · ') + (r.time ? ` (${formatTime(r.time)})` : '');
+
+// "Your dream: … · realistic around Level 8, 4 levels from here · 10 weeks to go"
+function dreamLine(a, level, compact = false) {
+  const text = (a.dream ?? a.text ?? '').trim();
+  const event = a.dreamEvent ?? a.event ?? '';
+  const date = a.dreamDate ?? a.date ?? '';
+  if (!text && !event) return '';
+  const target = a.target !== undefined ? a.target : dreamTarget(`${text} ${event}`);
+  const weeks = weeksUntil(date, now());
+  const bits = [];
+  if (target?.level) bits.push(target.level <= level ? 'within reach at your level 💪' : `realistic around Level ${target.level}: ${target.level - level} level${target.level - level > 1 ? 's' : ''} from here`);
+  else if (target?.track === 'hybrid') bits.push('your Hybrid track will build towards it');
+  else if (target?.track === 'tri') bits.push('your Triathlon track will build towards it');
+  if (weeks != null) bits.push(`${weeks} week${weeks === 1 ? '' : 's'} to go`);
+  const label = [text, event].filter(Boolean).join(' · ');
+  return compact ? `<p class="dream">🎯 ${h(label)}${bits.length ? ` <span>${h(bits.join(' · '))}</span>` : ''}</p>`
+    : `<div class="dream-box"><strong>🎯 Your dream:</strong> ${h(label)}${bits.length ? `<br><span class="hint">${h(bits.join(' · '))}</span>` : ''}</div>`;
+}
 
 function hybridRaces(a) {
   const formats = (pair) => [['solo', 'Solo'], ['pair', pair], ['relay', 'Relay']];
@@ -201,6 +233,7 @@ function renderOnboarding() {
         <p class="eyebrow">${h(w.name)}</p>
         <h2>Level ${lvl.n} · ${h(lvl.name)}</h2>
         <p>You qualify for Level ${preview.qualifying}. You start one level below it so the first wins come quickly. Pass the gates to climb back up fast.</p>
+        ${dreamLine(normalize(ui.ob.a), preview.placed)}
         <p><strong>Prep Track:</strong> P${ps.n} ${h(ps.name)} (${h(ps.focus)})</p>
         ${normalize(ui.ob.a).longestEstimated ? `<p class="hint">Longest run estimated at about ${normalize(ui.ob.a).longestKm} km from its time.</p>` : ''}
         ${normalize(ui.ob.a).hybridRaces.length ? `<p class="hint">Races on record: ${h(normalize(ui.ob.a).hybridRaces.map(raceLabel).join(', '))}. They feed your Hybrid track when it opens.</p>` : ''}
@@ -213,16 +246,21 @@ function renderOnboarding() {
       <div class="ob-top"><div class="brand">🏃 Stride Quest</div><div class="progress"><div style="width:${((i + 1) / steps.length) * 100}%"></div></div></div>
       ${returning}
       <form id="ob-form" class="card ob-card" autocomplete="off">
+        ${!st.welcome && !st.result ? `<p class="eyebrow">Question ${i} of ${steps.length - 2}</p>` : ''}
         <h1>${h(st.title)}</h1>
+        ${st.why ? `<p class="why">💡 ${h(st.why)}</p>` : ''}
         ${body}
-        <div class="row end">${back}${st.result ? '<button type="button" class="btn primary" data-act="ob-finish">Start my journey</button>' : '<button type="submit" class="btn primary">Next</button>'}</div>
+        <div class="row end">${back}${st.result ? '<button type="button" class="btn primary" data-act="ob-finish">Start my journey</button>' : `<button type="submit" class="btn primary">${st.welcome ? "Let's start" : 'Next'}</button>`}</div>
       </form>
     </main>`;
 }
 
 // ---------- shell ----------
 function render() {
-  if (!S.placedAt || S.needsReassessment || ui.retake) { renderOnboarding(); renderModal(); return; }
+  if (!S.placedAt || S.needsReassessment || ui.retake) { $('#app').className = ''; renderOnboarding(); renderModal(); return; }
+  $('#app').className = 'shell';
+  const frame = document.querySelector('.worldmap');
+  if (frame) ui.frameTop = frame.scrollTop; // keep the framed map's scroll across redraws
   const t = now();
   const views = { today: viewToday, map: viewMap, challenge: viewChallenge, coach: viewCoach, me: viewMe };
   $('#app').innerHTML = `
@@ -289,59 +327,69 @@ function viewToday() {
   const lvl = E.runLevel(S.run.level);
   const prog = E.levelProgress(S);
   const pct = Math.min(100, Math.round(prog.earned / Math.max(1, prog.target) * 100));
-  const prepSteps = E.trackSteps(S, 'prep');
   const orders = E.dailyOrders(t);
   const doneOrders = S.daily[E.dayKey(t)]?.orders || [];
   const restDone = S.daily[E.dayKey(t)]?.rest;
-  const next = steps.find(st => st.status === 'open' || st.status === 'slot');
-  const nextPrep = prepSteps.find(st => st.status === 'open');
   const hello = S.profile.name ? `Hi ${h(S.profile.name)}!` : 'Hi!';
-  return `
-    ${banners()}
-    <section class="card hero">
+  const p = todayParts(t);
+  const o = n => `style="order:${n}"`;
+  const hero = `<section class="card hero" ${o(2)}>
       <p class="eyebrow">${hello} · ${h(E.worldOf(lvl).name)}</p>
       <h2>Level ${lvl.n} · ${h(lvl.name)} <span class="stars">${'⭐'.repeat(S.run.stars[lvl.n] || 0)}</span></h2>
       <div class="bar"><div style="width:${pct}%"></div></div>
       <p class="hint">${prog.earned}/${prog.target} level XP · the gate test opens at ${prog.target}</p>
-    </section>
-    <section class="card boost">
+      ${S.profile.dream ? dreamLine(S.profile.dream, S.run.level, true) : ''}
+    </section>`;
+  const simple = S.profile.view === 'simple' && !ui.showMore;
+  if (simple) {
+    return `<div class="simple">${banners()}${hero}${p.today}
+      <button class="btn ghost wide" data-act="show-more">Show my week and more ▾</button></div>`;
+  }
+  const boost = `<section class="card boost" ${o(3)}>
       <p class="eyebrow">Daily boost</p>
       <p class="boost-line">${h(M.dailyBoost(S, t))}</p>
       ${M.progressLine(S) ? `<p class="hint">${h(M.progressLine(S))}</p>` : ''}
-    </section>
-    ${S.history.some(x => x.kind === 'session') ? installCard('today') : ''}
-    ${todayCards(t)}
-    <section class="card">
+    </section>`;
+  const install = S.history.some(x => x.kind === 'session') ? installCard('today').replace('<section class="card install"', `<section class="card install" ${o(4)}`) : '';
+  const levelSteps = `<section class="card" ${o(9)}>
       <h3>${trackTitle(track)}</h3>
       <ul class="steps">${steps.map(st => stepRow(track, st)).join('')}</ul>
-    </section>
-    <section class="card">
+    </section>`;
+  const daily = `<section class="card" ${o(10)}>
       <h3>Daily orders <span class="hint">+${E.XP.daily} XP each</span></h3>
-      <ul class="orders">${orders.map(o => `<li><label class="choice"><input type="checkbox" data-act="order" data-i="${o.i}" ${doneOrders.includes(o.i) ? 'checked disabled' : ''}><span>${h(o.title)}</span></label></li>`).join('')}</ul>
+      <ul class="orders">${orders.map(x => `<li><label class="choice"><input type="checkbox" data-act="order" data-i="${x.i}" ${doneOrders.includes(x.i) ? 'checked disabled' : ''}><span>${h(x.title)}</span></label></li>`).join('')}</ul>
       ${S.mode?.type === 'sick'
         ? `<button class="btn ghost" data-act="sick-checkin" ${S.daily[E.dayKey(t)]?.sick ? 'disabled' : ''}>${S.daily[E.dayKey(t)]?.sick ? 'Sick day logged ✓' : `🤒 Sick day check-in (+${E.XP.restDay} XP)`}</button>`
         : `<button class="btn ghost" data-act="rest" ${restDone ? 'disabled' : ''}>${restDone ? 'Rest day logged ✓' : `😴 Rest day check-in (+${E.XP.restDay} XP)`}</button>`}
-    </section>
-    ${S.mode ? '' : `<section class="card modes"><p class="hint">Not feeling 100% or short on time?</p><div class="row wrap">
-      <button class="btn small" data-act="sick-start">🤒 I'm sick</button><button class="btn small" data-act="busy-start">🧳 Busy or travelling</button></div></section>`}`;
+    </section>`;
+  const modes = S.mode ? '' : `<section class="card modes" ${o(11)}><p class="hint">Not feeling 100% or short on time?</p><div class="row wrap">
+      <button class="btn small" data-act="sick-start">🤒 I'm sick</button><button class="btn small" data-act="busy-start">🧳 Busy or travelling</button></div></section>`;
+  const less = S.profile.view === 'simple' ? `<button class="btn ghost wide" data-act="show-less" ${o(12)}>Back to simple view ▴</button>` : '';
+  // Two columns on wide screens; on phones the wrappers dissolve and `order` restores one column.
+  return `<div class="cols">
+      <div class="col-main"><div ${o(1)}>${banners()}</div>${p.today}${p.week}${p.nextWeek}${levelSteps}</div>
+      <div class="col-side">${hero}${boost}${install}${p.tracks}${daily}${modes}</div>
+    </div>${less}`;
 }
 
 const CLS_ICON = { long: '🛣️', hard: '⚡', test: '🏁', easy: '🏃', strength: '🧱', impact: '🦘', rest: '😴', done: '✅' };
 
-function todayCards(t) {
+function todayParts(t) {
   const w = K.buildWeek(S, t);
   const todayItems = w.days[w.today].items.filter(i => !i.done);
   const nextDay = w.days.slice(w.today + 1).find(d => d.items.some(i => !i.done));
   const doneToday = w.days[w.today].items.filter(i => i.done);
   const itemBtn = it => it.sick || it.idx == null ? '' : `<button class="btn primary small" data-act="open-step" data-track="${it.track}" data-idx="${it.idx}">Start</button>`;
+  const restDoneToday = S.daily[E.dayKey(t)]?.rest;
   const todayCard = todayItems.length
-    ? `<section class="card next"><p class="eyebrow">Today · ${K.DAY_NAMES[w.today]}</p>
+    ? `<section class="card next" style="order:5"><p class="eyebrow">Today · ${K.DAY_NAMES[w.today]}</p>
         ${todayItems.map(it => `<div class="today-item"><span class="cls">${CLS_ICON[it.cls] || '•'}</span><div><h3>${h(it.title)}</h3>${it.detail ? `<p class="hint">${h(it.detail)}</p>` : ''}
           <p class="tags">${it.keySession ? '<span class="tag-fit ok">Key</span>' : ''}${it.optional ? '<span class="tag-fit goal">Optional</span>' : ''}${it.track === 'prep' ? '<span class="tag-fit info">Prep</span>' : ''}</p></div>${itemBtn(it)}</div>`).join('')}
       </section>`
-    : `<section class="card next rest-day"><p class="eyebrow">Today · ${K.DAY_NAMES[w.today]}</p>
+    : `<section class="card next rest-day" style="order:5"><p class="eyebrow">Today · ${K.DAY_NAMES[w.today]}</p>
         <h3>${doneToday.length ? 'Done for today ✅' : S.mode?.type === 'sick' ? 'Rest and recover 💤' : 'Rest day 😴'}</h3>
-        <p class="hint">${nextDay ? `Next: ${nextDay.name} · ${h(nextDay.items.find(i => !i.done).title)}` : 'Fresh week starts Monday: see the preview below.'}</p></section>`;
+        <p class="hint">${nextDay ? `Next: ${nextDay.name} · ${h(nextDay.items.find(i => !i.done).title)}` : 'Fresh week starts Monday.'}</p>
+        ${!doneToday.length && S.mode?.type !== 'sick' ? `<button class="btn ghost small" data-act="rest" ${restDoneToday ? 'disabled' : ''}>${restDoneToday ? 'Rest day logged ✓' : `😴 Log rest day (+${E.XP.restDay} XP)`}</button>` : ''}</section>`;
   const upcoming = w.days.slice(w.today).some(d => d.items.some(i => !i.done));
   const nw = upcoming ? null : K.buildWeek(S, w.monday + 7 * E.DAY + 6 * 36e5);
   const weekList = (wk, movable) => `<ul class="wk">${wk.days.map(d => `<li class="wk-day ${movable && d.today ? 'today' : ''} ${movable && d.past ? 'past' : ''} ${d.available ? '' : 'off'}">
@@ -350,17 +398,18 @@ function todayCards(t) {
             <span>${it.done ? '✅' : CLS_ICON[it.cls] || '•'} ${h(it.title)}${it.keySession && !it.done ? ' <b class="key">KEY</b>' : ''}</span>
             ${movable && !it.done && !it.sick && it.idx != null ? `<button class="link small" data-act="move-item" data-key="${h(it.key)}">Move</button>` : ''}</div>`).join('')
           : `<span class="hint">${movable && d.past ? '–' : d.available ? 'Free' : 'Rest'}</span>`}</div></li>`).join('')}</ul>`;
-  const week = `<section class="card week"><h3>This week</h3>
+  const week = `<section class="card week" style="order:6"><h3>This week</h3>
       ${weekList(w, true)}
       ${w.warnings.map(x => `<div class="fit-box warn">${h(x.text)}</div>`).join('')}
       ${nw ? '' : w.notes.map(n => `<p class="hint">${h(n)}</p>`).join('')}
       <button class="link small" data-act="edit-days">Change training days</button>
-    </section>
-    ${nw ? `<section class="card week next-week"><h3>Next week <span class="hint">preview</span></h3>${weekList(nw, false)}
-      ${nw.notes.map(n => `<p class="hint">${h(n)}</p>`).join('')}</section>` : ''}`;
+    </section>`;
+  const nextWeek = nw ? `<section class="card week next-week" style="order:7"><h3>Next week <span class="hint">preview</span></h3>${weekList(nw, false)}
+      ${nw.notes.map(n => `<p class="hint">${h(n)}</p>`).join('')}</section>` : '';
   const coming = (S.profile.tracks || []).filter(k => k !== 'run');
-  const tracksCard = coming.length ? `<section class="card info-card"><p>${coming.map(k => k === 'hybrid' ? '🏋️ <strong>Hybrid track</strong>' : '🏊 <strong>Triathlon track</strong>').join(' and ')} ${coming.length > 1 ? 'are' : 'is'} being built. Your training already counts toward ${coming.length > 1 ? 'them' : 'it'}: carry-over will show the moment ${coming.length > 1 ? 'they open' : 'it opens'}.</p></section>` : '';
-  return todayCard + week + tracksCard;
+  const tracksCard = coming.length ? `<section class="card info-card" style="order:8"><p>${coming.map(k => k === 'hybrid' ? '🏋️ <strong>Hybrid track</strong>' : '🏊 <strong>Triathlon track</strong>').join(' and ')} ${coming.length > 1 ? 'are' : 'is'} being built. Your training already counts toward ${coming.length > 1 ? 'them' : 'it'}: carry-over will show the moment ${coming.length > 1 ? 'they open' : 'it opens'}.</p></section>` : '';
+
+  return { today: todayCard, week, nextWeek, tracks: tracksCard };
 }
 
 function viewMap() {
@@ -368,8 +417,11 @@ function viewMap() {
   const rebuild = S.rebuild.active ? `<section class="card"><h3>🩹 Rebuild Track</h3><ol class="ladder">${REBUILD_STAGES.map((r, i) => `<li class="${i < S.rebuild.stage ? 'done' : i === S.rebuild.stage ? 'current' : ''}"><strong>R${r.n}</strong> ${h(r.name)}<span>${h(r.focus)}</span></li>`).join('')}</ol></section>` : '';
   const toggle = `<div class="seg" role="tablist">${[['world', '🗺️ World map'], ['grid', '▦ Level cards']].map(([k, l]) =>
     `<button role="tab" class="${ui.mapMode === k ? 'on' : ''}" data-act="map-mode" data-mode="${k}">${l}</button>`).join('')}</div>`;
-  return `${banners()}${rebuild}${toggle}${ui.mapMode === 'grid' ? levelGrid() : renderMap(S, ui)}
-    <section class="card"><h3>🧱 Prep Track</h3><p class="hint">Harder run work unlocks with your Prep stage: strides at P3, hills and intervals at P4.</p><ol class="ladder">${prep}</ol></section>`;
+  const lvl = E.runLevel(S.run.level);
+  const sideInfo = `<section class="card map-side-info"><p class="eyebrow">${E.worldOf(lvl).emoji} ${h(E.worldOf(lvl).name)}</p><h3>Level ${lvl.n} · ${h(lvl.name)}</h3>
+      ${S.profile.dream ? dreamLine(S.profile.dream, S.run.level, true) : ''}<button class="btn primary small" data-act="open-level">Open level</button></section>`;
+  return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${ui.mapMode === 'grid' ? levelGrid() : renderMap(S, ui)}</div><div class="map-side">${sideInfo}${rebuild}
+    <section class="card"><h3>🧱 Prep Track</h3><p class="hint">Harder run work unlocks with your Prep stage: strides at P3, hills and intervals at P4.</p><ol class="ladder">${prep}</ol></section></div></div>`;
 }
 
 function levelGrid() {
@@ -396,7 +448,13 @@ const AVATAR_KEY = 'stride-quest:avatar';
 function savedAvatar() { try { return JSON.parse(localStorage.getItem(AVATAR_KEY)) || {}; } catch { return {}; } }
 function saveAvatar(at) { try { localStorage.setItem(AVATAR_KEY, JSON.stringify({ at, seen: S.run.level })); } catch { /* ignore */ } }
 const validLevel = n => Number.isInteger(n) && n >= 1 && n <= RUN_LEVELS.length;
-const followY = y => window.scrollTo(0, Math.max(0, mapPageY(y) - window.innerHeight * 0.55));
+const followY = y => {
+  const frame = document.querySelector('.worldmap');
+  if (frame && frame.scrollHeight > frame.clientHeight + 4) {
+    const svg = frame.querySelector('svg');
+    frame.scrollTop = Math.max(0, (y / MAP_H) * svg.getBoundingClientRect().height - frame.clientHeight * 0.55);
+  } else window.scrollTo(0, Math.max(0, mapPageY(y) - window.innerHeight * 0.55));
+};
 
 function afterMapRender() {
   if (ui.intro != null && !ui.mapRunning) {
@@ -412,7 +470,10 @@ function afterMapRender() {
   if (ui.mapRunning) return;
   const saved = savedAvatar();
   if (ui.avatarAt == null) ui.avatarAt = validLevel(saved.at) ? saved.at : S.run.level;
-  if (ui.mapScroll) { ui.mapScroll = false; followY(POINTS[ui.avatarAt].y); }
+  const frame = document.querySelector('.worldmap');
+  const framed = frame && frame.scrollHeight > frame.clientHeight + 4;
+  if (ui.mapScroll || (framed && ui.frameTop == null)) { ui.mapScroll = false; followY(POINTS[ui.avatarAt].y); }
+  else if (framed) frame.scrollTop = ui.frameTop;
   const levelChanged = validLevel(saved.seen) && saved.seen !== S.run.level;
   if (!validLevel(saved.seen)) saveAvatar(ui.avatarAt);
   if (levelChanged && ui.avatarAt !== S.run.level && !ui.mapRunning) {
@@ -558,6 +619,9 @@ function viewMe() {
     </section>
     <section class="card"><h3>Badges</h3><div class="badges">${Object.entries(E.BADGES).map(([k, b]) =>
       `<div class="badge ${S.badges[k] ? 'on' : ''}" title="${h(b.desc)}"><span>${b.emoji}</span>${h(b.name)}</div>`).join('')}</div></section>
+    <section class="card"><h3>View</h3>
+      <div class="seg">${[['simple', '✨ Simple: just what\'s next'], ['full', '📋 Full: everything']].map(([k, l]) => `<button class="${(S.profile.view || 'full') === k ? 'on' : ''}" data-act="set-view" data-v="${k}">${l}</button>`).join('')}</div>
+    </section>
     <section class="card"><h3>Training</h3>
       <p>${(S.profile.tracks || ['run']).map(k => ({ run: '🏃 Running', hybrid: '🏋️ Hybrid', tri: '🏊 Triathlon' })[k] + (k === (S.profile.primary || 'run') && (S.profile.tracks || []).length > 1 ? ' (leads your week)' : '')).join(' · ')}</p>
       <p class="hint">Days: ${K.schedule(S).days.map(d => K.DAY_NAMES[d]).join(', ')} · long session ${K.DAY_NAMES[K.schedule(S).longDay]}</p>
@@ -595,6 +659,13 @@ function painSlider(label = 'Pain during the session (0 = none, 10 = worst)') {
   return `<label class="field pain"><span>${h(label)}</span>
     <input type="range" name="pain" min="0" max="10" value="0" data-act="pain-range">
     <span class="pain-scale"><b id="pain-val">0</b>/10 · <em id="pain-hint">counts as normal</em></span></label>`;
+}
+
+// One tap logs the session with a pain rating (simple view).
+function painButtons() {
+  return `<p class="q">Done? How did your body feel?</p><div class="pain-buttons">
+    ${[[0, '😀', 'Great, no pain'], [2, '🙂', 'A little sore'], [4, '😐', 'Uncomfortable'], [6, '😣', 'It hurts']].map(([v, e, l]) =>
+      `<button type="submit" class="pain-btn" name="painTap" value="${v}"><span>${e}</span>${l}</button>`).join('')}</div>`;
 }
 
 const MODALS = {
@@ -727,8 +798,8 @@ const MODALS = {
       ${st.detail ? `<p>${h(st.detail)}</p>` : ''}
       ${exs ? `<ul class="exercises">${exs}</ul>` : ''}
       ${gateNote}${passQ}
-      ${st.type === 'rest' ? '' : painSlider()}
-      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Log it (+${st.xp} XP)</button></div>
+      ${st.type === 'rest' ? '' : S.profile.view === 'simple' ? painButtons() : painSlider()}
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button>${st.type !== 'rest' && S.profile.view === 'simple' ? '' : `<button class="btn primary" type="submit">Log it (+${st.xp} XP)</button>`}</div>
     </form>`;
   },
   rebuildPrompt() {
@@ -804,7 +875,7 @@ function handleOutcome(outcome) {
 }
 
 const actions = {
-  tab(el) { ui.tab = el.dataset.tab; ui.mapPopup = null; ui.mapScroll = ui.tab === 'map'; render(); if (ui.tab !== 'map') window.scrollTo(0, 0); },
+  tab(el) { ui.tab = el.dataset.tab; ui.mapPopup = null; ui.frameTop = null; ui.mapScroll = ui.tab === 'map'; render(); if (ui.tab !== 'map') window.scrollTo(0, 0); },
   'ob-back'() { collectOb(); ui.ob.step--; renderOnboarding(); },
   'ob-finish'() {
     const fresh = !S.placedAt || ui.retake;
@@ -815,6 +886,8 @@ const actions = {
     const tracks = a.tracks?.length ? a.tracks : ['run'];
     state.profile.tracks = tracks;
     state.profile.primary = tracks.includes(a.primary) ? a.primary : tracks[0];
+    state.profile.view = a.view === 'full' ? 'full' : 'simple';
+    state.profile.dream = { text: String(a.dream || '').trim().slice(0, 160), event: String(a.dreamEvent || '').trim().slice(0, 60), date: a.dreamDate || '', target: dreamTarget(`${a.dream || ''} ${a.dreamEvent || ''}`) };
     ui.retake = false; ui.ob = { step: 0, a: {} }; ui.tab = 'today';
     if (fresh) {
       // Show off: the avatar blitzes from START to the placed level.
@@ -867,6 +940,9 @@ const actions = {
   reset() { if (confirm('Delete all progress in this browser?')) { store.clear(); localStorage.removeItem(CHAT_KEY); localStorage.removeItem(AVATAR_KEY); ui.avatarAt = null; ui.chat = []; S = E.newState(now()); render(); } },
   sound() { sfx.setSound(!sfx.soundOn()); if (sfx.soundOn()) { sfx.unlockAudio(); sfx.pop(); } render(); },
   quick(el) { sendChat(el.dataset.q); },
+  'show-more'() { ui.showMore = true; render(); },
+  'show-less'() { ui.showMore = false; render(); window.scrollTo(0, 0); },
+  'set-view'(el) { S.profile.view = el.dataset.v; ui.showMore = false; commit(S); },
   async install() { if (!installEvent) return; installEvent.prompt(); await installEvent.userChoice.catch(() => {}); installEvent = null; render(); },
   'install-hide'() { try { localStorage.setItem(INSTALL_KEY, 'hide'); } catch { /* ignore */ } render(); },
   'move-item'(el) {
@@ -1025,7 +1101,8 @@ document.addEventListener('submit', e => {
   if (f.id === 'chat-form') { const v = f.msg.value; f.msg.value = ''; sendChat(v); return; }
   if (f.id === 'step-form') {
     const m = ui.modal;
-    const pain = f.pain ? +f.pain.value : 0;
+    const tapped = e.submitter?.name === 'painTap' ? +e.submitter.value : null;
+    const pain = tapped != null ? tapped : f.pain ? +f.pain.value : 0;
     const passed = f.passed ? f.passed.value === '1' : undefined;
     const { state, outcome } = E.completeStep(S, m.track, m.idx, { pain, passed, now: t });
     ui.modal = null; S = state; store.save(S);

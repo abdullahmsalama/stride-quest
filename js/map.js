@@ -212,6 +212,7 @@ function nodeSvg(l, s) {
       <circle r="18" fill="${disc}" stroke="#fff" stroke-width="3"/>
       <text y="6" text-anchor="middle" font-family="Barlow Condensed, sans-serif" font-weight="800" font-size="19" fill="#fff">${l.n}</text>
       ${boss ? `<text x="${-fx * 1.4}" y="-14" text-anchor="middle" font-size="16">🏆</text>` : ''}
+      ${s.profile?.dream?.target?.level === l.n ? `<g class="dream-pin" transform="translate(${-fx * 1.9},-34)"><circle r="15" fill="#fff" stroke="#e91e63" stroke-width="2.5"/><text y="6" text-anchor="middle" font-size="16">🎯</text></g>` : ''}
     </g>`;
 }
 
@@ -238,7 +239,9 @@ export function renderMap(s, ui) {
   const at = ui.avatarAt ?? cur;
   const p = POINTS[at];
   const popup = ui.mapPopup ? popupHtml(s, ui.mapPopup) : '';
-  return `<div class="worldmap" style="aspect-ratio:${W}/${H}">
+  return `<div class="worldmap">
+      <div class="map-hud"><div class="star-count">⭐ ${totalStars}</div><button class="btn small" data-act="map-me">📍 Me</button></div>
+      <div class="map-canvas" style="aspect-ratio:${W}/${H}">
       <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" data-act="map-bg">
         ${staticLayers()}
         <path d="${pathTo(cur)}" fill="none" stroke="#e2703a" stroke-width="18" stroke-linecap="round"/>
@@ -247,7 +250,7 @@ export function renderMap(s, ui) {
         <g id="avatar" transform="translate(${p.x},${p.y - 16}) scale(1.45)">${RUNNER}</g>
       </svg>
       ${popup}
-      <div class="map-hud"><div class="star-count">⭐ ${totalStars}</div><button class="btn small" data-act="map-me">📍 Me</button></div>
+      </div>
     </div>`;
 }
 
@@ -265,6 +268,9 @@ function popupHtml(s, n) {
     body = stars ? `<p class="pop-stars">${'⭐'.repeat(stars) + '☆'.repeat(3 - stars)}</p><p class="hint">Cleared</p>` : '<p class="hint">You were placed past this level.</p>';
   } else {
     body = `<p class="hint">🔒 ${s.run.reclaim === n ? 'Reclaim this level soon.' : `Unlocks by clearing Level ${n - 1}`}<br>Needs Prep P${l.needsPrep}</p>`;
+  }
+  if (s.profile?.dream?.target?.level === n) {
+    body += `<p class="pop-dream">🎯 Your dream lives here: ${(s.profile.dream.text || s.profile.dream.event).replace(/</g, '&lt;')}</p>`;
   }
   const below = p.y < 260;
   return `<div class="map-pop ${below ? 'below' : ''}" style="left:${(p.x / W) * 100}%;top:${(p.y / H) * 100}%">
