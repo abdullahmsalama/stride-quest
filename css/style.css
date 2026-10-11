@@ -563,3 +563,8 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
   :root:not([data-theme="light"]) .ai-status.ok { background: #1b3a1f; color: #c8e6c9; }
   :root:not([data-theme="light"]) .ai-status.off { background: #3d2a10; color: #ffe0b2; }
 }
+.log-more { margin: .6rem 0; border: 1px dashed var(--line, #d0d5dd); border-radius: 12px; padding: .5rem .75rem; }
+.log-more summary { cursor: pointer; font-weight: 600; font-size: .9rem; color: var(--muted, #6b7280); }
+.log-more[open] summary { margin-bottom: .4rem; }
+#step-form textarea { width: 100%; font: inherit; padding: .5rem .7rem; border: 1px solid var(--line, #d0d5dd); border-radius: 10px; background: var(--card, #fff); color: inherit; box-sizing: border-box; }
+[hidden] { display: none !important; }

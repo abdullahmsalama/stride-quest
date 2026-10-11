@@ -283,7 +283,9 @@ function badge(s, id, now, msgs) {
 }
 
 // ---------- completing steps ----------
-// opts: { pain (0-10), passed (Prove It / boss result), now }
+// opts: { pain (0-10), passed (Prove It / boss result), now,
+//   result: 'full' | 'partial' | 'none', actual / note (the athlete's own words, for the coach),
+//   backdated (done on an earlier day; `now` is that day), morningOk (backdated: fine the morning after?) }
 // Returns { state, outcome } where outcome.status is one of:
 //   done | provisional | repeat | stepBack | rebuildPrompt
 export function completeStep(state, track, idx, opts) {
@@ -296,6 +298,7 @@ export function completeStep(state, track, idx, opts) {
   if (!step || step.status === 'done' || step.status === 'locked') return out('ignored');
   const isRest = step.type === 'rest';
 
+  const words = { ...(clean(opts.actual) ? { actual: clean(opts.actual) } : {}), ...(clean(opts.note) ? { note: clean(opts.note) } : {}) };
   if (!isRest) award(s, XP.painCheck, now, { kind: 'check', title: 'Pain check-in', pain });
 
   if (!isRest && pain >= 5) {
@@ -317,16 +320,30 @@ export function completeStep(state, track, idx, opts) {
   // Pain 0-2: the step counts.
   const mult = streakMultiplier(s, now);
   const base = step.type === 'slot' ? XP.prep : XP[step.type] || 0;
+  // Attempted but not finished: effort still earns something, the step stays open to finish later.
+  if (!isRest && (opts.result === 'partial' || opts.result === 'none')) {
+    const part = opts.result === 'partial' ? Math.round(base * 0.5 * mult) : 0;
+    award(s, part, now, { kind: opts.result === 'partial' ? 'session' : 'attempt', partial: true, track, level: levelNumber(s, track), idx, title: step.title, pain, ...words });
+    msgs.push(opts.result === 'partial' ? `Partly done: +${part} XP for the effort. The step stays open: finish it another day 💪` : 'Logged. Not every day is a good day: the step stays open for when you\'re ready 💛');
+    if (opts.result === 'partial') afterSession(s, now, msgs);
+    return out('partial');
+  }
+  // Done on an earlier day: the morning after has already happened, so ask instead of waiting.
+  const nextDayCheck = step.type === 'run' || step.type === 'proveit' || (step.type === 'gate' && step.nextDay);
+  if (opts.backdated && nextDayCheck && opts.morningOk === false) {
+    msgs.push('Sore the morning after (above 2/10): this one isn\'t counted yet. Repeat it when it feels better.');
+    return out('repeat');
+  }
   const gained = Math.round(base * mult);
   const doneMap = doneMapOf(s, track);
-  const provisional = step.type === 'gate' && step.nextDay;
+  const provisional = step.type === 'gate' && step.nextDay && !opts.backdated;
   doneMap[idx] = { ts: now, pain, ...(provisional ? { provisional: true } : {}), ...(opts.passed != null ? { passed: !!opts.passed } : {}), ...(opts.race ? { race: opts.race } : {}) };
-  award(s, gained, now, { kind: isRest ? 'rest' : 'session', track, level: levelNumber(s, track), idx, title: step.title, pain });
+  award(s, gained, now, { kind: isRest ? 'rest' : 'session', track, level: levelNumber(s, track), idx, title: step.title, pain, ...words, ...(opts.backdated ? { backdated: true } : {}) });
   msgs.push(`+${gained} XP${mult > 1 ? ` (streak x${mult})` : ''}`);
   if (isRest) s.daily[dayKey(now)] = { ...(s.daily[dayKey(now)] || {}), rest: true };
 
   // Pending next-morning check for runs and next-day gates.
-  if (step.type === 'run' || step.type === 'proveit' || provisional) {
+  if (!opts.backdated && (step.type === 'run' || step.type === 'proveit' || provisional)) {
     s.pending.push({ ts: now, track, level: levelNumber(s, track), idx, gate: provisional, pain });
   }
 
@@ -341,6 +358,8 @@ export function completeStep(state, track, idx, opts) {
   if (!isRest) afterSession(s, now, msgs);
   return out(provisional ? 'provisional' : 'done');
 }
+
+const clean = t => String(t ?? '').replace(/[<>]/g, '').trim().slice(0, 300);
 
 function levelNumber(s, track) {
   if (track === 'run') return s.run.level;
@@ -822,6 +841,9 @@ export function coachContext(s, now) {
     `Recent pain ratings: ${pains}.`,
     `Day streak: ${dayStreak(s, now)}.`,
   ];
+  // The athlete's own words about recent sessions: what they actually did and how it felt.
+  const logs = s.history.filter(h => (h.kind === 'session' || h.kind === 'attempt') && (h.actual || h.note || h.partial)).slice(-5);
+  if (logs.length) lines.push(`Recent session logs (athlete's own words):\n${logs.map(h => `- ${new Date(h.ts).toISOString().slice(0, 10)} "${h.title}"${h.partial ? (h.kind === 'attempt' ? ' [ATTEMPTED, NOT DONE]' : ' [PARTLY DONE]') : ''}, pain ${h.pain ?? 0}/10${h.actual ? `; did: ${h.actual}` : ''}${h.note ? `; notes: ${h.note}` : ''}`).join('\n')}`);
   if (s.rebuild.active) lines.push(`In Rebuild Track stage R${s.rebuild.stage + 1} "${REBUILD_STAGES[s.rebuild.stage].name}"${s.rebuild.redFlag ? '; RED FLAGS reported: running paused until cleared by a professional' : ''}.`);
   if (s.refresher) lines.push(`On a refresher course after a break (from level ${s.refresher.fromLevel} to ${s.refresher.toLevel}).`);
   if (s.run.reclaim) lines.push(`Previously reached level ${s.run.reclaim}; reclaiming it.`);

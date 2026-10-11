@@ -199,3 +199,22 @@ test('locked steps say why, and pain-free athletes can leave the Rebuild Track',
   assert.equal(state.run.level, Math.max(1, saved - 1));
   assert.equal(state.run.reclaim, saved);
 });
+
+test('partial, backdated and annotated sessions', () => {
+  const T0 = new Date(2026, 9, 12, 8).getTime();
+  let { state } = E.placeFromAnswers(E.newState(T0), { continuous: '30-45', longestKm: 10, best5k: 29, runsLast4w: 12, pain: 'none', daysPerWeek: 3 }, T0);
+  const idx = E.trackSteps(state, 'run').findIndex(st => st.type === 'run' && st.status === 'open');
+  // Partly done: some XP, the step stays open, the words are kept for the coach.
+  let r = E.completeStep(state, 'run', idx, { pain: 1, now: T0, result: 'partial', actual: '5 of 8 reps', note: 'very hot' });
+  assert.equal(r.outcome.status, 'partial');
+  assert.equal(E.trackSteps(r.state, 'run')[idx].status, 'open');
+  assert.match(E.coachContext(r.state, T0), /PARTLY DONE.*5 of 8 reps.*very hot/);
+  // Done yesterday, fine the morning after: counted on that day, no morning check pending.
+  const y = T0 - E.DAY;
+  r = E.completeStep(state, 'run', idx, { pain: 0, now: y, backdated: true, morningOk: true });
+  assert.equal(r.outcome.status, 'done');
+  assert.equal(r.state.pending.length, 0);
+  assert.equal(r.state.run.done[idx].ts, y);
+  // Sore the morning after: not counted.
+  assert.equal(E.completeStep(state, 'run', idx, { pain: 0, now: y, backdated: true, morningOk: false }).outcome.status, 'repeat');
+});

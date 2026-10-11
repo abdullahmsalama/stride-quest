@@ -1044,6 +1044,17 @@ function renderModal() {
   root.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${MODALS[m.type](m)}</div>`;
 }
 
+const t0 = () => now();
+const dayInput = ts => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+function actualHint(st) {
+  const t = st.title || '';
+  if (/\d+ x /.test(t)) return 'e.g. 6 of 8 reps, 4:40/km, last two slower';
+  if (/ride|bike/i.test(t)) return 'e.g. 52 km in 2:05, avg 25 km/h';
+  if (/swim/i.test(t)) return 'e.g. 1200 m, rests every 200 m';
+  if (/squat|deadlift|press|lift/i.test(t)) return 'e.g. squat 100 kg 5x5, last set hard';
+  return 'e.g. 35 min instead of 45, walked twice';
+}
+
 function painSlider(label = 'Pain during the session (0 = none, 10 = worst)') {
   return `<label class="field pain"><span>${h(label)}</span>
     <input type="range" name="pain" min="0" max="10" value="0" data-act="pain-range">
@@ -1214,13 +1225,26 @@ const MODALS = {
         ${timeField('raceTime', 'Finish time', '', 'h:mm:ss, e.g. 1:24:30')}<p class="hint">Stars come from your time against ${S.profile.sex ? ST.SEX_LABEL[S.profile.sex].toLowerCase() : 'your category\'s'} standards. Any finish counts.</p>`
       : m.track === 'triGate' && st.boss ? `${timeField('raceTime', 'Finish time', '', 'h:mm:ss, e.g. 5:42:10')}<p class="hint">Stars come from your time; 70.3 and full distance must be inside the official cut-off.</p>` : '';
     const gateNote = st.type === 'gate' ? `<p class="hint">${st.nextDay ? 'Gate result is confirmed by tomorrow morning\'s pain check (2/10 or less).' : 'Only log it once you have done the test.'}</p>` : '';
+    // When it was done, how it went, and the athlete's own words (read by the coach).
+    const nextDay = st.type === 'run' || st.type === 'proveit' || (st.type === 'gate' && st.nextDay);
+    const today = dayInput(t0()), min = dayInput(t0() - 14 * E.DAY);
+    const logQ = st.type === 'rest' ? '' : `
+      <p class="q">When did you do it?</p>${radio('when', [['today', 'Today'], ['yesterday', 'Yesterday'], ['date', 'Another day']], 'today')}
+      <label class="field when-date" hidden><span>Date</span><input type="date" name="whenDate" min="${min}" max="${today}" value="${today}"></label>
+      ${nextDay ? `<div class="when-morning" hidden><p class="q">How did you feel the morning after?</p>${radio('morning', [['ok', 'Fine (pain 2/10 or less)'], ['sore', 'Sore or painful (3/10 or more)']], 'ok')}</div>` : ''}
+      ${st.type === 'proveit' ? '' : `<p class="q">How did it go?</p>${radio('result', [['full', 'Finished it all ✅'], ['partial', 'Partly: cut it short or stopped early'], ['none', 'Tried, but couldn\'t do it today']], 'full')}`}
+      <label class="field"><span>What did you actually do? <em class="hint">optional</em></span><input type="text" name="actual" maxlength="300" placeholder="${h(actualHint(st))}"></label>
+      <label class="field"><span>Anything else? <em class="hint">optional</em></span><textarea name="note" rows="2" maxlength="300" placeholder="e.g. hot day, legs heavy from Saturday, felt strong at the end"></textarea></label>
+      <p class="hint">🤖 Your coach reads these two and replies in the Coach tab.</p>`;
+    const simple = S.profile.view === 'simple';
     return `<form id="step-form">
       <p class="eyebrow">${trackTitle(m.track)} · ${TYPE_LABEL[st.type]}</p>
       <h2>${h(st.title)}</h2>
       ${st.detail ? `<p>${h(st.detail)}</p>` : ''}
       ${exs ? `<ul class="exercises">${exs}</ul>` : ''}
       ${gateNote}${passQ}${raceQ}
-      ${st.type === 'rest' ? '' : S.profile.view === 'simple' ? painButtons() : painSlider()}
+      ${logQ && simple ? `<details class="log-more"><summary>Not today, not all of it, or want to add notes? Tap here</summary>${logQ}</details>` : logQ}
+      ${st.type === 'rest' ? '' : simple ? painButtons() : painSlider()}
       <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button>${st.type !== 'rest' && S.profile.view === 'simple' ? '' : `<button class="btn primary" type="submit">Log it (+${st.xp} XP)</button>`}</div>
     </form>`;
   },
@@ -1534,6 +1558,16 @@ const actions = {
   },
 };
 
+// After a log with the athlete's own words (or an unfinished session), the coach replies in the Coach tab.
+async function sessionFeedback(st, { when, ts, result, pain, actual, note }) {
+  if (ui.thinking) return;
+  const day = when === 'today' ? 'today' : when === 'yesterday' ? 'yesterday' : new Date(ts).toDateString();
+  const how = result === 'partial' ? 'I only partly did it' : result === 'none' ? 'I tried but couldn\'t do it' : 'I finished it';
+  const msg = `📝 Session log: "${st?.title || 'session'}" (${day}). ${how}. Pain ${pain}/10.${actual ? ` What I did: ${actual}.` : ''}${note ? ` Notes: ${note}.` : ''} Any feedback or changes for my plan?`;
+  await sendChat(msg);
+  if (ui.tab !== 'coach') toast('💬 Your coach replied about that session: see the Coach tab.');
+}
+
 async function sendChat(text) {
   text = text.trim();
   if (!text || ui.thinking) return;
@@ -1593,6 +1627,13 @@ document.addEventListener('click', e => {
 
 document.addEventListener('change', async e => {
   const el = e.target;
+  if (el.closest('#step-form') && el.name === 'when') {
+    const f = el.form;
+    const w = f.querySelector('[name=when]:checked')?.value || 'today';
+    f.querySelector('.when-date')?.toggleAttribute('hidden', w !== 'date');
+    f.querySelector('.when-morning')?.toggleAttribute('hidden', w === 'today');
+    return;
+  }
   if (el.closest('#nc-form') && el.name !== 'msg' && el.name !== 'myName') { readDraft(); renderModal(); return; }
   if (el.closest('#bg-form') && el.name?.startsWith('bg_')) { ui.modal.a = { ...ui.modal.a, ...Object.fromEntries(new FormData(el.form).entries()), [el.name]: el.checked }; BG.SPORTS.forEach(([k]) => { if (!el.form.querySelector(`[name=bg_${k}]`)?.checked) delete ui.modal.a[`bg_${k}`]; }); renderModal(); return; }
   if (el.closest('#ob-form') && (el.name?.startsWith('bg_') || el.name?.startsWith('tr_') || el.name?.startsWith('hx_') || /Mode$/.test(el.name || '') || el.name === 'swimDist' || el.name === 'bikeAccess' || el.name === 'liftMode' || el.name === 'liftUnit')) { collectOb(); renderOnboarding(); return; }
@@ -1699,9 +1740,24 @@ document.addEventListener('submit', e => {
     if (f.raceTime && f.raceTime.value.trim() && raceTime == null) return toast('Use h:mm:ss for your finish time, e.g. 1:24:30.');
     const [ev, div] = (f.raceEvent?.value || '').split(':');
     const race = f.raceTime ? { event: ev || 'tri', division: div || null, format: f.raceFormat?.value || 'solo', time: raceTime } : undefined;
-    const { state, outcome } = E.completeStep(S, m.track, m.idx, { pain, passed, race, now: t });
+    // When: today keeps the time; an earlier day is logged at midday of that day.
+    const when = f.querySelector('[name=when]:checked')?.value || 'today';
+    let ts = t;
+    if (when !== 'today') {
+      const [y, mo, d] = (when === 'yesterday' ? dayInput(t - E.DAY) : f.whenDate?.value || '').split('-').map(Number);
+      ts = new Date(y, mo - 1, d, 12).getTime();
+      if (!ts || ts > t) return toast('Pick a day in the past two weeks.');
+      if (t - ts > 15 * E.DAY) return toast('Sessions older than two weeks can\'t be logged.');
+    }
+    const backdated = when !== 'today';
+    const result = f.querySelector('[name=result]:checked')?.value || 'full';
+    const actual = f.actual?.value.trim() || '', note = f.note?.value.trim() || '';
+    const st = E.trackSteps(S, m.track)[m.idx];
+    const { state, outcome } = E.completeStep(S, m.track, m.idx, { pain, passed, race, now: ts, result, actual, note, backdated,
+      morningOk: f.querySelector('[name=morning]:checked')?.value !== 'sore' });
     ui.modal = null; S = state; store.save(S);
     handleOutcome(outcome);
+    if (actual || note || result !== 'full') sessionFeedback(st, { when, ts, result, pain, actual, note });
     return;
   }
   if (f.id === 'rebuild-form') {
