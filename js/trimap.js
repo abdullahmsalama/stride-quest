@@ -280,7 +280,7 @@ export function renderLaneMap(s, ui, id) {
 }
 
 // Animate one lane's character from value `from` to `to` along its path.
-export function moveCharacter(id, lane, from, to, { onDone, follow } = {}) {
+export function moveCharacter(id, lane, from, to, { onDone, follow, skip } = {}) {
   const el = document.getElementById(`ln-av-${id}-${lane}`);
   if (!el || to <= from) { onDone?.(); return; }
   const segEls = [];
@@ -291,7 +291,7 @@ export function moveCharacter(id, lane, from, to, { onDone, follow } = {}) {
   el.classList.add('moving');
   const t0 = performance.now();
   const frame = t => {
-    const k = Math.min(1, (t - t0) / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    const k = skip?.() ? 1 : Math.min(1, (t - t0) / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
     let d = e * total, i = 0;
     while (i < lens.length - 1 && d > lens[i]) { d -= lens[i]; i++; }
     const pt = segEls[i].getPointAtLength(d);

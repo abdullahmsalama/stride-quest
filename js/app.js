@@ -719,6 +719,14 @@ function afterTriRender() {
 function playLanes(id, cfg, cur, all, seen, shown, moves, focusLane, focusY) {
   document.querySelector('.play-btn')?.remove();
   sfx.unlockAudio();
+  // Skip: every character jumps straight to where it is now.
+  ui.laneSkip = false;
+  const skipBtn = document.createElement('button');
+  skipBtn.type = 'button'; skipBtn.className = 'lane-skip'; skipBtn.textContent = 'Skip ⏩';
+  skipBtn.onclick = () => { ui.laneSkip = true; skipBtn.remove(); };
+  document.body.appendChild(skipBtn);
+  const fast = () => ui.laneSkip;
+  const wait = (ms, fn) => { const t1 = Date.now(); const tick = () => (fast() || Date.now() - t1 >= ms ? fn() : setTimeout(tick, 100)); setTimeout(tick, 100); };
   // One character at a time, in lane order: the camera follows it up, then glides back down
   // to the next one still waiting, which then sets off.
   ui.laneAnimating = true; ui.mapScroll = false;
@@ -726,27 +734,33 @@ function playLanes(id, cfg, cur, all, seen, shown, moves, focusLane, focusY) {
   const step = () => {
     const lane = order.shift();
     if (!lane) {
+      skipBtn.remove();
       ui.laneAnimating = false; ui.laneShown = { ...ui.laneShown, [id]: null };
       if (seen && cur.world > seen.world) worldCleared(id, seen.world);
       if (!seen) { confetti(); sfx.fanfare(); toast(`You're placed at ${cfg.current(S).emoji} ${cfg.current(S).name}! Let's go 💪`); }
       all[id] = cur; writeSeen(all);
+      if (fast()) { render(); triFollow(focusY()); return; }
       setTimeout(() => triFollow(focusY(), true), 1400);
       return;
     }
+    if (fast()) { step(); return; }
     triFollow(nodePoint(cfg, lane, shown[lane]).y, true);
-    setTimeout(() => {
+    wait(900, () => {
+      if (fast()) { step(); return; }
       const stop = sfx.moveLoop(lane);
       moveCharacter(id, lane, shown[lane], cur[lane], {
         follow: y => triFollow(y),
+        skip: fast,
         onDone: pt => {
           stop();
+          if (fast()) { step(); return; }
           sfx.arrive(lane);
           signature(id, lane);
           if (pt) celebrate(pt.x, pt.y - 72, `${!seen ? (lane === 'strength' ? 'LIGHT WEIGHT! ' : '') : lane === 'strength' ? 'LIGHT WEIGHT! 💪 ' : ''}${arrivalLabel(cfg, lane, cur[lane])}`);
-          setTimeout(step, 2800);
+          wait(2800, step);
         },
       });
-    }, 900);
+    });
   };
   step();
 }
@@ -849,6 +863,8 @@ function suggestionCards(m, mi) {
   if (!m.actions?.length) return '';
   return `<div class="suggestions">${m.actions.map((a, ai) => {
     const d = a.status === 'pending' ? ACT.describe(S, a, now()) : null;
+    const done = a.status === 'pending' && !d ? ACT.alreadyDone(S, a, now()) : null;
+    if (done) return `<div class="suggest applied"><div><strong>${h(done)}</strong></div><span class="hint">Done ✓</span></div>`;
     if (a.status === 'pending' && !d) return '';
     return `<div class="suggest ${a.status}">
       <div><strong>${h(d ? d.label : a.label || '')}</strong>${d?.detail ? `<p class="hint">${h(d.detail)}</p>` : ''}${(d?.warnings || []).map(w => `<p class="hint warn-text">⚠️ ${h(w)}</p>`).join('')}</div>
@@ -1320,7 +1336,7 @@ function handleOutcome(outcome) {
 }
 
 const actions = {
-  tab(el) { ui.tab = el.dataset.tab; ui.mapPopup = null; ui.frameTop = null; ui.mapScroll = ui.tab === 'map'; render(); if (ui.tab !== 'map') window.scrollTo(0, 0); },
+  tab(el) { if (ui.laneAnimating) ui.laneSkip = true; document.querySelector('.lane-skip')?.remove(); ui.tab = el.dataset.tab; ui.mapPopup = null; ui.frameTop = null; ui.mapScroll = ui.tab === 'map'; render(); if (ui.tab !== 'map') window.scrollTo(0, 0); },
   'ob-back'() { collectOb(); ui.ob.step--; renderOnboarding(); },
   'ob-finish'() {
     const fresh = !S.placedAt || ui.retake;
@@ -1460,7 +1476,13 @@ const actions = {
   'dream-ai'(el) { if (ui.ob.a.dreamAI) { ui.ob.a.dreamAI.accepted = el.dataset.v === '1'; renderOnboarding(); } },
   'sugg-apply'(el) {
     const m = ui.chat[+el.dataset.m], a = m?.actions?.[+el.dataset.a];
-    if (!a || a.status !== 'pending' || !ACT.describe(S, a, now())) return toast('That suggestion no longer fits your plan.');
+    if (!a || a.status !== 'pending') return;
+    if (!ACT.describe(S, a, now())) {
+      const done = ACT.alreadyDone(S, a, now());
+      if (done) { a.status = 'applied'; a.label = done; saveChat(); toast(done); render(); return; }
+      a.status = 'skipped'; a.label = 'No longer fits your plan'; saveChat(); render();
+      return toast('Your plan changed since the coach suggested this. Ask again and it will look at the new plan.');
+    }
     const label = ACT.describe(S, a, now()).label;
     const { state, message, open } = ACT.apply(S, a, now());
     a.status = 'applied'; a.label = label; saveChat();

@@ -113,6 +113,20 @@ export function describe(s, a, now) {
   }
 }
 
+// A suggestion that no longer applies because it has already happened (e.g. the athlete started the
+// Rebuild Track from the pain pop-up before tapping Apply). Returns a short confirmation, or null.
+export function alreadyDone(s, a, now) {
+  if (!a || typeof a.type !== 'string') return null;
+  switch (a.type) {
+    case 'report_pain': return s.rebuild.active ? (s.rebuild.redFlag ? 'Already on the Rebuild Track (running paused) ✓' : 'Already on the Rebuild Track ✓') : null;
+    case 'start_sick': return s.mode?.type === 'sick' ? 'Sick mode is already on ✓' : null;
+    case 'start_busy': return s.mode?.type === 'busy' ? 'Busy mode is already on ✓' : null;
+    case 'end_mode': return !s.mode ? 'Already back to normal training ✓' : null;
+    case 'update_numbers': return withNumbers(s, a, now).changes.length ? null : 'Your placement already matches these numbers ✓';
+    default: return null;
+  }
+}
+
 // Apply a (valid) action. Returns { state, message, open } where `open` asks the UI to show a modal.
 export function apply(s, a, now) {
   switch (a.type) {

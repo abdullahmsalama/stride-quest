@@ -570,3 +570,5 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 [hidden] { display: none !important; }
 .wk-day.wk-new { border-top: 2px dashed var(--line, #d0d5dd); position: relative; }
 .wk-day.wk-new::before { content: 'Next week'; position: absolute; top: -.7rem; right: .5rem; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 0 .4rem; background: var(--card, #fff); color: var(--muted, #6b7280); }
+.lane-skip { position: fixed; right: 16px; bottom: 92px; z-index: 60; background: rgba(20, 33, 61, .9); color: #fff; border: 0; border-radius: 999px; padding: 10px 16px; font: 700 14px var(--body); cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+@media (min-width: 1000px) { .lane-skip { bottom: 28px; right: 28px; } }

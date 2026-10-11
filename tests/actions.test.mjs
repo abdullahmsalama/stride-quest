@@ -81,3 +81,12 @@ test('coach can fix a misread placement through the same rules, or step back', a
   assert.equal(back.hybrid.strength.stage, after.hybrid.strength.stage - 1);
   assert.equal(A.describe(placed(), { type: 'level_down', track: 'swim' }, MON), null); // no tri track
 });
+
+test('a suggestion that already happened is confirmed, not refused', () => {
+  let s = placed();
+  const a = { type: 'report_pain', redFlag: false };
+  assert.equal(A.alreadyDone(s, a, MON), null);
+  s = E.enterRebuild(s, { redFlag: false, now: MON }); // started from the pain pop-up first
+  assert.equal(A.describe(s, a, MON), null);
+  assert.match(A.alreadyDone(s, a, MON), /Already on the Rebuild Track/);
+});
