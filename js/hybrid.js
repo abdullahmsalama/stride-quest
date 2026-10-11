@@ -1,0 +1,137 @@
+// Hybrid rules. Three lanes: Strength and Engine ladders here, the Run lane is the Run Track.
+// Blocks: build one lane for BLOCK_WEEKS while maintaining the other, deload a week, switch, repeat.
+import { STRENGTH_STAGES, ENGINE_STAGES, HYBRID_WORLDS, MAINTENANCE, BLOCK_WEEKS } from './data/hybrid.js';
+
+export const STR_MAX = STRENGTH_STAGES.length; // 7
+export const ENG_MAX = ENGINE_STAGES.length;
+export const LANES = ['strength', 'engine', 'run'];
+export const LANE_LABEL = { strength: 'Strength', engine: 'Engine', run: 'Run' };
+export const LANE_ICON = { strength: '🏋️', engine: '⚙️', run: '🏃' };
+const WEEK = 7 * 864e5;
+
+export const hasHybrid = s => !!s.hybrid && (s.profile.tracks || []).includes('hybrid');
+export const hybWorld = s => HYBRID_WORLDS[Math.min(s.hybrid.world, HYBRID_WORLDS.length - 1)];
+export const strengthStage = s => STRENGTH_STAGES[Math.min(s.hybrid.strength.stage, STR_MAX - 1)];
+export const engineStage = s => ENGINE_STAGES[Math.min(s.hybrid.engine.stage, ENG_MAX - 1)];
+
+export function newHybrid(now, startBlock = 'engine') {
+  return { strength: { stage: 0, done: {} }, engine: { stage: 0, done: {} }, world: 0, done: {}, finished: false,
+    block: { type: startBlock, startedAt: now, next: startBlock === 'engine' ? 'strength' : 'engine' }, maint: { week: null, done: {} }, gym: 'full' };
+}
+
+const laneHave = (s, lane) => (lane === 'strength' ? s.hybrid.strength.stage : lane === 'engine' ? s.hybrid.engine.stage : s.run.level);
+
+export function laneStatus(s, worldIndex = s.hybrid.world) {
+  const w = HYBRID_WORLDS[Math.min(worldIndex, HYBRID_WORLDS.length - 1)];
+  return LANES.map(lane => ({ lane, have: laneHave(s, lane), need: w[lane], ok: laneHave(s, lane) >= w[lane] }));
+}
+export const lanesReady = s => !s.hybrid.finished && laneStatus(s).every(l => l.ok);
+export function limiter(s) {
+  const behind = laneStatus(s).filter(l => !l.ok);
+  if (!behind.length) return null;
+  return behind.sort((a, b) => (b.need - b.have) / b.need - (a.need - a.have) / a.need)[0];
+}
+export function laneTarget(lane, need) {
+  if (lane === 'strength') return need > 0 ? STRENGTH_STAGES[need - 1].target : 'start';
+  if (lane === 'engine') return need > 0 ? ENGINE_STAGES[need - 1].target : 'start';
+  return `Run Level ${need}`;
+}
+
+// ---------- blocks ----------
+// Where in the cycle we are: { type: 'engine'|'strength'|'deload', week, weeks, focus, next }
+export function blockInfo(s, now) {
+  const b = s.hybrid.block;
+  const weeks = Math.floor((now - b.startedAt) / WEEK);
+  if (b.type === 'deload') return { type: 'deload', week: 1, weeks: 1, focus: null, next: b.next };
+  return { type: b.type, week: Math.min(BLOCK_WEEKS, weeks + 1), weeks: BLOCK_WEEKS, focus: b.type, next: b.type === 'engine' ? 'strength' : 'engine' };
+}
+
+// Move the cycle forward when a block or deload week has run its course. Returns the same object if nothing changed.
+export function rollBlock(s, now) {
+  const b = s.hybrid.block;
+  const elapsed = now - b.startedAt;
+  if (b.type === 'deload' && elapsed >= WEEK) return withBlock(s, { type: b.next, startedAt: b.startedAt + WEEK, next: b.next === 'engine' ? 'strength' : 'engine' });
+  if (b.type !== 'deload' && elapsed >= BLOCK_WEEKS * WEEK) return withBlock(s, { type: 'deload', startedAt: b.startedAt + BLOCK_WEEKS * WEEK, next: b.type === 'engine' ? 'strength' : 'engine' });
+  return s;
+}
+export function switchBlock(s, type, now) {
+  return withBlock(s, { type, startedAt: now, next: type === 'engine' ? 'strength' : type === 'strength' ? 'engine' : s.hybrid.block.next });
+}
+function withBlock(s, block) {
+  const st = JSON.parse(JSON.stringify(s));
+  st.hybrid.block = block;
+  st.hybrid.maint = { week: null, done: {} };
+  return st;
+}
+
+// Maintenance (or deload) sessions for the current week; their done map resets every week.
+export function maintSteps(s) {
+  const t = s.hybrid.block.type;
+  return t === 'deload' ? MAINTENANCE.deload : MAINTENANCE[t === 'engine' ? 'strength' : 'engine'];
+}
+
+// Only the lane in focus builds; the other lane is maintained (and both rest in a deload week).
+export const inFocus = (s, lane) => s.hybrid.block.type === lane;
+
+// Called on load/render: roll the block cycle and reset the weekly maintenance list.
+export function refreshHybrid(s, now, weekKey) {
+  let st = rollBlock(s, now);
+  if (st.hybrid.maint.week !== weekKey) {
+    st = st === s ? JSON.parse(JSON.stringify(s)) : st;
+    st.hybrid.maint = { week: weekKey, done: {} };
+  }
+  return st;
+}
+
+export const strengthSteps = s => (s.hybrid.strength.stage < STR_MAX ? STRENGTH_STAGES[s.hybrid.strength.stage].steps : []);
+export const engineSteps = s => (s.hybrid.engine.stage < ENG_MAX ? ENGINE_STAGES[s.hybrid.engine.stage].steps : []);
+export function gateSteps(s) {
+  if (s.hybrid.finished) return [];
+  const w = hybWorld(s);
+  return [{ type: 'gate', title: w.gate.title, detail: w.gate.detail, boss: !!w.gate.boss, nextDay: true }];
+}
+
+// ---------- placement ----------
+const EXPERIENCE = { none: 0, lt1: 1, y1_3: 2, y3: 3 };
+
+export function placeHybrid(s, a, now) {
+  const start = a.startBlock === 'strength' ? 'strength' : a.startBlock === 'engine' ? 'engine' : autoBlock(s, a);
+  const h = newHybrid(now, start);
+  h.gym = a.gym || 'full';
+  // Strength: from lifts relative to bodyweight when given, else from experience.
+  const bw = +a.bodyweight, sq = +a.squat5, dl = +a.deadlift5, pu = +a.pullups;
+  let str = EXPERIENCE[a.liftExp] ?? 0;
+  if (bw > 30 && (sq || dl)) {
+    const r = (x, k) => x && x >= k * bw;
+    if (r(dl, 1.75) && r(sq, 1.5) && pu >= 8) str = 7;
+    else if (r(sq, 1.25) && r(dl, 1.5)) str = Math.max(str, 5);
+    else if (r(sq, 1) && r(dl, 1.25) && pu >= 3) str = Math.max(str, 4);
+    else if (r(sq, 0.75) && r(dl, 1)) str = Math.max(str, 3);
+    else str = Math.max(str, 2);
+  }
+  // Engine: from a 1000 m row, finished races and the running level.
+  const row = +a.row1000; // minutes
+  let eng = row ? (row < 3.83 ? 5 : row < 4.25 ? 4 : row < 4.75 ? 3 : 2) : 1;
+  const races = a.hybridRaces || [];
+  if (races.some(r => r.format === 'solo')) eng = Math.max(eng, 5);
+  else if (races.length) eng = Math.max(eng, 4);
+  eng = Math.max(eng, Math.min(4, Math.floor(s.run.level / 2)));
+  if (races.some(r => r.format === 'solo' || r.format === 'pair')) str = Math.max(str, 4);
+  h.strength.stage = Math.max(0, Math.min(STR_MAX, str) - 1);
+  h.engine.stage = Math.max(0, Math.min(ENG_MAX, eng) - 1);
+  // World: the first one whose targets are not all met, nudged up by races already finished.
+  const probe = { ...s, hybrid: h };
+  let world = HYBRID_WORLDS.findIndex((_, i) => laneStatus(probe, i).some(l => !l.ok));
+  if (world < 0) world = HYBRID_WORLDS.length - 1;
+  if (races.some(r => r.division === 'pro')) world = Math.max(world, 5);
+  else if (races.some(r => r.format === 'solo')) world = Math.max(world, 4);
+  else if (races.length) world = Math.max(world, 3);
+  h.world = Math.min(world, HYBRID_WORLDS.length - 1);
+  return h;
+}
+
+// Start with the lane that is further behind.
+function autoBlock(s, a) {
+  const exp = EXPERIENCE[a.liftExp] ?? 0;
+  return exp <= 1 ? 'strength' : 'engine';
+}

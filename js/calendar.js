@@ -3,6 +3,7 @@
 // pile up because the plan always restarts from today. Pure functions.
 import { DAY, dayKey, weekKey, activeTrack, trackSteps, prepBlocksRun } from './engine.js';
 import { hasTri } from './tri.js';
+import { hasHybrid } from './hybrid.js';
 
 export const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DEFAULT_DAYS = { 2: [1, 5], 3: [0, 2, 5], 4: [0, 2, 4, 5], 5: [0, 1, 3, 4, 5], 6: [0, 1, 2, 3, 4, 5] };
@@ -24,6 +25,8 @@ export function classify(step, prepLevel = 0) {
   if (step.type === 'prep' || step.type === 'slot') return prepLevel >= 3 ? 'impact' : 'strength';
   const t = `${step.title} ${step.detail || ''}`.toLowerCase();
   if (step.type === 'swim') return 'swim';
+  if (step.type === 'lift' || (step.type === 'maint' && /squat|deadlift|lunge|sled|lift/.test(t) && !/deload/.test(t))) return /squat|deadlift|lunge|sled|carry|full body|lower/.test(t) ? 'strength' : 'upper';
+  if (step.type === 'engine' || step.type === 'maint') return /deload|easy 30 min \+ mobility|mobility and easy/.test(t) ? 'easy' : /threshold|interval|race|simulation|vo2|emom|x \(|splits/.test(t) ? 'hard' : /long|60-75|45 min/.test(t) ? 'long' : 'easy';
   if (step.type === 'bike') return /long ride|brick|\b(5|6|9|10|12)0 km/.test(t) ? 'long' : /threshold|ftp|race effort/.test(t) ? 'hard' : 'bike';
   if (/long run|long easy|time on feet|back-to-back|long run/.test(t)) return 'long';
   if (/tempo|interval|hill|pace|timed|x 1 km|hard/.test(t)) return 'hard'; // strides alone stay easy
@@ -50,19 +53,47 @@ function candidates(s) {
   // Prep steps not tied to a slot still count as optional extras.
   const extras = [];
   for (; prepI < prepOpen.length; prepI++) extras.push({ track: 'prep', level: s.prep.level, ...prepOpen[prepI], extra: true });
-  if (!hasTri(s)) return [...out, ...extras];
+  if (!hasTri(s) && !hasHybrid(s)) return [...out, ...extras];
 
-  // Triathletes: mix swim and bike sessions in. Tri leading the week -> swim, bike, run; else run first.
-  const lane = t => trackSteps(s, t).filter(st => st.status === 'open').map(st => ({ track: t, level: t === 'swim' ? s.tri.swim.stage : t === 'bike' ? s.tri.bike.stage : s.tri.world, ...st }));
-  const queues = { swim: lane('swim'), bike: lane('bike'), run: out };
-  const gate = lane('triGate');
-  const pattern = s.profile.primary === 'tri' ? ['swim', 'bike', 'run'] : ['run', 'swim', 'run', 'bike'];
-  const mixed = [];
-  for (let i = 0; Object.values(queues).some(q => q.length) && i < 60; i++) {
-    const q = queues[pattern[i % pattern.length]];
-    if (q.length) mixed.push(q.shift());
+  // Several tracks: one queue per kind of session, mixed by a weekly pattern.
+  const lane = (t, lvl) => trackSteps(s, t).filter(st => st.status === 'open').map(st => ({ track: t, level: lvl, ...st }));
+  // A Hybrid deload week is light everywhere: only easy runs and Prep, no hard or long sessions.
+  const deload = hasHybrid(s) && s.hybrid.block.type === 'deload';
+  const queues = { run: deload ? out.filter(x => !['hard', 'test', 'long'].includes(classify(x, s.prep.level))) : out };
+  const gates = [];
+  if (hasTri(s)) { queues.swim = lane('swim', s.tri.swim.stage); queues.bike = lane('bike', s.tri.bike.stage); gates.push(...lane('triGate', s.tri.world)); }
+  if (hasHybrid(s)) {
+    queues.strength = lane('strength', s.hybrid.strength.stage);
+    queues.engine = lane('engine', s.hybrid.engine.stage);
+    queues.maint = lane('hyMaint', s.hybrid.maint.week);
+    gates.push(...lane('hyGate', s.hybrid.world));
   }
-  return [...gate, ...mixed, ...extras];
+  const pattern = weekPattern(s);
+  const mixed = [];
+  for (let i = 0; Object.values(queues).some(q => q.length) && i < 80; i++) {
+    const q = queues[pattern[i % pattern.length]];
+    if (q?.length) mixed.push(q.shift());
+  }
+  for (const q of Object.values(queues)) mixed.push(...q); // anything the pattern didn't reach
+  return [...gates, ...mixed, ...extras];
+}
+
+// The main track sets the rhythm; other tracks slot in after every two of its sessions.
+export function weekPattern(s) {
+  const hyb = () => {
+    const t = s.hybrid.block.type;
+    return t === 'deload' ? ['maint', 'run', 'maint', 'maint'] : t === 'engine' ? ['engine', 'maint', 'run', 'engine', 'maint', 'run'] : ['strength', 'run', 'strength', 'maint', 'strength', 'run'];
+  };
+  const BASE = { run: () => ['run'], tri: () => ['swim', 'bike', 'run'], hybrid: hyb };
+  const tracks = (s.profile.tracks || ['run']).filter(t => t === 'run' || (t === 'tri' && hasTri(s)) || (t === 'hybrid' && hasHybrid(s)));
+  const primary = tracks.includes(s.profile.primary) ? s.profile.primary : tracks[0] || 'run';
+  const main = BASE[primary]();
+  const others = tracks.filter(t => t !== primary && t !== 'run').flatMap(t => BASE[t]().filter(k => k !== 'run'));
+  if (!others.length) return main;
+  const out = [];
+  let o = 0;
+  main.forEach((k, i) => { out.push(k); if (i % 2 === 1) out.push(others[o++ % others.length]); });
+  return out;
 }
 const levelOf = (s, track) => (track === 'run' ? s.run.level : track === 'prep' ? s.prep.level : track === 'rebuild' ? s.rebuild.stage : 'refresher');
 // (swim / bike / triGate items carry their own level from candidates)

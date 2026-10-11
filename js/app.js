@@ -13,7 +13,9 @@ import * as K from './calendar.js';
 import { parseTime, formatTime, raceMinutes, estimateKm } from './time.js';
 import { dreamTarget, weeksUntil, targetFromAI } from './goal.js';
 import * as TRI from './tri.js';
-import { renderTriMap, laneAvatarY, gateY as triGateY, TH as TRI_H } from './trimap.js';
+import { renderLaneMap, gateY as laneGateY, TH as LANE_H } from './trimap.js';
+import * as HYB from './hybrid.js';
+import { HYBRID_WORLDS, BLOCK_WEEKS } from './data/hybrid.js';
 import { TRI_WORLDS } from './data/tri.js';
 import { confetti } from './intro.js';
 
@@ -35,7 +37,7 @@ const ui = {
   modal: null,
   dismissed: new Set(),
   avatarAt: null,
-  triPopup: null,
+  lanePopup: null,
   incoming: incomingLink,
   socialTab: 'challenges',
   intro: null,
@@ -121,6 +123,7 @@ function obSteps(a) {
         ${timeField('best10kText', 'Best 10K', a.best10kText ?? (a.best10k ? formatTime(a.best10k) : ''), (a.best10kMode || 'time') === 'pace' ? 'pace, e.g. 5:45' : 'e.g. 58:00 or 1:02:30', 'best10kMode', a.best10kMode)}
         <div class="choices">${check('halfDone', 'I have finished a half marathon', a.halfDone)}${check('marathonDone', 'I have finished a marathon', a.marathonDone)}${check('ultraDone', 'I have finished an ultra', a.ultraDone)}</div>
         ${(a.tracks || []).includes('hybrid') ? hybridRaces(a) : ''}` },
+    ...((a.tracks || []).includes('hybrid') ? [{ title: 'Your strength and engine', why: 'Strength and Engine set your two Hybrid lanes. Your running comes from the run questions.', body: hybQuestions(a) }] : []),
     ...((a.tracks || []).includes('tri') ? [{ title: 'Your swim and bike', why: 'Swim and bike set your two other triathlon lanes. Your running comes from the run questions.', body: triQuestions(a) }] : []),
     { title: 'Any pain or injury right now?', why: 'Safety first: if something hurts, we rebuild before we push.', body: `${radio('pain', [['none', 'No pain'], ['mild', 'Mild or nagging (3/10 or less)'], ['more', 'More than that, or a diagnosed injury']], a.pain)}
         <label class="field"><span>Where? (optional)</span><input type="text" name="painWhere" value="${h(a.painWhere || '')}" maxlength="60" placeholder="e.g. left knee, right Achilles"></label>
@@ -166,6 +169,15 @@ function dreamLine(a, level, compact = false) {
 const SWIM_DIST = [['none', "I can't swim yet"], ['25', '25 m'], ['100', '100 m'], ['200', '200 m'], ['400', '400 m'], ['750', '750 m'], ['1500', '1.5 km'], ['1900', '1.9 km'], ['3800', '3.8 km or more']];
 const RIDES = [['none', 'Not recently'], ['30', '30 min'], ['60', '1 hour'], ['10', '10 km'], ['20', '20 km'], ['40', '40 km'], ['90', '90 km'], ['180', '180 km or more']];
 const TRI_RACES = [['supersprint', 'Super Sprint'], ['sprint', 'Sprint'], ['olympic', 'Olympic'], ['half', '70.3'], ['full', 'Full distance']];
+function hybQuestions(a) {
+  return `<p class="q">Where do you train?</p>${radio('gym', [['full', 'Gym with sled, rower, SkiErg'], ['gym', 'Gym with barbells, no sled or ergs'], ['home', 'Home: dumbbells / kettlebells'], ['none', 'No equipment yet']], a.gym || 'full')}
+    <p class="q">Lifting experience</p>${radio('liftExp', [['none', 'New to lifting'], ['lt1', 'Under 1 year'], ['y1_3', '1-3 years'], ['y3', 'More than 3 years']], a.liftExp || 'lt1')}
+    <p class="q">Current numbers <span class="hint">optional, good-form sets of 5</span></p>
+    ${num('bodyweight', 'Bodyweight', a.bodyweight, 'kg')}${num('squat5', 'Back squat x 5', a.squat5, 'kg')}${num('deadlift5', 'Deadlift x 5', a.deadlift5, 'kg')}${num('pullups', 'Strict pull-ups in a row', a.pullups, 'reps')}
+    ${timeField('row1000Text', '1000 m row time', a.row1000Text, 'm:ss, e.g. 3:55')}
+    <p class="q">Start with which block?</p>${radio('startBlock', [['auto', 'Let the app choose'], ['engine', '⚡ Engine block'], ['strength', '🏋️ Strength block']], a.startBlock || 'auto')}`;
+}
+
 function triQuestions(a) {
   const yn = (name, cur) => radio(name, [['yes', 'Yes'], ['no', 'Not yet']], cur || 'no');
   return `<p class="q">How far can you swim without stopping?</p>${radio('swimDist', SWIM_DIST, a.swimDist || '100')}
@@ -175,6 +187,23 @@ function triQuestions(a) {
     ${a.bikeAccess !== 'none' ? `<p class="q">Longest ride lately?</p>${radio('longestRide', RIDES, a.longestRide || '60')}` : ''}
     <p class="q">Pool sessions possible per week?</p>${radio('poolPerWeek', [['0', 'None'], ['1', '1'], ['2', '2'], ['3', '3 or more']], a.poolPerWeek || '2')}
     <p class="q">Triathlons finished <span class="hint">optional</span></p><div class="choices">${TRI_RACES.map(([k, l]) => check(`race_${k}`, l, a[`race_${k}`])).join('')}</div>`;
+}
+
+function hybridCard(onMap = false) {
+  if (!HYB.hasHybrid(S)) return '';
+  const w = HYB.hybWorld(S), lim = HYB.limiter(S), b = HYB.blockInfo(S, now());
+  const st = HYB.laneStatus(S);
+  const blockLine = b.type === 'deload' ? '😮‍💨 <strong>Deload week</strong>: everything light. Next: ' + (b.next === 'engine' ? '⚡ Engine block' : '🏋️ Strength block')
+    : `${b.type === 'engine' ? '⚡ <strong>Engine block</strong>' : '🏋️ <strong>Strength block</strong>'} · week ${b.week} of ${b.weeks}<br><span class="hint">Building ${b.type}, maintaining ${b.type === 'engine' ? 'strength' : 'engine'}. Then a deload week.</span>`;
+  const other = b.type === 'engine' ? 'strength' : 'engine';
+  return `<section class="card hyb-card" ${onMap ? '' : 'style="order:8"'}><p class="eyebrow">Hybrid · ${w.emoji} ${h(w.name)}</p>
+    <p class="block-line">${blockLine}</p>
+    <div class="block-bar">${Array.from({ length: BLOCK_WEEKS }, (_, i) => `<span class="${b.type !== 'deload' && i < b.week ? 'on' : ''}"></span>`).join('')}<span class="deload ${b.type === 'deload' ? 'on' : ''}"></span></div>
+    <div class="lane-bars">${st.map(l => `<div class="${l.ok ? 'ok' : lim?.lane === l.lane ? 'lim' : ''}"><span>${HYB.LANE_ICON[l.lane]}</span><b>${h(HYB.laneTarget(l.lane, l.need).replace(' x bodyweight', 'x BW'))}</b><em>${l.ok ? 'ready' : lim?.lane === l.lane ? 'limiter' : 'building'}</em></div>`).join('')}</div>
+    <p class="hint">${S.hybrid.finished ? 'Pro League conquered 👑' : lim ? `${HYB.LANE_ICON[lim.lane]} ${HYB.LANE_LABEL[lim.lane]} is your limiter.${lim.lane !== 'run' && !HYB.inFocus(S, lim.lane) ? ` A ${HYB.LANE_LABEL[lim.lane]} block would move it most.` : ''}` : '🏁 All lanes ready: your race gate is open!'}</p>
+    <div class="row wrap">${onMap ? '' : '<button class="btn small" data-act="goto-hyb-map">Open Hybrid map</button>'}
+      ${b.type !== 'deload' ? `<button class="btn ghost small" data-act="block-switch" data-b="${other}">Switch to ${other} block</button><button class="btn ghost small" data-act="block-switch" data-b="deload">Deload now</button>` : `<button class="btn ghost small" data-act="block-switch" data-b="${b.next}">Start ${b.next} block now</button>`}</div>
+    <p class="hint">Use your division's official weights (Hyrox Open/Pro, Alpha X). ${S.hybrid.gym !== 'full' ? 'No sled or ergs? Each exercise shows a swap.' : ''}</p></section>`;
 }
 
 function triCard() {
@@ -229,6 +258,7 @@ function normalize(a) {
     runsLast4w: n(a.runsLast4w), weeklyKm: n(a.weeklyKm), longestKm, longestEstimated, longestMin,
     best5k: best5k || null, best10k: best10k || null, hybridRaces: hybrid,
     triRaces: TRI_RACES.map(([k]) => k).filter(k => a[`race_${k}`]),
+    row1000: parseTime(a.row1000Text) || null,
     continuous: a.continuous || 'none', pain: a.pain || 'none', daysPerWeek: (a.days || K.defaultDays(3)).length,
   };
 }
@@ -278,11 +308,13 @@ function renderOnboarding() {
         ${dreamLine({ ...normalize(ui.ob.a), ...(ui.ob.a.dreamAI?.accepted ? { target: targetFromAI(ui.ob.a.dreamAI) || undefined, dreamDate: ui.ob.a.dreamDate || ui.ob.a.dreamAI.date || '' } : {}) }, preview.placed)}
         ${ui.ob.a.dreamAI ? `<div class="ai-read ${ui.ob.a.dreamAI.accepted ? '' : 'off'}"><span>🤖 Here's what I understood: <strong>${h(ui.ob.a.dreamAI.summary || '')}</strong></span>
           <div class="row">${ui.ob.a.dreamAI.accepted ? '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="0">Not quite</button>' : '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="1">Use this reading</button>'}</div></div>` : ''}
+        ${(ui.ob.a.tracks || []).includes('hybrid') ? (() => { const hy = HYB.placeHybrid(preview.state, normalize(ui.ob.a), now()); const w = HYBRID_WORLDS[hy.world];
+          return `<div class="dream-box"><strong>🏋️⚙️🏃 Hybrid: ${w.emoji} ${h(w.name)}</strong><br><span class="hint">Strength: ${h(HYB.laneTarget('strength', hy.strength.stage + 1))} next · Engine: ${h(HYB.laneTarget('engine', hy.engine.stage + 1))} next · starting with a ${hy.block.type === 'engine' ? '⚡ Engine' : '🏋️ Strength'} block</span></div>`; })() : ''}
         ${(ui.ob.a.tracks || []).includes('tri') ? (() => { const tri = TRI.placeTri(preview.state, normalize(ui.ob.a)); const w = TRI_WORLDS[tri.world];
           return `<div class="dream-box"><strong>🏊🚴🏃 Triathlon: ${w.emoji} ${h(w.name)}</strong><br><span class="hint">Swim: ${h(TRI.laneTarget('swim', tri.swim.stage + 1))} next · Bike: ${h(TRI.laneTarget('bike', tri.bike.stage + 1))} next · Run: your Run level${tri.learnToSwim ? ' · starting with swim lessons' : ''}</span></div>`; })() : ''}
         <p><strong>Prep Track:</strong> P${ps.n} ${h(ps.name)} (${h(ps.focus)})</p>
         ${normalize(ui.ob.a).longestEstimated ? `<p class="hint">Longest run estimated at about ${normalize(ui.ob.a).longestKm} km from its time.</p>` : ''}
-        ${normalize(ui.ob.a).hybridRaces.length ? `<p class="hint">Races on record: ${h(normalize(ui.ob.a).hybridRaces.map(raceLabel).join(', '))}. They feed your Hybrid track when it opens.</p>` : ''}
+        ${normalize(ui.ob.a).hybridRaces.length ? `<p class="hint">Races on record: ${h(normalize(ui.ob.a).hybridRaces.map(raceLabel).join(', '))}. They count toward your Hybrid placement.</p>` : ''}
         ${rb.active ? `<div class="banner warn"><strong>Rebuild Track first.</strong> Because you reported pain, you start with the Rebuild Track. Your level is saved and you come back to it afterwards.${rb.seeProfessional ? ' Please get it checked by a physio or doctor first.' : ''}</div>` : ''}
         <p class="hint">Coming in Phase 2: upload Strava/Garmin files or screenshots to verify this.</p>
       </div>`;
@@ -305,6 +337,7 @@ function renderOnboarding() {
 function render() {
   if (!S.placedAt || S.needsReassessment || ui.retake) { $('#app').className = ''; renderOnboarding(); renderModal(); return; }
   $('#app').className = 'shell';
+  if (HYB.hasHybrid(S)) { const next = HYB.refreshHybrid(S, now(), E.weekKey(now())); if (next !== S) { S = next; store.save(S); } }
   const frame = document.querySelector('.worldmap');
   if (frame) ui.frameTop = frame.scrollTop; // keep the framed map's scroll across redraws
   const t = now();
@@ -321,7 +354,7 @@ function render() {
   renderModal();
   if (ui.tab === 'coach') { const log = $('.chat-log'); if (log) log.scrollTop = log.scrollHeight; }
   if (ui.tab === 'map' && ui.mapMode === 'world') afterMapRender();
-  if (ui.tab === 'map' && ui.mapMode === 'tri') afterTriRender();
+  if (ui.tab === 'map' && (ui.mapMode === 'tri' || ui.mapMode === 'hyb')) afterTriRender();
 }
 
 function queueModals() {
@@ -349,7 +382,7 @@ function banners() {
 }
 
 const STATUS_ICON = { done: '✅', provisional: '⏳', open: '<span class="dot"></span>', locked: '🔒', slot: '🧱' };
-const TYPE_LABEL = { run: 'Run', swim: 'Swim', bike: 'Bike', prep: 'Prep', slot: 'Prep slot', rest: 'Rest', gate: 'Gate', proveit: 'Prove It' };
+const TYPE_LABEL = { run: 'Run', swim: 'Swim', bike: 'Bike', lift: 'Lift', engine: 'Engine', maint: 'Maintain', prep: 'Prep', slot: 'Prep slot', rest: 'Rest', gate: 'Gate', proveit: 'Prove It' };
 
 function stepRow(track, st) {
   const clickable = st.status === 'open' || st.status === 'slot';
@@ -365,6 +398,10 @@ function trackTitle(track) {
   if (track === 'run') { const l = E.runLevel(S.run.level); return `${E.worldOf(l).emoji} Level ${l.n} · ${h(l.name)}`; }
   if (track === 'prep') { const p = PREP_STAGES[S.prep.level]; return `🧱 Prep P${p.n} · ${h(p.name)}`; }
   if (track === 'rebuild') { const r = REBUILD_STAGES[S.rebuild.stage]; return `🩹 Rebuild R${r.n} · ${h(r.name)}`; }
+  if (track === 'strength') return `🏋️ Strength · ${h(HYB.strengthStage(S).name)}`;
+  if (track === 'engine') return `⚙️ Engine · ${h(HYB.engineStage(S).name)}`;
+  if (track === 'hyGate') return `🏁 ${h(HYB.hybWorld(S).name)} race gate`;
+  if (track === 'hyMaint') return S.hybrid.block.type === 'deload' ? '😮‍💨 Deload week' : `🔧 Maintaining ${S.hybrid.block.type === 'engine' ? 'strength' : 'engine'}`;
   if (track === 'swim') return `🏊 Swim · ${h(TRI.swimStage(S).name)} (${h(TRI.swimStage(S).target)})`;
   if (track === 'bike') return `🚴 Bike · ${h(TRI.bikeStage(S).name)} (${h(TRI.bikeStage(S).target)})`;
   if (track === 'triGate') return `🌉 ${h(TRI.triWorld(S).name)} transition gate`;
@@ -425,7 +462,7 @@ function viewToday() {
     </div>`;
 }
 
-const CLS_ICON = { long: '🛣️', hard: '⚡', test: '🏁', easy: '🏃', strength: '🧱', impact: '🦘', rest: '😴', done: '✅', swim: '🏊', bike: '🚴' };
+const CLS_ICON = { long: '🛣️', hard: '⚡', test: '🏁', easy: '🏃', strength: '🧱', impact: '🦘', rest: '😴', done: '✅', swim: '🏊', bike: '🚴', upper: '💪' };
 
 function todayParts(t) {
   const w = K.buildWeek(S, t);
@@ -459,28 +496,32 @@ function todayParts(t) {
     </section>`;
   const nextWeek = nw ? `<section class="card week next-week" style="order:7"><h3>Next week <span class="hint">preview</span></h3>${weekList(nw, false)}
       ${nw.notes.map(n => `<p class="hint">${h(n)}</p>`).join('')}</section>` : '';
-  const coming = (S.profile.tracks || []).filter(k => k === 'hybrid');
+  const coming = [];
   const tracksCard = coming.length ? `<section class="card info-card" style="order:8"><p>${coming.map(k => k === 'hybrid' ? '🏋️ <strong>Hybrid track</strong>' : '🏊 <strong>Triathlon track</strong>').join(' and ')} ${coming.length > 1 ? 'are' : 'is'} being built. Your training already counts toward ${coming.length > 1 ? 'them' : 'it'}: carry-over will show the moment ${coming.length > 1 ? 'they open' : 'it opens'}.</p></section>` : '';
 
-  return { today: todayCard, week, nextWeek, tracks: tracksCard + triCard() };
+  return { today: todayCard, week, nextWeek, tracks: hybridCard() + triCard() };
 }
 
 function viewMap() {
   const prep = PREP_STAGES.map(p => `<li class="${p.n < S.prep.level || (p.n === 7 && S.prep.mastered) ? 'done' : p.n === S.prep.level ? 'current' : ''}"><strong>P${p.n}</strong> ${h(p.name)}<span>${h(p.focus)}</span></li>`).join('');
   const rebuild = S.rebuild.active ? `<section class="card"><h3>🩹 Rebuild Track</h3><ol class="ladder">${REBUILD_STAGES.map((r, i) => `<li class="${i < S.rebuild.stage ? 'done' : i === S.rebuild.stage ? 'current' : ''}"><strong>R${r.n}</strong> ${h(r.name)}<span>${h(r.focus)}</span></li>`).join('')}</ol></section>` : '';
-  if (ui.mapMode === 'tri' && !TRI.hasTri(S)) ui.mapMode = 'world';
-  const modes = [['world', TRI.hasTri(S) ? '🏃 Run map' : '🗺️ World map'], ...(TRI.hasTri(S) ? [['tri', '🏊 Tri map']] : []), ['grid', '▦ Level cards']];
+  if ((ui.mapMode === 'tri' && !TRI.hasTri(S)) || (ui.mapMode === 'hyb' && !HYB.hasHybrid(S))) ui.mapMode = 'world';
+  const multi = TRI.hasTri(S) || HYB.hasHybrid(S);
+  const modes = [['world', multi ? '🏃 Run' : '🗺️ World map'], ...(HYB.hasHybrid(S) ? [['hyb', '🏋️ Hybrid']] : []), ...(TRI.hasTri(S) ? [['tri', '🏊 Tri']] : []), ['grid', multi ? '▦ Cards' : '▦ Level cards']];
   const toggle = `<div class="seg" role="tablist">${modes.map(([k, l]) =>
     `<button role="tab" class="${ui.mapMode === k ? 'on' : ''}" data-act="map-mode" data-mode="${k}">${l}</button>`).join('')}</div>`;
   const lvl = E.runLevel(S.run.level);
   const sideInfo = `<section class="card map-side-info"><p class="eyebrow">${E.worldOf(lvl).emoji} ${h(E.worldOf(lvl).name)}</p><h3>Level ${lvl.n} · ${h(lvl.name)}</h3>
       ${S.profile.dream ? dreamLine(S.profile.dream, S.run.level, true) : ''}<button class="btn primary small" data-act="open-level">Open level</button></section>`;
+  if (ui.mapMode === 'hyb') {
+    return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${renderLaneMap(S, ui, 'hyb')}</div><div class="map-side">${hybridCard(true)}</div></div>`;
+  }
   if (ui.mapMode === 'tri') {
     const lim = TRI.limiter(S);
     const triSide = `<section class="card map-side-info"><p class="eyebrow">Triathlon · ${TRI.triWorld(S).emoji} ${h(TRI.triWorld(S).name)}</p><h3>${h(TRI.triWorld(S).race)}</h3>
       <p class="hint">${lim ? `${TRI.LANE_ICON[lim.lane]} <strong>${TRI.LANE_LABEL[lim.lane]}</strong> is your limiter.${lim.lane === 'run' ? ' Your running lives on the Run map.' : ''}` : '🌉 All three lanes are ready: the transition gate is open!'}</p>
-      ${lim?.lane === 'run' ? '<button class="btn primary small" data-act="goto-run-map">Go to Run map</button>' : lim ? `<button class="btn primary small" data-act="tri-lane-step" data-lane="${lim.lane}">Next ${lim.lane} session</button>` : '<button class="btn primary small" data-act="open-step" data-track="triGate" data-idx="0">Start the gate</button>'}</section>`;
-    return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${renderTriMap(S, ui)}</div><div class="map-side">${triSide}${triCard().replace('style="order:8"', '')}</div></div>`;
+      ${lim?.lane === 'run' ? '<button class="btn primary small" data-act="goto-run-map">Go to Run map</button>' : lim ? `<button class="btn primary small" data-act="lane-step" data-lane="${lim.lane}">Next ${lim.lane} session</button>` : '<button class="btn primary small" data-act="open-step" data-track="triGate" data-idx="0">Start the gate</button>'}</section>`;
+    return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${renderLaneMap(S, ui, 'tri')}</div><div class="map-side">${triSide}${triCard().replace('style="order:8"', '')}</div></div>`;
   }
   return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${ui.mapMode === 'grid' ? levelGrid() : renderMap(S, ui)}</div><div class="map-side">${sideInfo}${rebuild}
     <section class="card"><h3>🧱 Prep Track</h3><p class="hint">Harder run work unlocks with your Prep stage: strides at P3, hills and intervals at P4.</p><ol class="ladder">${prep}</ol></section></div></div>`;
@@ -509,12 +550,13 @@ function triFollow(y) {
   const frame = document.querySelector('.worldmap');
   if (!frame) return;
   const svg = frame.querySelector('svg');
-  if (frame.scrollHeight > frame.clientHeight + 4) frame.scrollTop = Math.max(0, (y / TRI_H) * svg.getBoundingClientRect().height - frame.clientHeight * 0.5);
-  else { const r = svg.getBoundingClientRect(); window.scrollTo(0, Math.max(0, r.top + window.scrollY + (y / TRI_H) * r.height - window.innerHeight * 0.5)); }
+  if (frame.scrollHeight > frame.clientHeight + 4) frame.scrollTop = Math.max(0, (y / LANE_H) * svg.getBoundingClientRect().height - frame.clientHeight * 0.5);
+  else { const r = svg.getBoundingClientRect(); window.scrollTo(0, Math.max(0, r.top + window.scrollY + (y / LANE_H) * r.height - window.innerHeight * 0.5)); }
 }
 function afterTriRender() {
   const frame = document.querySelector('.worldmap');
-  if (ui.mapScroll || ui.frameTop == null) { ui.mapScroll = false; triFollow(triGateY(Math.min(S.tri.world, TRI_WORLDS.length - 1)) + 120); }
+  const w = ui.mapMode === 'hyb' ? S.hybrid.world : S.tri.world;
+  if (ui.mapScroll || ui.frameTop == null) { ui.mapScroll = false; triFollow(laneGateY(Math.min(w, 5)) + 120); }
   else if (frame && frame.scrollHeight > frame.clientHeight + 4) frame.scrollTop = ui.frameTop;
 }
 function readTriForm(f) {
@@ -762,6 +804,10 @@ function painButtons() {
 }
 
 const MODALS = {
+  addHyb(m) {
+    return `<form id="hyb-form"><h2>🏋️⚙️🏃 Add the Hybrid track</h2><p class="why">💡 Your running already counts: the run lane is your Run Track. These questions set the Strength and Engine lanes.</p>
+      ${hybQuestions(m.a)}<div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Place me</button></div></form>`;
+  },
   addTri(m) {
     return `<form id="tri-form"><h2>🏊🚴🏃 Add the Triathlon track</h2><p class="why">💡 Your running already counts: the run lane is your Run Track. These questions set the swim and bike lanes.</p>
       ${triQuestions(m.a)}<div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Place me</button></div></form>`;
@@ -886,6 +932,7 @@ const MODALS = {
     const exs = (st.ex || []).map(id => EXERCISES[id] && `<li class="ex">
         <div><strong>${h(EXERCISES[id].name)}</strong> <span class="dose">${h(EXERCISES[id].dose)}</span></div>
         <ul>${EXERCISES[id].cues.map(c => `<li>${h(c)}</li>`).join('')}</ul>
+        ${EXERCISES[id].alt && S.hybrid && S.hybrid.gym !== 'full' ? `<p class="hint">🔁 ${h(EXERCISES[id].alt)}</p>` : ''}
         <a href="${videoLink(id)}" target="_blank" rel="noopener">▶ Watch how</a></li>`).join('');
     const passQ = st.type === 'proveit' ? `<p class="q">Did you hit it?</p>${radio('passed', [['1', 'Yes, I hit it'], ['0', 'Not quite']], '1')}` : '';
     const gateNote = st.type === 'gate' ? `<p class="hint">${st.nextDay ? 'Gate result is confirmed by tomorrow morning\'s pain check (2/10 or less).' : 'Only log it once you have done the test.'}</p>` : '';
@@ -985,6 +1032,7 @@ const actions = {
     state.profile.primary = tracks.includes(a.primary) ? a.primary : tracks[0];
     state.profile.view = a.view === 'full' ? 'full' : 'simple';
     state.tri = tracks.includes('tri') ? TRI.placeTri(state, a) : state.tri || null;
+    state.hybrid = tracks.includes('hybrid') ? HYB.refreshHybrid({ ...state, hybrid: HYB.placeHybrid(state, a, now()) }, now(), E.weekKey(now())).hybrid : state.hybrid || null;
     const ai = a.dreamAI?.accepted ? a.dreamAI : null;
     state.profile.dream = { text: String(a.dream || '').trim().slice(0, 160), event: String(a.dreamEvent || ai?.event || '').trim().slice(0, 60),
       date: a.dreamDate || (/^\d{4}-\d{2}-\d{2}$/.test(ai?.date || '') ? ai.date : ''), summary: ai?.summary || '',
@@ -1024,7 +1072,7 @@ const actions = {
     ui.mapPopup = null; ui.mapRunning = true; render();
     runAvatar(from, n, { onDone: () => { ui.mapRunning = false; ui.avatarAt = n; saveAvatar(n); ui.mapPopup = n; render(); } });
   },
-  'map-mode'(el) { ui.mapMode = el.dataset.mode; try { localStorage.setItem('stride-quest:mapMode', ui.mapMode); } catch { /* ignore */ } ui.mapScroll = ui.mapMode !== 'grid'; ui.frameTop = null; ui.triPopup = null; ui.mapPopup = null; render(); },
+  'map-mode'(el) { ui.mapMode = el.dataset.mode; try { localStorage.setItem('stride-quest:mapMode', ui.mapMode); } catch { /* ignore */ } ui.mapScroll = ui.mapMode !== 'grid'; ui.frameTop = null; ui.lanePopup = null; ui.mapPopup = null; render(); },
   'grid-node'(el) {
     const n = +el.dataset.n, l = E.runLevel(n);
     if (n === S.run.level) { ui.modal = { type: 'level' }; renderModal(); }
@@ -1053,14 +1101,16 @@ const actions = {
     toast(message); render();
   },
   'sugg-skip'(el) { const a = ui.chat[+el.dataset.m]?.actions?.[+el.dataset.a]; if (a) { a.label = ACT.describe(S, a, now())?.label || ''; a.status = 'skipped'; saveChat(); render(); } },
-  'tri-node'(el) { const p = { kind: el.dataset.kind, lane: el.dataset.lane, world: el.dataset.world }; ui.triPopup = ui.triPopup && JSON.stringify(ui.triPopup) === JSON.stringify(p) ? null : p; render(); },
-  'tri-bg'() { if (ui.triPopup) { ui.triPopup = null; render(); } },
-  'tri-lane-step'(el) {
+  'lane-node'(el) { const p = { map: el.dataset.map, kind: el.dataset.kind, lane: el.dataset.lane, world: el.dataset.world }; ui.lanePopup = ui.lanePopup && JSON.stringify(ui.lanePopup) === JSON.stringify(p) ? null : p; render(); },
+  'lane-bg'() { if (ui.lanePopup) { ui.lanePopup = null; render(); } },
+  'block-switch'(el) { S = HYB.switchBlock(S, el.dataset.b, now()); S = HYB.refreshHybrid(S, now(), E.weekKey(now())); store.save(S); toast(el.dataset.b === 'deload' ? 'Deload week: recover and come back stronger 😮‍💨' : `${el.dataset.b === 'engine' ? '⚡ Engine' : '🏋️ Strength'} block started: ${BLOCK_WEEKS} weeks.`); render(); },
+  'lane-step'(el) {
     const lane = el.dataset.lane, st = E.trackSteps(S, lane).find(x => x.status === 'open');
     if (!st) return toast('Two sessions done: your gate test is next, or wait for the lane to unlock.');
-    ui.triPopup = null; ui.modal = { type: 'step', track: lane, idx: st.idx }; renderModal();
+    ui.lanePopup = null; ui.modal = { type: 'step', track: lane, idx: st.idx }; renderModal();
   },
-  'goto-run-map'() { ui.tab = 'map'; ui.mapMode = 'world'; ui.triPopup = null; ui.mapScroll = true; ui.frameTop = null; render(); },
+  'goto-run-map'() { ui.tab = 'map'; ui.mapMode = 'world'; ui.lanePopup = null; ui.mapScroll = true; ui.frameTop = null; render(); },
+  'goto-hyb-map'() { ui.tab = 'map'; ui.mapMode = 'hyb'; ui.mapScroll = true; ui.frameTop = null; render(); },
   'goto-tri-map'() { ui.tab = 'map'; ui.mapMode = 'tri'; ui.mapScroll = true; ui.frameTop = null; render(); },
   'set-view'(el) { S.profile.view = el.dataset.v; commit(S); window.scrollTo(0, 0); },
   async install() { if (!installEvent) return; installEvent.prompt(); await installEvent.userChoice.catch(() => {}); installEvent = null; render(); },
@@ -1073,6 +1123,7 @@ const actions = {
   'move-confirm'() { const { key, day } = ui.modal; ui.modal = null; commit(K.moveItem(S, key, day, now())); toast(`Moved to ${K.DAY_NAMES[day]}.`); },
   'add-track'(el) {
     if (el.dataset.k === 'tri') { ui.modal = { type: 'addTri', a: { ...(S.answers || {}) } }; renderModal(); return; }
+    if (el.dataset.k === 'hybrid') { ui.modal = { type: 'addHyb', a: { ...(S.answers || {}) } }; renderModal(); return; }
     S.profile.tracks = [...new Set([...(S.profile.tracks || ['run']), el.dataset.k])]; commit(S); toast('Added! It opens as soon as it is built, and your training already counts.');
   },
   'edit-days'() { ui.modal = { type: 'days' }; renderModal(); },
@@ -1209,6 +1260,18 @@ document.addEventListener('submit', e => {
     if (f.querySelector('[name=dream]')) readDream();
     ui.ob.step++; renderOnboarding(); window.scrollTo(0, 0); return;
   }
+  if (f.id === 'hyb-form') {
+    const fd = Object.fromEntries(new FormData(f).entries());
+    const a = { ...(S.answers || {}), ...fd, row1000: parseTime(fd.row1000Text) || null };
+    S.profile.tracks = [...new Set([...(S.profile.tracks || ['run']), 'hybrid'])];
+    S.answers = a;
+    S.hybrid = HYB.placeHybrid(S, a, t);
+    S = HYB.refreshHybrid(S, t, E.weekKey(t));
+    ui.modal = null; ui.tab = 'map'; ui.mapMode = 'hyb'; ui.mapScroll = true; ui.frameTop = null;
+    commit(S);
+    toast(`Welcome to ${HYB.hybWorld(S).emoji} ${HYB.hybWorld(S).name}!`);
+    return;
+  }
   if (f.id === 'tri-form') {
     const a = { ...(ui.modal.a || {}), ...readTriForm(f) };
     a.triRaces = TRI_RACES.map(([k]) => k).filter(k => a[`race_${k}`]);
@@ -1280,7 +1343,7 @@ window.addEventListener('hashchange', () => {
   if (!ui.modal) render();
 });
 
-$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
 
 // ---------- installable app ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;

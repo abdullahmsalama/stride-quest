@@ -481,3 +481,13 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .ai-read.off { opacity: .65; }
 .ai-read .row { margin-top: 0; }
 .slow-note { display: block; font-size: 12px; color: var(--ink-2); margin-top: 6px; font-style: normal; }
+
+/* hybrid */
+.hyb-card { border-left: 5px solid #455a64; }
+.block-line { margin: 4px 0 8px; }
+.block-bar { display: flex; gap: 4px; margin: 0 0 10px; }
+.block-bar span { flex: 1; height: 8px; border-radius: 99px; background: var(--surface-2); }
+.block-bar span.on { background: var(--brand); }
+.block-bar span.deload { flex: .6; background: var(--info-soft); }
+.block-bar span.deload.on { background: var(--info); }
+.tri-avatar.resting .bob { opacity: .55; animation: none; }

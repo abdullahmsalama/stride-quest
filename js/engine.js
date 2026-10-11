@@ -2,9 +2,10 @@
 // Every function that changes state returns a new state; `now` is a timestamp in ms.
 import { RUN_LEVELS, PREP_STAGES, REBUILD_STAGES, WORLDS, DAILY_ORDERS } from './data/tracks.js';
 import * as TRI from './tri.js';
+import * as HYB from './hybrid.js';
 
 export const DAY = 864e5;
-export const XP = { run: 30, swim: 30, bike: 30, prep: 20, slot: 20, rest: 10, gate: 100, proveit: 30, painCheck: 5, daily: 5, restDay: 10, weekBonus: 50 };
+export const XP = { run: 30, swim: 30, bike: 30, lift: 30, engine: 30, maint: 25, prep: 20, slot: 20, rest: 10, gate: 100, proveit: 30, painCheck: 5, daily: 5, restDay: 10, weekBonus: 50 };
 const SESSION_TYPES = new Set(['run', 'prep', 'slot', 'gate', 'proveit']);
 
 // ---------- dates ----------
@@ -120,6 +121,10 @@ export function trackSteps(s, track) {
   else if (track === 'swim') { steps = TRI.swimSteps(s); done = s.tri.swim.done; }
   else if (track === 'bike') { steps = TRI.bikeSteps(s); done = s.tri.bike.done; }
   else if (track === 'triGate') { steps = TRI.gateSteps(s); done = s.tri.done; }
+  else if (track === 'strength') { steps = HYB.strengthSteps(s); done = s.hybrid.strength.done; }
+  else if (track === 'engine') { steps = HYB.engineSteps(s); done = s.hybrid.engine.done; }
+  else if (track === 'hyGate') { steps = HYB.gateSteps(s); done = s.hybrid.done; }
+  else if (track === 'hyMaint') { steps = HYB.maintSteps(s); done = s.hybrid.maint.done; }
   const gateOpen = gateUnlocked(s, track);
   return steps.map((st, idx) => {
     let step = { ...st, idx };
@@ -131,6 +136,9 @@ export function trackSteps(s, track) {
     if (track === 'rebuild' && s.rebuild.redFlag && status === 'open' && !(s.rebuild.stage === 0 && idx === 1)) status = 'locked';
     if ((track === 'swim' || track === 'bike') && s.rebuild.redFlag && status === 'open') status = 'locked';
     if (track === 'triGate' && s.rebuild.active && status === 'open') status = 'locked'; // races wait until rebuilt
+    if ((track === 'hyGate') && s.rebuild.active && status === 'open') status = 'locked';
+    if ((track === 'strength' || track === 'engine') && status === 'open' && !HYB.inFocus(s, track)) { status = 'locked'; step = { ...step, held: true }; }
+    if ((track === 'strength' || track === 'engine' || track === 'hyMaint') && s.rebuild.redFlag && status === 'open') status = 'locked';
     return { ...step, status, xp: XP[st.type] || 0 };
   });
 }
@@ -152,6 +160,10 @@ export function gateUnlocked(s, track) {
   if (track === 'swim') return Object.keys(s.tri.swim.done).length >= 2;
   if (track === 'bike') return Object.keys(s.tri.bike.done).length >= 2;
   if (track === 'triGate') return TRI.lanesReady(s);
+  if (track === 'strength') return Object.keys(s.hybrid.strength.done).length >= 2;
+  if (track === 'engine') return Object.keys(s.hybrid.engine.done).length >= 2;
+  if (track === 'hyGate') return HYB.lanesReady(s);
+  if (track === 'hyMaint') return true;
   return false;
 }
 
@@ -222,6 +234,7 @@ export const BADGES = {
   prep_master: { name: 'Elastic', emoji: '🪃', desc: 'Finished the whole Prep Track' },
   challenger: { name: 'Challenger', emoji: '🏆', desc: 'Completed a friend challenge' },
   tri_gate: { name: 'Transition', emoji: '⚡', desc: 'Cleared a triathlon transition gate' },
+  hybrid_gate: { name: 'Station Master', emoji: '🏋️', desc: 'Cleared a Hybrid race gate' },
 };
 function badge(s, id, now, msgs) {
   if (s.badges[id]) return;
@@ -296,12 +309,17 @@ function levelNumber(s, track) {
   if (track === 'swim') return s.tri.swim.stage;
   if (track === 'bike') return s.tri.bike.stage;
   if (track === 'triGate') return s.tri.world;
+  if (track === 'strength') return s.hybrid.strength.stage;
+  if (track === 'engine') return s.hybrid.engine.stage;
+  if (track === 'hyGate') return s.hybrid.world;
+  if (track === 'hyMaint') return s.hybrid.maint.week;
   return 'refresher';
 }
 
 function doneMapOf(s, track) {
   return { run: s.run.done, prep: s.prep.done, rebuild: s.rebuild.done, refresher: s.refresher?.done,
-    swim: s.tri?.swim.done, bike: s.tri?.bike.done, triGate: s.tri?.done }[track];
+    swim: s.tri?.swim.done, bike: s.tri?.bike.done, triGate: s.tri?.done,
+    strength: s.hybrid?.strength.done, engine: s.hybrid?.engine.done, hyGate: s.hybrid?.done, hyMaint: s.hybrid?.maint.done }[track];
 }
 
 function passGate(s, track, now, msgs, opts = {}) {
@@ -314,6 +332,7 @@ function passGate(s, track, now, msgs, opts = {}) {
     s.run.gatePassed = true;
     tryAdvanceRun(s, now, msgs);
     if (TRI.hasTri(s) && TRI.lanesReady(s)) msgs.push(`🌉 Your running unlocked the ${TRI.triWorld(s).name} transition gate on the Tri map!`);
+    if (HYB.hasHybrid(s) && HYB.lanesReady(s)) msgs.push(`🏁 Your running unlocked the ${HYB.hybWorld(s).name} race gate on the Hybrid map!`);
   } else if (track === 'prep') {
     if (s.prep.level >= 7) { s.prep.mastered = true; s.prep.done = {}; badge(s, 'prep_master', now, msgs); return; }
     s.prep.level += 1;
@@ -329,6 +348,22 @@ function passGate(s, track, now, msgs, opts = {}) {
     msgs.push(lane.stage >= ladder ? `${TRI.LANE_ICON[track]} ${TRI.LANE_LABEL[track]} ladder complete!`
       : `${TRI.LANE_ICON[track]} ${TRI.LANE_LABEL[track]} stage up: ${(track === 'swim' ? TRI.swimStage(s) : TRI.bikeStage(s)).name}`);
     if (TRI.lanesReady(s)) msgs.push(`🌉 All three lanes are ready: the ${TRI.triWorld(s).name} transition gate is open!`);
+  } else if (track === 'strength' || track === 'engine') {
+    const lane = s.hybrid[track];
+    lane.stage += 1;
+    lane.done = {};
+    const max = track === 'strength' ? HYB.STR_MAX : HYB.ENG_MAX;
+    msgs.push(lane.stage >= max ? `${HYB.LANE_ICON[track]} ${HYB.LANE_LABEL[track]} ladder complete!`
+      : `${HYB.LANE_ICON[track]} ${HYB.LANE_LABEL[track]} stage up: ${(track === 'strength' ? HYB.strengthStage(s) : HYB.engineStage(s)).name}`);
+    if (HYB.lanesReady(s)) msgs.push(`🏁 All three lanes are ready: the ${HYB.hybWorld(s).name} race gate is open!`);
+  } else if (track === 'hyGate') {
+    const w = HYB.hybWorld(s);
+    s.hybrid.done = {};
+    badge(s, 'hybrid_gate', now, msgs);
+    if (w.gate.boss) badge(s, 'first_boss', now, msgs);
+    if (s.hybrid.world >= 5) { s.hybrid.finished = true; msgs.push(`👑 ${w.name} conquered!`); return; }
+    s.hybrid.world += 1;
+    msgs.push(`🏁 ${w.name} cleared! Welcome to ${HYB.hybWorld(s).emoji} ${HYB.hybWorld(s).name}`);
   } else if (track === 'triGate') {
     const w = TRI.triWorld(s);
     s.tri.done = {};
@@ -705,6 +740,10 @@ export function coachContext(s, now) {
   if (TRI.hasTri(s)) {
     const lim = TRI.limiter(s);
     lines.push(`Triathlon: world "${TRI.triWorld(s).name}"; swim ${TRI.swimStage(s).name} (${TRI.swimStage(s).target}), bike ${TRI.bikeStage(s).name} (${TRI.bikeStage(s).target}), run = Run Track level ${s.run.level}. ${lim ? `Limiter: ${lim.lane}.` : 'All lanes ready: transition gate open.'}${s.tri.learnToSwim ? ' Cannot swim yet: suggest lessons with a coach, never swim alone.' : ''}`);
+  }
+  if (HYB.hasHybrid(s)) {
+    const lim = HYB.limiter(s), b = s.hybrid.block;
+    lines.push(`Hybrid: world "${HYB.hybWorld(s).name}"; strength ${HYB.strengthStage(s).name}, engine ${HYB.engineStage(s).name}, run = Run Track level ${s.run.level}. Current block: ${b.type === 'deload' ? 'deload week' : `${b.type} block (building ${b.type}, maintaining ${b.type === 'engine' ? 'strength' : 'engine'})`}. ${lim ? `Limiter: ${lim.lane}.` : 'All lanes ready: race gate open.'} Gym: ${s.hybrid.gym}.`);
   }
   if (s.answers?.hybridRaces?.length) lines.push(`Hybrid races finished: ${s.answers.hybridRaces.map(r => [r.event, r.division || r.category, r.format].filter(Boolean).join(' ')).join('; ')}.`);
   if (s.answers) lines.push(`Assessment: ~${s.answers.weeklyKm || 0} km/week, longest run ~${s.answers.longestKm || 0} km, best 5K ${s.answers.best5k || 'n/a'} min, best 10K ${s.answers.best10k || 'n/a'} min.`);
