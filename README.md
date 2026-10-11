@@ -13,7 +13,7 @@ All game rules are plain JavaScript in `js/engine.js`. The LLM coach only explai
 ## Run locally
 
 ```bash
-python3 -m http.server 8000     # then open http://localhost:8000
+npm start                       # then open http://localhost:8000 (caching off)
 npm test                        # engine tests (Node 18+)
 ```
 

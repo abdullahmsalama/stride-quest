@@ -158,12 +158,22 @@ export function streakMultiplier(s, now) {
   return weeks >= 4 ? 1.25 : weeks >= 2 ? 1.1 : 1;
 }
 
+// Consecutive days with any activity. Days inside a sick pause are neutral: the streak freezes.
 export function dayStreak(s, now) {
-  const days = new Set(s.history.map(h => dayKey(h.ts)));
+  const days = new Set(s.history.filter(h => h.kind !== 'sickday' && h.kind !== 'event').map(h => dayKey(h.ts)));
   Object.keys(s.daily).forEach(k => { if (s.daily[k].rest || (s.daily[k].orders || []).length) days.add(k); });
   let n = 0;
-  for (let i = 0; ; i++) { const k = dayKey(now - i * DAY); if (days.has(k)) n++; else if (i === 0) continue; else break; }
+  for (let i = 0; i < 1000; i++) {
+    const ts = now - i * DAY, k = dayKey(ts);
+    if (days.has(k)) n++;
+    else if (i === 0 || paused(s, ts)) continue;
+    else break;
+  }
   return n;
+}
+
+export function paused(s, ts) {
+  return (s.pauses || []).some(p => ts >= startOfDay(p.from) && (p.to == null || ts < startOfDay(p.to) + DAY));
 }
 
 function award(s, amount, now, entry) {
@@ -201,6 +211,7 @@ export const BADGES = {
   comeback: { name: 'Comeback', emoji: '🔄', desc: 'Finished a refresher course' },
   rebuilt: { name: 'Rebuilt', emoji: '🩹', desc: 'Finished the Rebuild Track' },
   prep_master: { name: 'Elastic', emoji: '🪃', desc: 'Finished the whole Prep Track' },
+  challenger: { name: 'Challenger', emoji: '🏆', desc: 'Completed a friend challenge' },
 };
 function badge(s, id, now, msgs) {
   if (s.badges[id]) return;
@@ -401,7 +412,7 @@ export function returnCheck(s, now) {
   if (!s.placedAt) return { needed: false };
   const last = lastActive(s);
   const gapDays = daysBetween(last, now);
-  return { needed: gapDays >= 7 && s.returnHandledFor !== last, gapDays, last };
+  return { needed: gapDays >= 3 && s.returnHandledFor !== last, gapDays, last, short: gapDays < 7 };
 }
 
 // load = easy run min + 1.5 x hard run min + 0.5 x cross-training min (all weekly averages)
@@ -491,7 +502,14 @@ export function applyReturn(state, answers) {
   const ret = retention(answers, runLevel(baseLevel).weeklyMin);
   const eff = effectiveGapDays(gapDays, ret);
   const tier = refresherTier(eff);
-  const summary = { gapDays, effectiveDays: eff, retention: ret, tier: tier.id, fromLevel: baseLevel, toLevel: baseLevel, notes: [] };
+  const summary = { gapDays, effectiveDays: eff, retention: ret, tier: tier.id, fromLevel: baseLevel, toLevel: baseLevel, notes: [], reason: answers.reason };
+
+  if (answers.reason === 'illness' && !answers.fromSickMode && gapDays > 1) {
+    // Reported after the fact (the usual case): freeze the streak over the days away,
+    // exactly as if sick mode had been on.
+    s.pauses = [...(s.pauses || []), { from: last + DAY, to: now - DAY, retro: true }];
+    summary.sickDays = gapDays;
+  }
 
   if (tier.id === 'reassess') {
     s.needsReassessment = { oldLevel: baseLevel };
@@ -523,9 +541,11 @@ export function applyReturn(state, answers) {
 
   let steps = buildRefresher(tier.id, baseLevel, toLevel, s.profile.daysPerWeek);
   if (answers.reason === 'illness') steps = [...HEALTH_STEPS.slice(0, eff >= 14 ? 2 : 1), ...steps];
-  s.refresher = steps.length ? { steps, done: {}, fromLevel: baseLevel, toLevel, tier: tier.id, startedAt: now } : null;
+  s.refresher = steps.length ? { steps, done: {}, fromLevel: baseLevel, toLevel, tier: tier.id, startedAt: now, reason: answers.reason } : null;
   if (tier.drop > 0) summary.notes.push(`Dropped ${tier.drop} level${tier.drop > 1 ? 's' : ''}. Your old level is marked Reclaim.`);
   if (!s.refresher) summary.notes.push('Short break: carry on where you left off.');
+  summary.steps = s.refresher?.steps.length || 0;
+  summary.streak = dayStreak(s, now);
   return { state: s, summary };
 }
 
@@ -546,6 +566,39 @@ function refresherProgress(s, step, opts, now, msgs) {
     badge(s, 'comeback', now, msgs);
     msgs.push('Refresher complete. Back on the Run Track.');
   }
+}
+
+// ---------- sick and busy modes ----------
+// mode: { type: 'sick', where: 'above' | 'below' } or { type: 'busy' }
+export function startMode(state, mode, now) {
+  const s = clone(state);
+  s.mode = { ...mode, since: now };
+  if (mode.type === 'sick') s.pauses = [...(s.pauses || []), { from: now, to: null }];
+  s.history.push({ ts: now, kind: 'event', title: mode.type === 'sick' ? 'Sick mode on' : 'Busy mode on', xp: 0 });
+  return s;
+}
+
+// Ending sick mode starts the comeback: health-check steps, then a refresher by how long it lasted.
+export function endMode(state, now) {
+  let s = clone(state);
+  const mode = s.mode;
+  if (!mode) return { state: s, summary: null };
+  s.mode = null;
+  s.history.push({ ts: now, kind: 'event', title: mode.type === 'sick' ? 'Feeling better' : 'Busy mode off', xp: 0 });
+  if (mode.type !== 'sick') return { state: s, summary: null };
+  s.pauses = (s.pauses || []).map(p => (p.to == null ? { ...p, to: now } : p));
+  const res = applyReturn(s, { reason: 'illness', now, fromSickMode: true });
+  const sickDays = Math.max(1, daysBetween(mode.since, now));
+  return { state: res.state, summary: { ...res.summary, sickDays, streak: dayStreak(res.state, now), steps: res.state.refresher?.steps.length || 0 } };
+}
+
+export function sickCheckIn(state, now) {
+  const s = clone(state);
+  const k = dayKey(now);
+  if (s.daily[k]?.sick) return s;
+  s.daily[k] = { ...(s.daily[k] || {}), sick: true };
+  award(s, XP.restDay, now, { kind: 'sickday', title: 'Sick day check-in: rest is training too' });
+  return s;
 }
 
 // ---------- daily orders and rest ----------
@@ -611,6 +664,8 @@ export function coachContext(s, now) {
     : s.run.level === 1 && (s.answers?.runsLast4w ?? 0) === 0 ? 'starting from no training at all: be very encouraging, make walking and tiny wins feel big'
     : s.run.level <= 3 ? 'a beginner: be encouraging, normalise walk breaks and slow pace' : 'an experienced runner: be encouraging and direct';
   lines.push(`Tone: this runner is ${tone}.`);
+  if (s.mode) lines.push(s.mode.type === 'sick' ? `SICK MODE (${s.mode.where === 'above' ? 'symptoms above the neck: easy movement only' : 'below the neck or fever: full rest, no training'}).` : 'BUSY MODE: only key sessions this week.');
+  if (s.profile.tracks?.length) lines.push(`Trains for: ${s.profile.tracks.join(', ')}${s.profile.primary ? `; main focus ${s.profile.primary}` : ''}.`);
   if (s.answers) lines.push(`Assessment: ~${s.answers.weeklyKm || 0} km/week, longest run ~${s.answers.longestKm || 0} km, best 5K ${s.answers.best5k || 'n/a'} min, best 10K ${s.answers.best10k || 'n/a'} min.`);
   return lines.join('\n');
 }

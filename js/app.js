@@ -4,10 +4,22 @@ import { EXERCISES, videoLink } from './data/exercises.js';
 import * as store from './store.js';
 import { askCoach, canListen, canSpeak, listen, speak } from './coach.js';
 import * as M from './motivation.js';
+import { renderMap, runAvatar, mapPageY, POINTS } from './map.js';
+import { playPlacementIntro } from './intro.js';
+import * as sfx from './sound.js';
+import * as CH from './challenges.js';
+import * as K from './calendar.js';
+import { confetti } from './intro.js';
 
 // ---------- state ----------
 let S = store.load();
 if (!S || S.v !== 1) S = E.newState(Date.now());
+S = CH.ensureSocial(S);
+store.save(S);
+
+// A friend's link (invite, challenge or result) arrives in the URL hash.
+const incomingLink = CH.decodeHash(location.hash);
+if (location.hash.includes('sq=')) history.replaceState(null, '', location.pathname + location.search);
 
 const CHAT_KEY = 'stride-quest:chat';
 const ui = {
@@ -16,7 +28,14 @@ const ui = {
   retake: false,
   modal: null,
   dismissed: new Set(),
-  openLevel: null,
+  avatarAt: null,
+  incoming: incomingLink,
+  socialTab: 'challenges',
+  intro: null,
+  mapMode: (() => { try { return localStorage.getItem('stride-quest:mapMode') || 'world'; } catch { return 'world'; } })(),
+  mapPopup: null,
+  mapRunning: false,
+  mapScroll: false,
   toasts: [],
   chat: readChat(),
   thinking: false,
@@ -43,6 +62,7 @@ function toast(messages) {
 
 // ---------- onboarding ----------
 const GOALS = [['fit', 'Get fit and healthy'], ['first5k', 'Run my first 5K'], ['faster', 'Get faster'], ['longer', 'Run longer distances'], ['race', 'Train for a race']];
+const TRACKS = [['run', '🏃 Running'], ['hybrid', '🏋️ Hybrid (Hyrox, Alpha X, Tough Mudder…)'], ['tri', '🏊 Triathlon']];
 const RUNS = [[0, 'None'], [2, '1-3 runs'], [6, '4-8 runs'], [10, '9-12 runs'], [14, '13 or more']];
 const CONTINUOUS = [['none', "I don't run yet"], ['jogwalk20', 'Jog/walk mix for about 20 min'], ['10-15', '10-15 min without stopping'], ['20-30', '20-30 min'], ['30-45', '30-45 min'], ['45-75', '45-75 min'], ['75-120', '75 min - 2 h'], ['120+', 'Over 2 h']];
 const RED_FLAGS = [['sharp', 'Sharp or stabbing pain'], ['swelling', 'Swelling'], ['night', 'Pain at night or at rest'], ['walking', 'Pain while walking'], ['recent', 'Recent fracture or surgery']];
@@ -62,6 +82,9 @@ function obSteps(a) {
   const steps = [
     { title: "Let's find your starting level", body: `
         <label class="field"><span>Your name (optional)</span><input type="text" name="name" value="${h(a.name || '')}" maxlength="40" autocomplete="given-name"></label>
+        <p class="q">What do you train for? <span class="hint">Pick one or more</span></p>
+        <div class="choices">${TRACKS.map(([k, l]) => check(`tr_${k}`, l, (a.tracks || ['run']).includes(k))).join('')}</div>
+        ${(a.tracks || []).length > 1 ? `<p class="q">Which one leads your week?</p>${radio('primary', TRACKS.filter(([k]) => a.tracks.includes(k)), a.primary || a.tracks[0])}` : ''}
         <p class="q">Main goal</p>${radio('goal', GOALS, a.goal)}` },
     { title: 'How many times did you run in the last 4 weeks?', body: radio('runsLast4w', RUNS, a.runsLast4w) },
     { title: 'Longest you can run without stopping?', body: radio('continuous', CONTINUOUS, a.continuous) },
@@ -72,7 +95,9 @@ function obSteps(a) {
     { title: 'Any pain or injury right now?', body: `${radio('pain', [['none', 'No pain'], ['mild', 'Mild or nagging (3/10 or less)'], ['more', 'More than that, or a diagnosed injury']], a.pain)}
         <label class="field"><span>Where? (optional)</span><input type="text" name="painWhere" value="${h(a.painWhere || '')}" maxlength="60" placeholder="e.g. left knee, right Achilles"></label>
         <p class="q">Any of these?</p><div class="choices">${RED_FLAGS.map(([k, l]) => check(`rf_${k}`, h(l), (a.redFlags || []).includes(k))).join('')}</div>` },
-    { title: 'How many days a week can you train?', body: radio('daysPerWeek', [[2, '2 days'], [3, '3 days'], [4, '4 days'], [5, '5 days'], [6, '6 days']], a.daysPerWeek ?? 3) },
+    { title: 'Which days can you train?', body: `<p class="hint">Pick at least 2. You can move sessions any time.</p>
+        <div class="day-picker">${K.DAY_NAMES.map((d, i) => `<label class="day-chip"><input type="checkbox" name="d_${i}" ${(a.days || K.defaultDays(3)).includes(i) ? 'checked' : ''}><span>${d}</span></label>`).join('')}</div>
+        <label class="field"><span>Best day for your longest session</span><select name="longDay">${K.DAY_NAMES.map((d, i) => `<option value="${i}" ${(a.longDay ?? 5) === i ? 'selected' : ''}>${d}</option>`).join('')}</select></label>` },
   ];
   if (E.qualifyingLevel(normalize(a)) >= 3) {
     steps.push({ title: 'Quick body check', body: `<p class="hint">Tick what you can do today. Not sure? Try it now. Each has a demo link.</p>
@@ -88,7 +113,7 @@ function normalize(a) {
     ...a,
     runsLast4w: n(a.runsLast4w), weeklyKm: n(a.weeklyKm), longestKm: n(a.longestKm),
     best5k: n(a.best5k) || null, best10k: n(a.best10k) || null,
-    continuous: a.continuous || 'none', pain: a.pain || 'none', daysPerWeek: n(a.daysPerWeek) || 3,
+    continuous: a.continuous || 'none', pain: a.pain || 'none', daysPerWeek: (a.days || K.defaultDays(3)).length,
   };
 }
 
@@ -100,7 +125,13 @@ function collectOb() {
     if (!el.name) continue;
     if (el.type === 'radio') { if (el.checked) a[el.name] = el.value; }
     else if (el.type === 'checkbox') {
-      if (el.name.startsWith('rf_')) {
+      if (el.name.startsWith('tr_')) {
+        const k = el.name.slice(3);
+        a.tracks = (a.tracks || ['run']).filter(x => x !== k).concat(el.checked ? [k] : []);
+      } else if (el.name.startsWith('d_')) {
+        const k = +el.name.slice(2);
+        a.days = (a.days || K.defaultDays(3)).filter(x => x !== k).concat(el.checked ? [k] : []).sort((x, y) => x - y);
+      } else if (el.name.startsWith('rf_')) {
         const k = el.name.slice(3);
         a.redFlags = (a.redFlags || []).filter(x => x !== k).concat(el.checked ? [k] : []);
       } else if (/^t\d$/.test(el.name)) { a.selfTest = { ...(a.selfTest || {}), [el.name]: el.checked }; }
@@ -114,7 +145,8 @@ function renderOnboarding() {
   const i = Math.min(ui.ob.step, steps.length - 1);
   const st = steps[i];
   const back = i > 0 ? '<button type="button" class="btn ghost" data-act="ob-back">Back</button>' : '';
-  const returning = S.needsReassessment ? `<div class="banner info">Welcome back! A quick re-assessment places you again. You won't start more than 3 levels below Level ${S.needsReassessment.oldLevel}.</div>` : '';
+  const invited = ui.incoming && ui.incoming.from?.name ? `<div class="banner info">🏆 <strong>${h(ui.incoming.from.name)}</strong> ${ui.incoming.t === 'c' ? 'sent you a challenge' : 'invited you to run together'}! Finish this quick setup to see how it fits your level.</div>` : '';
+  const returning = invited + (S.needsReassessment ? `<div class="banner info">Welcome back! A quick re-assessment places you again. You won't start more than 3 levels below Level ${S.needsReassessment.oldLevel}.</div>` : '');
   let body;
   if (st.result) {
     const preview = E.placeFromAnswers(S, normalize(ui.ob.a), now());
@@ -148,32 +180,38 @@ function renderOnboarding() {
 function render() {
   if (!S.placedAt || S.needsReassessment || ui.retake) { renderOnboarding(); renderModal(); return; }
   const t = now();
-  const views = { today: viewToday, map: viewMap, coach: viewCoach, me: viewMe };
+  const views = { today: viewToday, map: viewMap, challenge: viewChallenge, coach: viewCoach, me: viewMe };
   $('#app').innerHTML = `
     <header class="top">
       <div class="brand">🏃 Stride Quest</div>
       <div class="chips"><span class="chip" title="Total XP">⚡ ${S.xp} XP</span><span class="chip" title="Day streak">🔥 ${E.dayStreak(S, t)}</span></div>
     </header>
     <main class="view view-${ui.tab}">${views[ui.tab]()}</main>
-    <nav class="tabs">${[['today', '🏠', 'Today'], ['map', '🗺️', 'Map'], ['coach', '💬', 'Coach'], ['me', '👤', 'Me']].map(([k, i, l]) =>
+    <nav class="tabs">${[['today', '🏠', 'Today'], ['map', '🗺️', 'Map'], ['challenge', '🏆', 'Challenge'], ['coach', '💬', 'Coach'], ['me', '👤', 'Me']].map(([k, i, l]) =>
       `<button class="${ui.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}"><span>${i}</span>${l}</button>`).join('')}</nav>`;
   queueModals();
   renderModal();
   if (ui.tab === 'coach') { const log = $('.chat-log'); if (log) log.scrollTop = log.scrollHeight; }
+  if (ui.tab === 'map' && ui.mapMode === 'world') afterMapRender();
 }
 
 function queueModals() {
   if (ui.modal) return;
   const t = now();
-  if (E.returnCheck(S, t).needed && !ui.dismissed.has('return')) ui.modal = { type: 'return', step: 0 };
+  if (ui.incoming && !ui.mapRunning && !ui.intro) { openIncoming(); if (ui.modal) return; }
+  if (!S.mode && E.returnCheck(S, t).needed && !ui.dismissed.has('return')) ui.modal = { type: 'return', step: 0 };
   else if (E.pendingChecks(S, t).length && !ui.dismissed.has('morning')) ui.modal = { type: 'morning' };
 }
 
 function banners() {
   const out = [];
+  if (S.mode?.type === 'sick') out.push(`<div class="banner warn"><strong>🤒 Sick mode.</strong> ${S.mode.where === 'above' ? 'Only easy movement, and only if you feel like it.' : 'Full rest: no training.'} Your streak is frozen, nothing is lost. <button class="link" data-act="mode-end">I'm better</button></div>`);
+  if (S.mode?.type === 'busy') out.push(`<div class="banner info"><strong>🧳 Busy mode.</strong> Only Key sessions this week; short versions count. <button class="link" data-act="mode-end">Back to normal</button></div>`);
   if (S.rebuild.active && S.rebuild.redFlag) out.push(`<div class="banner danger"><strong>Running is paused.</strong> You reported warning signs. Please see a physio or doctor. Gentle mobility is still open. <button class="link" data-act="cleared">I've been cleared</button></div>`);
   else if (S.rebuild.active) out.push(`<div class="banner warn"><strong>Rebuild Track · R${S.rebuild.stage + 1} ${h(REBUILD_STAGES[S.rebuild.stage].name)}.</strong> Your Run level ${S.rebuild.savedRunLevel} is saved. Keep pain at 2/10 or less.${S.rebuild.seeProfessional ? ' Not medical advice: a physio check is a good idea.' : ''}</div>`);
-  if (S.refresher) out.push(`<div class="banner info"><strong>Refresher course.</strong> Welcome back! Start with the Prove It run: hit it and you skip the rest.</div>`);
+  if (S.refresher) out.push(S.refresher.reason === 'illness'
+    ? `<div class="banner info"><strong>💛 Recovery plan.</strong> Easy health checks first, then you're back on your map${S.run.reclaim ? ` to reclaim Level ${S.run.reclaim}` : ''}. Feeling great early? The Prove It run fast-tracks you.</div>`
+    : `<div class="banner info"><strong>Refresher course.</strong> Welcome back! Start with the Prove It run: hit it and you skip the rest.</div>`);
   const blockedAt = E.prepBlocksRun(S);
   if (blockedAt != null) out.push(`<div class="banner info"><strong>Gate passed!</strong> Level ${S.run.level + 1} unlocks at Prep stage P${blockedAt}. Keep going on the Prep Track.</div>`);
   if (S.run.reclaim) out.push(`<div class="banner reclaim">🔒 <strong>Reclaim:</strong> ${h(E.runLevel(S.run.reclaim).name)} (Level ${S.run.reclaim}) is waiting for you.</div>`);
@@ -197,7 +235,7 @@ function trackTitle(track) {
   if (track === 'run') { const l = E.runLevel(S.run.level); return `${E.worldOf(l).emoji} Level ${l.n} · ${h(l.name)}`; }
   if (track === 'prep') { const p = PREP_STAGES[S.prep.level]; return `🧱 Prep P${p.n} · ${h(p.name)}`; }
   if (track === 'rebuild') { const r = REBUILD_STAGES[S.rebuild.stage]; return `🩹 Rebuild R${r.n} · ${h(r.name)}`; }
-  return '🔄 Refresher course';
+  return S.refresher?.reason === 'illness' ? '💛 Recovery plan' : '🔄 Refresher course';
 }
 
 function viewToday() {
@@ -227,18 +265,7 @@ function viewToday() {
       <p class="boost-line">${h(M.dailyBoost(S, t))}</p>
       ${M.progressLine(S) ? `<p class="hint">${h(M.progressLine(S))}</p>` : ''}
     </section>
-    ${next ? `<section class="card next">
-      <p class="eyebrow">Next up · ${trackTitle(track)}</p>
-      <h3>${h(next.type === 'slot' ? (nextPrep ? `Prep: ${nextPrep.title}` : next.title) : next.title)}</h3>
-      ${next.detail ? `<p>${h(next.detail)}</p>` : ''}
-      <button class="btn primary" data-act="open-step" data-track="${track}" data-idx="${next.idx}">Start</button>
-    </section>` : ''}
-    ${track !== 'rebuild' && nextPrep ? `<section class="card next prep">
-      <p class="eyebrow">${trackTitle('prep')}</p>
-      <h3>${h(nextPrep.title)}</h3>
-      <p class="hint">Prep steps also fill the Prep slots in your run level.</p>
-      <button class="btn" data-act="open-step" data-track="prep" data-idx="${nextPrep.idx}">Open</button>
-    </section>` : ''}
+    ${todayCards(t)}
     <section class="card">
       <h3>${trackTitle(track)}</h3>
       <ul class="steps">${steps.map(st => stepRow(track, st)).join('')}</ul>
@@ -246,31 +273,210 @@ function viewToday() {
     <section class="card">
       <h3>Daily orders <span class="hint">+${E.XP.daily} XP each</span></h3>
       <ul class="orders">${orders.map(o => `<li><label class="choice"><input type="checkbox" data-act="order" data-i="${o.i}" ${doneOrders.includes(o.i) ? 'checked disabled' : ''}><span>${h(o.title)}</span></label></li>`).join('')}</ul>
-      <button class="btn ghost" data-act="rest" ${restDone ? 'disabled' : ''}>${restDone ? 'Rest day logged ✓' : `😴 Rest day check-in (+${E.XP.restDay} XP)`}</button>
-    </section>`;
+      ${S.mode?.type === 'sick'
+        ? `<button class="btn ghost" data-act="sick-checkin" ${S.daily[E.dayKey(t)]?.sick ? 'disabled' : ''}>${S.daily[E.dayKey(t)]?.sick ? 'Sick day logged ✓' : `🤒 Sick day check-in (+${E.XP.restDay} XP)`}</button>`
+        : `<button class="btn ghost" data-act="rest" ${restDone ? 'disabled' : ''}>${restDone ? 'Rest day logged ✓' : `😴 Rest day check-in (+${E.XP.restDay} XP)`}</button>`}
+    </section>
+    ${S.mode ? '' : `<section class="card modes"><p class="hint">Not feeling 100% or short on time?</p><div class="row wrap">
+      <button class="btn small" data-act="sick-start">🤒 I'm sick</button><button class="btn small" data-act="busy-start">🧳 Busy or travelling</button></div></section>`}`;
+}
+
+const CLS_ICON = { long: '🛣️', hard: '⚡', test: '🏁', easy: '🏃', strength: '🧱', impact: '🦘', rest: '😴', done: '✅' };
+
+function todayCards(t) {
+  const w = K.buildWeek(S, t);
+  const todayItems = w.days[w.today].items.filter(i => !i.done);
+  const nextDay = w.days.slice(w.today + 1).find(d => d.items.some(i => !i.done));
+  const doneToday = w.days[w.today].items.filter(i => i.done);
+  const itemBtn = it => it.sick || it.idx == null ? '' : `<button class="btn primary small" data-act="open-step" data-track="${it.track}" data-idx="${it.idx}">Start</button>`;
+  const todayCard = todayItems.length
+    ? `<section class="card next"><p class="eyebrow">Today · ${K.DAY_NAMES[w.today]}</p>
+        ${todayItems.map(it => `<div class="today-item"><span class="cls">${CLS_ICON[it.cls] || '•'}</span><div><h3>${h(it.title)}</h3>${it.detail ? `<p class="hint">${h(it.detail)}</p>` : ''}
+          <p class="tags">${it.keySession ? '<span class="tag-fit ok">Key</span>' : ''}${it.optional ? '<span class="tag-fit goal">Optional</span>' : ''}${it.track === 'prep' ? '<span class="tag-fit info">Prep</span>' : ''}</p></div>${itemBtn(it)}</div>`).join('')}
+      </section>`
+    : `<section class="card next rest-day"><p class="eyebrow">Today · ${K.DAY_NAMES[w.today]}</p>
+        <h3>${doneToday.length ? 'Done for today ✅' : S.mode?.type === 'sick' ? 'Rest and recover 💤' : 'Rest day 😴'}</h3>
+        <p class="hint">${nextDay ? `Next: ${nextDay.name} · ${h(nextDay.items.find(i => !i.done).title)}` : 'Fresh week starts Monday: see the preview below.'}</p></section>`;
+  const upcoming = w.days.slice(w.today).some(d => d.items.some(i => !i.done));
+  const nw = upcoming ? null : K.buildWeek(S, w.monday + 7 * E.DAY + 6 * 36e5);
+  const weekList = (wk, movable) => `<ul class="wk">${wk.days.map(d => `<li class="wk-day ${movable && d.today ? 'today' : ''} ${movable && d.past ? 'past' : ''} ${d.available ? '' : 'off'}">
+        <span class="wk-name">${d.name}<small>${new Date(d.date).getDate()}</small></span>
+        <div class="wk-items">${d.items.length ? d.items.map(it => `<div class="wk-item ${it.done ? 'done' : ''} ${it.optional ? 'opt' : ''}">
+            <span>${it.done ? '✅' : CLS_ICON[it.cls] || '•'} ${h(it.title)}${it.keySession && !it.done ? ' <b class="key">KEY</b>' : ''}</span>
+            ${movable && !it.done && !it.sick && it.idx != null ? `<button class="link small" data-act="move-item" data-key="${h(it.key)}">Move</button>` : ''}</div>`).join('')
+          : `<span class="hint">${movable && d.past ? '–' : d.available ? 'Free' : 'Rest'}</span>`}</div></li>`).join('')}</ul>`;
+  const week = `<section class="card week"><h3>This week</h3>
+      ${weekList(w, true)}
+      ${w.warnings.map(x => `<div class="fit-box warn">${h(x.text)}</div>`).join('')}
+      ${nw ? '' : w.notes.map(n => `<p class="hint">${h(n)}</p>`).join('')}
+      <button class="link small" data-act="edit-days">Change training days</button>
+    </section>
+    ${nw ? `<section class="card week next-week"><h3>Next week <span class="hint">preview</span></h3>${weekList(nw, false)}
+      ${nw.notes.map(n => `<p class="hint">${h(n)}</p>`).join('')}</section>` : ''}`;
+  const coming = (S.profile.tracks || []).filter(k => k !== 'run');
+  const tracksCard = coming.length ? `<section class="card info-card"><p>${coming.map(k => k === 'hybrid' ? '🏋️ <strong>Hybrid track</strong>' : '🏊 <strong>Triathlon track</strong>').join(' and ')} ${coming.length > 1 ? 'are' : 'is'} being built. Your training already counts toward ${coming.length > 1 ? 'them' : 'it'}: carry-over will show the moment ${coming.length > 1 ? 'they open' : 'it opens'}.</p></section>` : '';
+  return todayCard + week + tracksCard;
 }
 
 function viewMap() {
+  const prep = PREP_STAGES.map(p => `<li class="${p.n < S.prep.level || (p.n === 7 && S.prep.mastered) ? 'done' : p.n === S.prep.level ? 'current' : ''}"><strong>P${p.n}</strong> ${h(p.name)}<span>${h(p.focus)}</span></li>`).join('');
+  const rebuild = S.rebuild.active ? `<section class="card"><h3>🩹 Rebuild Track</h3><ol class="ladder">${REBUILD_STAGES.map((r, i) => `<li class="${i < S.rebuild.stage ? 'done' : i === S.rebuild.stage ? 'current' : ''}"><strong>R${r.n}</strong> ${h(r.name)}<span>${h(r.focus)}</span></li>`).join('')}</ol></section>` : '';
+  const toggle = `<div class="seg" role="tablist">${[['world', '🗺️ World map'], ['grid', '▦ Level cards']].map(([k, l]) =>
+    `<button role="tab" class="${ui.mapMode === k ? 'on' : ''}" data-act="map-mode" data-mode="${k}">${l}</button>`).join('')}</div>`;
+  return `${banners()}${rebuild}${toggle}${ui.mapMode === 'grid' ? levelGrid() : renderMap(S, ui)}
+    <section class="card"><h3>🧱 Prep Track</h3><p class="hint">Harder run work unlocks with your Prep stage: strides at P3, hills and intervals at P4.</p><ol class="ladder">${prep}</ol></section>`;
+}
+
+function levelGrid() {
   const cur = S.run.level;
   const worlds = WORLDS.map(w => {
-    const levels = RUN_LEVELS.filter(l => l.world === w.id);
-    const nodes = levels.map(l => {
+    const nodes = RUN_LEVELS.filter(l => l.world === w.id).map(l => {
       const state = l.n < cur ? 'done' : l.n === cur ? 'current' : 'locked';
       const stars = S.run.stars[l.n] || 0;
       const skipped = state === 'done' && !stars;
       const reclaim = S.run.reclaim === l.n ? ' reclaim' : '';
-      return `<button class="node ${state}${reclaim}" data-act="node" data-n="${l.n}" title="${h(l.criteria)}">
+      return `<button class="node ${state}${reclaim}" data-act="grid-node" data-n="${l.n}" title="${h(l.criteria)}">
           <span class="num">${l.n}</span><span class="name">${h(l.name)}</span>
           <span class="stars">${state === 'locked' ? (reclaim ? '🔒 Reclaim' : `Needs P${l.needsPrep}`) : skipped ? 'Placed past' : '⭐'.repeat(stars) + '☆'.repeat(3 - stars)}</span>
         </button>`;
-    }).join('<span class="path"></span>');
+    }).join('');
     return `<section class="world w-${w.id}"><h3>${w.emoji} ${h(w.name)}</h3><div class="nodes">${nodes}</div></section>`;
   }).join('');
-  const open = ui.openLevel === cur ? `<section class="card"><h3>${trackTitle('run')}</h3><ul class="steps">${E.trackSteps(S, 'run').map(st => stepRow(E.activeTrack(S) === 'run' ? 'run' : 'none', st)).join('')}</ul></section>` : '';
-  const prep = PREP_STAGES.map(p => `<li class="${p.n < S.prep.level || (p.n === 7 && S.prep.mastered) ? 'done' : p.n === S.prep.level ? 'current' : ''}"><strong>P${p.n}</strong> ${h(p.name)}<span>${h(p.focus)}</span></li>`).join('');
-  const rebuild = S.rebuild.active ? `<section class="card"><h3>🩹 Rebuild Track</h3><ol class="ladder">${REBUILD_STAGES.map((r, i) => `<li class="${i < S.rebuild.stage ? 'done' : i === S.rebuild.stage ? 'current' : ''}"><strong>R${r.n}</strong> ${h(r.name)}<span>${h(r.focus)}</span></li>`).join('')}</ol></section>` : '';
-  return `${banners()}${rebuild}<div class="map">${worlds}</div>${open}
-    <section class="card"><h3>🧱 Prep Track</h3><p class="hint">Harder run work unlocks with your Prep stage: strides at P3, hills and intervals at P4.</p><ol class="ladder">${prep}</ol></section>`;
+  return `<div class="map">${worlds}</div>`;
+}
+
+// ---------- map behaviour ----------
+const AVATAR_KEY = 'stride-quest:avatar';
+// { at: level the avatar stands on, seen: run level when the map was last shown }
+function savedAvatar() { try { return JSON.parse(localStorage.getItem(AVATAR_KEY)) || {}; } catch { return {}; } }
+function saveAvatar(at) { try { localStorage.setItem(AVATAR_KEY, JSON.stringify({ at, seen: S.run.level })); } catch { /* ignore */ } }
+const validLevel = n => Number.isInteger(n) && n >= 1 && n <= RUN_LEVELS.length;
+const followY = y => window.scrollTo(0, Math.max(0, mapPageY(y) - window.innerHeight * 0.55));
+
+function afterMapRender() {
+  if (ui.intro != null && !ui.mapRunning) {
+    const placed = ui.intro;
+    ui.intro = null; ui.mapRunning = true;
+    followY(POINTS[0].y);
+    setTimeout(() => playPlacementIntro(placed, {
+      follow: followY,
+      onDone: res => { ui.mapRunning = false; ui.avatarAt = placed; saveAvatar(placed); ui.mapPopup = placed; ui.modal = { type: 'placed', ...res }; renderModal(); },
+    }), 700);
+    return;
+  }
+  if (ui.mapRunning) return;
+  const saved = savedAvatar();
+  if (ui.avatarAt == null) ui.avatarAt = validLevel(saved.at) ? saved.at : S.run.level;
+  if (ui.mapScroll) { ui.mapScroll = false; followY(POINTS[ui.avatarAt].y); }
+  const levelChanged = validLevel(saved.seen) && saved.seen !== S.run.level;
+  if (!validLevel(saved.seen)) saveAvatar(ui.avatarAt);
+  if (levelChanged && ui.avatarAt !== S.run.level && !ui.mapRunning) {
+    // Level changed since the map was last shown: run to the new level.
+    const from = ui.avatarAt, to = S.run.level;
+    ui.mapRunning = true;
+    setTimeout(() => runAvatar(from, to, {
+      follow: followY,
+      onDone: () => { ui.mapRunning = false; ui.avatarAt = to; saveAvatar(to); ui.mapPopup = to; render(); },
+    }), 450);
+  } else if (levelChanged) saveAvatar(ui.avatarAt);
+}
+
+// ---------- challenge tab ----------
+const ago = ts => { const d = Math.floor((now() - ts) / 864e5); return d <= 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`; };
+const hue = id => [...String(id)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
+const avatar = (id, name) => `<span class="av" style="background:hsl(${hue(id)} 65% 48%)">${h((name || '?').trim().charAt(0).toUpperCase())}</span>`;
+const levelLabel = n => { const l = E.runLevel(n); return `${E.worldOf(l).emoji} Level ${n} · ${h(l.name)}`; };
+const FIT_TAG = { ready: ['ok', 'Your level'], stretch: ['ok', 'Nice stretch'], big: ['warn', 'Big stretch'], way: ['goal', 'Future goal'], rebuild: ['warn', 'After Rebuild'], paused: ['warn', 'Paused'] };
+const fitTag = f => FIT_TAG[f] ? `<span class="tag-fit ${FIT_TAG[f][0]}">${FIT_TAG[f][1]}</span>` : '';
+
+function viewChallenge() {
+  const seg = `<div class="seg" role="tablist">${[['challenges', '🏆 Challenges'], ['friends', '👥 Friends']].map(([k, l]) =>
+    `<button role="tab" class="${ui.socialTab === k ? 'on' : ''}" data-act="social-tab" data-k="${k}">${l}</button>`).join('')}</div>`;
+  return seg + (ui.socialTab === 'friends' ? viewFriends() : viewChallenges());
+}
+
+function viewFriends() {
+  const friends = Object.values(S.friends).sort((a, b) => b.updated - a.updated);
+  const mine = CH.me(S);
+  return `
+    <section class="card me-card">
+      ${avatar(S.id, mine.name)}
+      <div class="who"><strong>${h(S.profile.name || 'You')}</strong><span>${levelLabel(S.run.level)}</span></div>
+      <button class="btn primary small" data-act="invite">Invite</button>
+    </section>
+    <section class="card">
+      <h3>Running buddies</h3>
+      ${friends.length ? `<ul class="friends">${friends.map(f => `<li>
+          ${avatar(f.id, f.name)}
+          <div class="who"><strong>${h(f.name)}</strong><span>${levelLabel(f.level)}${f.rebuild ? ' · 🩹 rebuilding' : ''}</span><em>updated ${ago(f.updated)}</em></div>
+          <button class="btn small" data-act="challenge-friend" data-id="${h(f.id)}">Challenge</button>
+        </li>`).join('')}</ul>`
+      : `<p class="hint">No buddies yet. Send your invite link: when a friend opens it, you show up in their list, and they can send theirs back.</p>`}
+      <p class="hint">Levels update each time a friend sends you a link (invite, challenge or result).</p>
+    </section>`;
+}
+
+function viewChallenges() {
+  const rec = S.challenges.received, sent = S.challenges.sent;
+  const who = CH.me(S);
+  const active = rec.filter(c => c.status === 'active'), later = rec.filter(c => c.status === 'later'), done = rec.filter(c => c.status === 'done');
+  const card = c => {
+    const pr = CH.progress(S, c, now());
+    const left = Math.ceil((c.due - now()) / 864e5);
+    const scaled = c.scaled ? `<p class="hint">Your version of “${h(c.originalTitle)}”</p>` : '';
+    return `<li class="ch-card">
+        <div class="ch-top"><span class="ch-icon">${CH.TEMPLATES[c.tpl].icon}</span><div><strong>${h(CH.challengeTitle(c))}</strong>
+          <span class="hint">from ${h(c.from.name)} · ${left > 0 ? `${left} day${left > 1 ? 's' : ''} left` : 'time is up, finish anyway!'}</span></div></div>
+        ${scaled}${c.msg ? `<p class="quote">“${h(c.msg)}”</p>` : ''}
+        ${pr ? `<div class="bar ch-bar"><div style="width:${Math.min(100, pr.have / pr.need * 100)}%"></div></div><p class="hint">${Math.min(pr.have, pr.need)} / ${pr.need} logged since you accepted</p>` : ''}
+        <div class="row">${pr && pr.have < pr.need ? '<span class="hint">Fills in as you log sessions on Today.</span>' : `<button class="btn primary small" data-act="ch-done" data-id="${h(c.id)}">Done ✓</button>`}<button class="btn ghost small" data-act="ch-drop" data-id="${h(c.id)}">Not this time</button></div>
+      </li>`;
+  };
+  const goal = c => {
+    const f = CH.fit(c, who);
+    const L = CH.challengeLevel(c);
+    const can = f === 'ready' || f === 'stretch' || f === 'big';
+    return `<li class="ch-card goal">
+        <div class="ch-top"><span class="ch-icon">${CH.TEMPLATES[c.tpl].icon}</span><div><strong>${h(CH.challengeTitle(c))}</strong><span class="hint">from ${h(c.from.name)}</span></div>${fitTag(f)}</div>
+        <p class="hint">${can ? 'Within reach now. Ready when you are!' : f === 'way' ? `🎯 Suits Level ${L}. You're on Level ${S.run.level}: ${L - S.run.level} level${L - S.run.level > 1 ? 's' : ''} to go. Keep climbing!` : 'Waiting until you are back to running.'}</p>
+        <div class="row">${can ? `<button class="btn small primary" data-act="ch-start" data-id="${h(c.id)}">Start now</button>` : ''}<button class="btn ghost small" data-act="ch-drop" data-id="${h(c.id)}">Remove</button></div>
+      </li>`;
+  };
+  return `
+    <button class="btn primary wide" data-act="new-challenge">＋ New challenge</button>
+    <section class="card"><h3>Active</h3>${active.length ? `<ul class="ch-list">${active.map(card).join('')}</ul>` : '<p class="hint">No active challenges. Create one, or ask a friend to send you one.</p>'}</section>
+    ${later.length ? `<section class="card"><h3>Saved goals</h3><ul class="ch-list">${later.map(goal).join('')}</ul></section>` : ''}
+    <section class="card"><h3>Sent</h3>${sent.length ? `<ul class="sent">${sent.slice(0, 12).map(c => `<li>
+        <span class="ch-icon">${CH.TEMPLATES[c.tpl].icon}</span>
+        <div><strong>${h(CH.challengeTitle(c))}</strong><span class="hint">to ${h(c.to?.name || 'anyone with the link')} · ${ago(c.created)}</span>
+        ${c.results.length ? c.results.map(r => `<span class="result">✅ ${h(r.name)} did it${r.scaled ? ' (their version)' : ''}</span>`).join('') : '<span class="hint">Waiting for results…</span>'}</div>
+        <button class="btn ghost small" data-act="reshare" data-id="${h(c.id)}">Share</button></li>`).join('')}</ul>` : '<p class="hint">Nothing sent yet.</p>'}</section>
+    ${done.length ? `<section class="card"><h3>Completed</h3><ul class="sent">${done.slice(0, 12).map(c => `<li><span class="ch-icon">✅</span><div><strong>${h(CH.challengeTitle(c))}</strong><span class="hint">from ${h(c.from.name)} · ${ago(c.doneAt)}</span></div></li>`).join('')}</ul></section>` : ''}`;
+}
+
+// ---------- sharing ----------
+const baseUrl = () => location.origin + location.pathname;
+function shareData(kind, payload) {
+  const mine = CH.me(S);
+  const lvl = E.runLevel(S.run.level);
+  if (kind === 'invite') return { title: 'Run with me on Stride Quest', text: `${mine.name} is on Level ${lvl.n} (${lvl.name}) in Stride Quest. Join me and let's level up together! 🏃`, url: CH.encodeLink(baseUrl(), { t: 'f', from: mine }) };
+  if (kind === 'challenge') return { title: 'Stride Quest challenge', text: `🏆 ${mine.name} challenges you: ${CH.challengeTitle(payload)}! You have ${payload.days} days.${payload.msg ? ` “${payload.msg}”` : ''}`, url: CH.encodeLink(baseUrl(), { ...payload, from: mine }) };
+  return { title: 'Challenge done!', text: `✅ I did it: ${payload.title}${payload.scaled ? ' (my version)' : ''}! Your turn 😉`, url: CH.encodeLink(baseUrl(), payload) };
+}
+
+function openIncoming() {
+  const inc = ui.incoming;
+  if (!S.placedAt) return;
+  ui.incoming = null;
+  if (inc.from.id === S.id) { toast("That's your own link 😄 Share it with a friend."); return; }
+  const t = now();
+  if (inc.t === 'f') { S = CH.addFriend(S, inc.from, t); store.save(S); ui.modal = { type: 'incoming', inc }; }
+  else if (inc.t === 'r') {
+    const { state, matched } = CH.applyResult(S, inc, t);
+    S = state; store.save(S);
+    ui.modal = { type: 'incoming', inc, matched };
+    setTimeout(confetti, 200);
+  } else ui.modal = { type: 'incoming', inc };
 }
 
 function viewCoach() {
@@ -290,7 +496,7 @@ function viewCoach() {
 }
 
 function viewMe() {
-  const hist = S.history.filter(x => x.kind === 'session' || x.kind === 'event' || x.kind === 'bonus').slice(-15).reverse();
+  const hist = S.history.filter(x => x.kind === 'session' || x.kind === 'event' || x.kind === 'bonus' || x.kind === 'challenge').slice(-15).reverse();
   return `
     <section class="card">
       <h3>${h(S.profile.name || 'Runner')}</h3>
@@ -304,6 +510,11 @@ function viewMe() {
     </section>
     <section class="card"><h3>Badges</h3><div class="badges">${Object.entries(E.BADGES).map(([k, b]) =>
       `<div class="badge ${S.badges[k] ? 'on' : ''}" title="${h(b.desc)}"><span>${b.emoji}</span>${h(b.name)}</div>`).join('')}</div></section>
+    <section class="card"><h3>Training</h3>
+      <p>${(S.profile.tracks || ['run']).map(k => ({ run: '🏃 Running', hybrid: '🏋️ Hybrid', tri: '🏊 Triathlon' })[k] + (k === (S.profile.primary || 'run') && (S.profile.tracks || []).length > 1 ? ' (leads your week)' : '')).join(' · ')}</p>
+      <p class="hint">Days: ${K.schedule(S).days.map(d => K.DAY_NAMES[d]).join(', ')} · long session ${K.DAY_NAMES[K.schedule(S).longDay]}</p>
+      <div class="row wrap"><button class="btn" data-act="edit-days">Change training days</button>${['hybrid', 'tri'].filter(k => !(S.profile.tracks || []).includes(k)).map(k => `<button class="btn" data-act="add-track" data-k="${k}">＋ ${k === 'hybrid' ? 'Hybrid' : 'Triathlon'} track</button>`).join('')}</div>
+    </section>
     <section class="card"><h3>Body</h3>
       <div class="row wrap">
         <button class="btn" data-act="report-pain">🩹 Report pain or injury</button>
@@ -317,6 +528,7 @@ function viewMe() {
         <button class="btn" data-act="export">Export progress</button>
         <label class="btn">Import<input type="file" accept="application/json" data-act="import" hidden></label>
         <button class="btn" data-act="retake">Retake assessment</button>
+        <button class="btn" data-act="sound">${sfx.soundOn() ? '🔊 Sound on' : '🔇 Sound off'}</button>
         <button class="btn danger" data-act="reset">Reset everything</button>
       </div></section>`;
 }
@@ -337,6 +549,121 @@ function painSlider(label = 'Pain during the session (0 = none, 10 = worst)') {
 }
 
 const MODALS = {
+  move(m) {
+    const w = K.buildWeek(S, now());
+    const warns = m.day != null ? K.previewMove(S, m.key, m.day, now()).filter(x => x.day === m.day || x.day === m.day + 1 || x.day === m.day - 1) : [];
+    return `<h2>Move session</h2><p>${h(m.title)}</p>
+      <div class="day-picker">${w.days.map(d => `<button type="button" class="day-chip btn-chip ${m.day === d.i ? 'on' : ''}" ${d.past ? 'disabled' : ''} data-act="move-day" data-day="${d.i}"><span>${d.name}</span><small>${d.available ? '' : 'off'}</small></button>`).join('')}</div>
+      ${warns.map(x => `<div class="fit-box warn">${h(x.text)}</div>`).join('')}
+      ${m.day != null && !warns.length ? '<div class="fit-box ok">Looks good: no clashes.</div>' : ''}
+      <div class="row end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="move-confirm" ${m.day == null ? 'disabled' : ''}>Move it</button></div>`;
+  },
+  sick() {
+    return `<h2>🤒 Get well soon</h2><p>Quick check: where are your symptoms?</p>
+      <div class="stack">
+        <button class="btn" data-act="sick-where" data-where="above">Only above the neck<br><small class="hint">runny nose, mild sore throat</small></button>
+        <button class="btn" data-act="sick-where" data-where="below">Below the neck, or fever<br><small class="hint">chest, body aches, stomach, temperature</small></button>
+        <button class="btn ghost" data-act="close">Cancel</button>
+      </div>
+      <p class="hint">Not medical advice. Chest pain, trouble breathing or a high fever: see a doctor.</p>`;
+  },
+  days() {
+    const sc = K.schedule(S);
+    return `<form id="days-form"><h2>Training days</h2>
+      <div class="day-picker">${K.DAY_NAMES.map((d, i) => `<label class="day-chip"><input type="checkbox" name="d_${i}" ${sc.days.includes(i) ? 'checked' : ''}><span>${d}</span></label>`).join('')}</div>
+      <label class="field"><span>Longest session on</span><select name="longDay">${K.DAY_NAMES.map((d, i) => `<option value="${i}" ${sc.longDay === i ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`;
+  },
+  incoming({ inc, matched }) {
+    const fromLvl = inc.from.level ? levelLabel(Math.min(13, Math.max(1, inc.from.level))) : '';
+    if (inc.t === 'f') return `<div class="center">
+        ${avatar(inc.from.id, inc.from.name)}
+        <h2>${h(inc.from.name)} wants to run with you!</h2><p class="hint">${fromLvl}</p>
+        <p>Added to your running buddies. Send yours back so they see you too.</p>
+        <div class="row center"><button class="btn ghost" data-act="close">Later</button><button class="btn primary" data-act="invite">Share mine back</button></div></div>`;
+    if (inc.t === 'r') return `<div class="center"><div class="big-emoji">🎉</div>
+        <h2>${h(inc.from.name)} did it!</h2><p><strong>${h(inc.title)}</strong>${inc.scaled ? ' (their version)' : ''}</p>
+        <p class="hint">${matched ? 'Marked on your sent challenge.' : 'Nice! (This challenge was sent from another device.)'}</p>
+        <div class="row center"><button class="btn primary" data-act="close">Awesome</button></div></div>`;
+    const who = CH.me(S);
+    const m = CH.fitMessageForMe(inc, who);
+    const tone = { ready: 'ok', stretch: 'ok', big: 'warn', way: 'goal', rebuild: 'warn', paused: 'warn' }[m.fit];
+    const scaledTitle = m.scaled ? CH.versionTitle(inc, m.scaled) : null;
+    const buttons = {
+      ready: ['<button class="btn primary" data-act="inc-choice" data-choice="original">Accept 💪</button>', '<button class="btn ghost" data-act="inc-choice" data-choice="later">Save for later</button>'],
+      stretch: ['<button class="btn primary" data-act="inc-choice" data-choice="original">Accept the stretch 💪</button>', '<button class="btn ghost" data-act="inc-choice" data-choice="later">Save for later</button>'],
+      big: [scaledTitle ? `<button class="btn primary" data-act="inc-choice" data-choice="scaled">Accept: ${h(scaledTitle)}</button>` : '', '<button class="btn" data-act="inc-choice" data-choice="original">Go for the full one</button>', '<button class="btn ghost" data-act="inc-choice" data-choice="later">Save for later</button>'],
+      way: [scaledTitle ? `<button class="btn primary" data-act="inc-choice" data-choice="scaled">Accept: ${h(scaledTitle)}</button>` : '', '<button class="btn" data-act="inc-choice" data-choice="later">🎯 Save the big one as a goal</button>'],
+      rebuild: ['<button class="btn primary" data-act="inc-choice" data-choice="later">Save for later</button>'],
+      paused: ['<button class="btn primary" data-act="inc-choice" data-choice="later">Save for later</button>'],
+    }[m.fit].filter(Boolean);
+    return `<div class="incoming">
+      <div class="from">${avatar(inc.from.id, inc.from.name)}<div><strong>${h(inc.from.name)} challenged you!</strong><span class="hint">${fromLvl}</span></div></div>
+      <div class="ch-hero"><span class="ch-icon big">${CH.TEMPLATES[inc.tpl].icon}</span><h2>${h(CH.challengeTitle(inc))}</h2><p class="hint">${inc.days} days to do it</p>
+        ${inc.msg ? `<p class="quote">“${h(inc.msg)}”</p>` : ''}</div>
+      <div class="fit-box ${tone}">${h(m.text)}</div>
+      <div class="stack">${buttons.join('')}<button class="btn ghost" data-act="inc-choice" data-choice="decline">Not now</button></div>
+    </div>`;
+  },
+  newChallenge(m) {
+    const d = m.draft;
+    const tpl = CH.TEMPLATES[d.tpl];
+    const friends = Object.values(S.friends);
+    const to = d.to ? S.friends[d.to] : null;
+    const c = { tpl: d.tpl, p: d.p, days: d.days };
+    const notes = CH.fitMessageForSender(c, to, CH.me(S));
+    const toneOf = f => ({ ready: 'ok', stretch: 'ok', big: 'warn', way: 'goal', rebuild: 'warn', paused: 'warn', anyone: 'info', self: 'info' }[f]);
+    return `<form id="nc-form">
+      <h2>New challenge</h2>
+      ${S.profile.name ? '' : `<label class="field"><span>Your name (friends see it)</span><input type="text" name="myName" value="${h(d.myName || '')}" maxlength="30" required></label>`}
+      <p class="q">Type</p>
+      <div class="tpl-grid">${Object.entries(CH.TEMPLATES).map(([k, t]) => `<label class="tpl ${d.tpl === k ? 'on' : ''}"><input type="radio" name="tpl" value="${k}" ${d.tpl === k ? 'checked' : ''} hidden><span>${t.icon}</span>${h(t.name)}</label>`).join('')}</div>
+      <label class="field"><span>Target</span><select name="p">${tpl.opts.map(([v, l], i) => `<option value="${i}" ${d.p === i ? 'selected' : ''}>${h(tpl.title(v, d.days))} · suits Level ${l}</option>`).join('')}</select></label>
+      <p class="q">Time to do it</p>
+      <div class="chips-row">${CH.DAY_OPTIONS.map(n => `<label class="chip-opt ${d.days === n ? 'on' : ''}"><input type="radio" name="days" value="${n}" ${d.days === n ? 'checked' : ''} hidden>${n} days</label>`).join('')}</div>
+      <label class="field"><span>Who</span><select name="to"><option value="">Anyone with the link</option>${friends.map(f => `<option value="${h(f.id)}" ${d.to === f.id ? 'selected' : ''}>${h(f.name)} · Level ${f.level}</option>`).join('')}</select></label>
+      <label class="field"><span>Message (optional)</span><input type="text" name="msg" value="${h(d.msg || '')}" maxlength="140" placeholder="Bet you can't! 😜"></label>
+      <div class="ch-preview"><span class="ch-icon">${tpl.icon}</span><strong>${h(CH.challengeTitle(c))}</strong></div>
+      ${notes.map(n => `<div class="fit-box ${toneOf(n.fit)}">${h(n.text)}${n.scaled ? `<button type="button" class="btn small" data-act="nc-scale" data-tpl="${n.scaled.tpl}" data-p="${n.scaled.p}">Use “${h(CH.versionTitle(c, n.scaled))}”</button>` : ''}</div>`).join('')}
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Create & share</button></div>
+    </form>`;
+  },
+  share(m) {
+    const data = shareData(m.kind, m.payload);
+    const local = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+    return `<div>
+      <h2>${{ invite: 'Invite running buddies', challenge: 'Send your challenge', result: `Tell ${h(m.payload?.toName || 'them')}` }[m.kind]}</h2>
+      <p class="share-text">${h(data.text)}</p>
+      <input class="share-url" readonly value="${h(data.url)}" aria-label="Link">
+      <div class="stack">
+        ${navigator.share ? '<button class="btn primary" data-act="share-native">Share…</button>' : ''}
+        <a class="btn" href="https://wa.me/?text=${encodeURIComponent(`${data.text} ${data.url}`)}" target="_blank" rel="noopener">WhatsApp</a>
+        <button class="btn" data-act="share-copy">Copy link</button>
+        <button class="btn ghost" data-act="close">Done</button>
+      </div>
+      ${local ? '<p class="hint">Testing locally: this link opens on this computer only. Once the site is on GitHub Pages, anyone can open it.</p>' : ''}
+    </div>`;
+  },
+  placed(m) {
+    const l = m.level, w = E.worldOf(l);
+    const how = l.n === 1 ? 'Every legend starts at the Starting Line. Let\'s build something great.'
+      : `${m.secs ? `Blitzed through ${m.skippedLevels} level${m.skippedLevels > 1 ? 's' : ''} in ${m.secs}s.` : `Skipped ${m.skippedLevels} level${m.skippedLevels > 1 ? 's' : ''}.`} ${m.line}`;
+    return `<div class="placed-card">
+      <div class="placed-flag">🏁</div>
+      <h2>PLACED!</h2>
+      <p class="eyebrow">${w.emoji} ${h(w.name)}</p>
+      <h3>Level ${l.n} · ${h(l.name)}</h3>
+      <p>${h(how)}</p>
+      ${S.rebuild.active ? '<div class="banner warn">First stop: the Rebuild Track. Your level is saved right here.</div>' : ''}
+      <div class="row end"><button class="btn primary" data-act="close">Let's go 🏃</button></div></div>`;
+  },
+  level() {
+    const track = E.activeTrack(S);
+    const note = track !== 'run' ? `<div class="banner info">${track === 'rebuild' ? 'Rebuild Track first.' : 'Refresher course first.'} These steps open afterwards.</div>` : '';
+    return `<p class="eyebrow">${h(E.worldOf(E.runLevel(S.run.level)).name)}</p><h2>${trackTitle('run')}</h2>${note}
+      <ul class="steps">${E.trackSteps(S, 'run').map(st => stepRow(track === 'run' ? 'run' : 'none', st)).join('')}</ul>
+      <div class="row end"><button class="btn" data-act="close">Close</button></div>`;
+  },
   step(m) {
     const st = E.trackSteps(S, m.track)[m.idx];
     const exs = (st.ex || []).map(id => EXERCISES[id] && `<li class="ex">
@@ -378,12 +705,29 @@ const MODALS = {
     const { gapDays } = E.returnCheck(S, now());
     if (m.summary) {
       const s = m.summary;
+      if (s.reason === 'busy' && s.tier === 'none') return `<h2>All good 👍</h2><p>Carry on where you left off.</p><div class="row end"><button class="btn primary" data-act="close">Let's go</button></div>`;
+      if (s.reason === 'illness' && s.sickDays != null) return `<h2>💛 Welcome back!</h2>
+        <p>You were sick for ${s.sickDays} day${s.sickDays > 1 ? 's' : ''}. Here's your recovery plan:</p>
+        <ul class="plain">${s.steps ? `<li>${s.steps} easy session${s.steps > 1 ? 's' : ''} to ease back in, starting with a gentle health check</li>` : ''}
+          ${s.toLevel !== s.fromLevel ? `<li>Level ${s.fromLevel} → Level ${s.toLevel} for now. Level ${s.fromLevel} is marked Reclaim on your map</li>` : `<li>Then straight back to Level ${s.fromLevel} on your map</li>`}
+          ${s.streak ? `<li>🔥 Your ${s.streak}-day streak was frozen and is waiting. One check-in today keeps it going!</li>` : ''}</ul>
+        <p class="hint">Any fever or chest symptoms coming back? Rest again: the plan waits for you.</p>
+        <div class="row end"><button class="btn primary" data-act="close">Let's ease back in</button></div>`;
       return `<h2>Your comeback plan</h2>
         <p>Away ${s.gapDays} days.${s.effectiveDays < s.gapDays ? ` Thanks to the training you kept up, that counts as about ${s.effectiveDays} days off.` : ''}</p>
         ${s.toLevel !== s.fromLevel ? `<p>Level ${s.fromLevel} → <strong>Level ${s.toLevel}</strong> for now.</p>` : ''}
         <ul class="plain">${s.notes.map(n => `<li>${h(n)}</li>`).join('')}</ul>
         <div class="row end"><button class="btn primary" data-act="close">Let's go</button></div>`;
     }
+    const { short } = E.returnCheck(S, now());
+    if (short) return `<form id="return-form">
+      <h2>👋 Missed a few days?</h2>
+      <p>${gapDays} days since your last session. No stress, what happened?</p>
+      ${radio('reason', [['busy', 'Just busy, all good'], ['illness', 'I was sick'], ['injury', 'Pain or injury']], 'busy')}
+      <p class="hint">Sick? Your streak gets saved, and you ease back in with one gentle session.</p>
+      <input type="hidden" name="easyMin" value=""><input type="hidden" name="hardMin" value=""><input type="hidden" name="crossMin" value="">
+      <div class="row end"><button class="btn primary" type="submit">Continue</button></div>
+    </form>`;
     return `<form id="return-form">
       <h2>👋 Welcome back!</h2>
       <p>You've been away for ${gapDays} days. A short check sets up the right way back in.</p>
@@ -411,12 +755,24 @@ function handleOutcome(outcome) {
 }
 
 const actions = {
-  tab(el) { ui.tab = el.dataset.tab; ui.openLevel = null; render(); },
+  tab(el) { ui.tab = el.dataset.tab; ui.mapPopup = null; ui.mapScroll = ui.tab === 'map'; render(); if (ui.tab !== 'map') window.scrollTo(0, 0); },
   'ob-back'() { collectOb(); ui.ob.step--; renderOnboarding(); },
   'ob-finish'() {
-    const { state } = E.placeFromAnswers(S, normalize(ui.ob.a), now());
+    const fresh = !S.placedAt || ui.retake;
+    sfx.unlockAudio(); // inside the click, so the intro can play sound
+    const a = normalize(ui.ob.a);
+    let { state, placed } = E.placeFromAnswers(S, a, now());
+    state = K.setSchedule(state, a.days || K.defaultDays(3), +(a.longDay ?? 5));
+    const tracks = a.tracks?.length ? a.tracks : ['run'];
+    state.profile.tracks = tracks;
+    state.profile.primary = tracks.includes(a.primary) ? a.primary : tracks[0];
     ui.retake = false; ui.ob = { step: 0, a: {} }; ui.tab = 'today';
+    if (fresh) {
+      // Show off: the avatar blitzes from START to the placed level.
+      ui.tab = 'map'; ui.mapMode = 'world'; ui.avatarAt = 0; ui.intro = placed; ui.mapPopup = null;
+    }
     commit(state);
+    window.scrollTo(0, 0);
   },
   'open-step'(el) {
     let track = el.dataset.track, idx = +el.dataset.idx;
@@ -437,18 +793,90 @@ const actions = {
     if (next.xp === before) return toast('You already logged a session or rest today.');
     commit(next); toast(`Rest counts. +${E.XP.restDay} XP`);
   },
-  node(el) {
+  'map-node'(el) {
+    if (ui.mapRunning) return;
+    const n = +el.dataset.n;
+    if (n > S.run.level || n === ui.avatarAt) { ui.mapPopup = ui.mapPopup === n ? null : n; render(); return; }
+    const from = ui.avatarAt;
+    ui.mapPopup = null; ui.mapRunning = true; render();
+    runAvatar(from, n, { onDone: () => { ui.mapRunning = false; ui.avatarAt = n; saveAvatar(n); ui.mapPopup = n; render(); } });
+  },
+  'map-mode'(el) { ui.mapMode = el.dataset.mode; try { localStorage.setItem('stride-quest:mapMode', ui.mapMode); } catch { /* ignore */ } ui.mapScroll = ui.mapMode === 'world'; render(); },
+  'grid-node'(el) {
     const n = +el.dataset.n, l = E.runLevel(n);
-    if (n === S.run.level) { ui.openLevel = ui.openLevel === n ? null : n; render(); }
-    else if (n < S.run.level) toast(`${l.name}: ${'⭐'.repeat(S.run.stars[n] || 0) || 'cleared'}`);
+    if (n === S.run.level) { ui.modal = { type: 'level' }; renderModal(); }
+    else if (n < S.run.level) toast(`${l.name}: ${'⭐'.repeat(S.run.stars[n] || 0) || 'placed past'}`);
     else toast(`${l.name} · ${l.criteria} · needs Prep P${l.needsPrep}`);
   },
+  'map-bg'() { if (ui.mapPopup && !ui.mapRunning) { ui.mapPopup = null; render(); } },
+  'map-me'() { followY(POINTS[ui.avatarAt ?? S.run.level].y); },
+  'open-level'() { ui.modal = { type: 'level' }; renderModal(); },
   cleared() { if (confirm('Confirm a physio or doctor has cleared you to train?')) commit(E.clearRedFlag(S, now())); },
   'report-pain'() { ui.modal = { type: 'rebuildPrompt' }; renderModal(); },
   export() { store.exportFile(S); },
   retake() { if (confirm('Retake the assessment? Your XP and badges stay; your level is set again.')) { ui.retake = true; ui.ob = { step: 0, a: { ...(S.answers || {}) } }; render(); } },
-  reset() { if (confirm('Delete all progress in this browser?')) { store.clear(); localStorage.removeItem(CHAT_KEY); ui.chat = []; S = E.newState(now()); render(); } },
+  reset() { if (confirm('Delete all progress in this browser?')) { store.clear(); localStorage.removeItem(CHAT_KEY); localStorage.removeItem(AVATAR_KEY); ui.avatarAt = null; ui.chat = []; S = E.newState(now()); render(); } },
+  sound() { sfx.setSound(!sfx.soundOn()); if (sfx.soundOn()) { sfx.unlockAudio(); sfx.pop(); } render(); },
   quick(el) { sendChat(el.dataset.q); },
+  'move-item'(el) {
+    const it = K.buildWeek(S, now()).days.flatMap(d => d.items).find(x => x.key === el.dataset.key);
+    ui.modal = { type: 'move', key: el.dataset.key, title: it?.title || '', day: null }; renderModal();
+  },
+  'move-day'(el) { ui.modal.day = +el.dataset.day; renderModal(); },
+  'move-confirm'() { const { key, day } = ui.modal; ui.modal = null; commit(K.moveItem(S, key, day, now())); toast(`Moved to ${K.DAY_NAMES[day]}.`); },
+  'add-track'(el) { S.profile.tracks = [...new Set([...(S.profile.tracks || ['run']), el.dataset.k])]; commit(S); toast('Added! It opens as soon as it is built, and your training already counts.'); },
+  'edit-days'() { ui.modal = { type: 'days' }; renderModal(); },
+  'sick-start'() { ui.modal = { type: 'sick' }; renderModal(); },
+  'sick-where'(el) { ui.modal = null; commit(E.startMode(S, { type: 'sick', where: el.dataset.where }, now())); toast('Sick mode on. Rest is training too 💤'); },
+  'busy-start'() { commit(E.startMode(S, { type: 'busy' }, now())); toast('Busy mode on: only Key sessions this week.'); },
+  'sick-checkin'() { commit(E.sickCheckIn(S, now())); toast(`+${E.XP.restDay} XP · Get well soon 💛`); },
+  'mode-end'() {
+    const wasSick = S.mode?.type === 'sick';
+    const { state, summary } = E.endMode(S, now());
+    S = state; store.save(S);
+    if (wasSick && summary) { ui.modal = { type: 'return', summary }; toast('Welcome back! Easy does it 💪'); }
+    render();
+  },
+  'social-tab'(el) { ui.socialTab = el.dataset.k; render(); },
+  invite() { ui.modal = { type: 'share', kind: 'invite' }; renderModal(); },
+  'new-challenge'(el) { ui.modal = { type: 'newChallenge', draft: { tpl: 'distance', p: 1, days: 7, to: '', msg: '' } }; renderModal(); },
+  'challenge-friend'(el) {
+    const f = S.friends[el.dataset.id];
+    const c = { tpl: 'distance', days: 7 };
+    const p = Math.max(0, CH.TEMPLATES.distance.opts.findLastIndex(([, l]) => l <= f.level));
+    ui.modal = { type: 'newChallenge', draft: { ...c, p, to: f.id, msg: '' } }; renderModal();
+  },
+  'nc-scale'(el) { readDraft(); Object.assign(ui.modal.draft, { tpl: el.dataset.tpl, p: +el.dataset.p }); renderModal(); },
+  'inc-choice'(el) {
+    const inc = ui.modal.inc, choice = el.dataset.choice;
+    const m = CH.fitMessageForMe(inc, CH.me(S));
+    ui.modal = null;
+    commit(CH.receive(S, inc, choice, m.scaled, now()));
+    if (choice === 'decline') toast(`No worries. ${inc.from.name} is still in your buddies.`);
+    else { ui.tab = 'challenge'; ui.socialTab = 'challenges'; render(); toast(choice === 'later' ? 'Saved. It will wait for you 🎯' : 'Challenge accepted! 💪'); }
+  },
+  'ch-done'(el) {
+    const id = el.dataset.id;
+    const firstWin = !S.badges.challenger;
+    const next = CH.completeReceived(S, id, now());
+    const c = next.challenges.received.find(x => x.id === id);
+    commit(next);
+    confetti(); sfx.fanfare();
+    toast([`Challenge complete! +${CH.CHALLENGE_XP} XP`, ...(firstWin ? [`Badge unlocked: ${E.BADGES.challenger.emoji} ${E.BADGES.challenger.name}`] : [])]);
+    ui.modal = { type: 'share', kind: 'result', payload: { ...CH.resultPayload(S, c), toName: c.from.name } }; renderModal();
+  },
+  'ch-drop'(el) { commit(CH.dropReceived(S, el.dataset.id)); toast('Removed. Plenty more where that came from.'); },
+  'ch-start'(el) { commit(CH.startSaved(S, el.dataset.id, now())); toast("Let's go! 💪"); },
+  reshare(el) { const c = S.challenges.sent.find(x => x.id === el.dataset.id); ui.modal = { type: 'share', kind: 'challenge', payload: c }; renderModal(); },
+  async 'share-native'() {
+    const data = shareData(ui.modal.kind, ui.modal.payload);
+    try { await navigator.share(data); } catch { /* cancelled */ }
+  },
+  async 'share-copy'() {
+    const data = shareData(ui.modal.kind, ui.modal.payload);
+    try { await navigator.clipboard.writeText(`${data.text} ${data.url}`); toast('Link copied 📋'); }
+    catch { const i = $('.share-url'); i.select(); document.execCommand('copy'); toast('Link copied 📋'); }
+  },
   mic() {
     if (ui.listening) { ui.listening.stop(); return; }
     const input = $('#chat-form input');
@@ -482,8 +910,23 @@ document.addEventListener('click', e => {
   if (fn) { e.preventDefault(); fn(el, e); }
 });
 
+function readDraft() {
+  const f = $('#nc-form');
+  if (!f || ui.modal?.type !== 'newChallenge') return;
+  const d = ui.modal.draft;
+  const tpl = f.querySelector('input[name=tpl]:checked')?.value || d.tpl;
+  if (tpl !== d.tpl) { d.tpl = tpl; d.p = Math.min(1, CH.TEMPLATES[tpl].opts.length - 1); }
+  else d.p = +f.p.value;
+  d.days = +(f.querySelector('input[name=days]:checked')?.value || d.days);
+  d.to = f.to.value;
+  d.msg = f.msg.value;
+  if (f.myName) d.myName = f.myName.value;
+}
+
 document.addEventListener('change', async e => {
   const el = e.target;
+  if (el.closest('#nc-form') && el.name !== 'msg' && el.name !== 'myName') { readDraft(); renderModal(); return; }
+  if (el.closest('#ob-form') && el.name?.startsWith('tr_')) { collectOb(); renderOnboarding(); return; }
   if (el.dataset.act === 'speak-toggle') ui.speakReplies = el.checked;
   if (el.dataset.act === 'import' && el.files[0]) {
     try { commit(await store.importFile(el.files[0])); toast('Progress imported.'); }
@@ -503,7 +946,29 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   const f = e.target;
   const t = now();
-  if (f.id === 'ob-form') { collectOb(); ui.ob.step++; renderOnboarding(); window.scrollTo(0, 0); return; }
+  if (f.id === 'ob-form') {
+    collectOb();
+    if (f.querySelector('[name^=tr_]') && !(ui.ob.a.tracks || []).length) return toast('Pick at least one thing you train for.');
+    if (f.querySelector('[name^=d_]') && (ui.ob.a.days || K.defaultDays(3)).length < 2) return toast('Pick at least 2 training days.');
+    ui.ob.step++; renderOnboarding(); window.scrollTo(0, 0); return;
+  }
+  if (f.id === 'days-form') {
+    const days = K.DAY_NAMES.map((_, i) => i).filter(i => f[`d_${i}`].checked);
+    if (days.length < 2) return toast('Pick at least 2 training days.');
+    ui.modal = null;
+    commit(K.setSchedule(S, days, +f.longDay.value));
+    toast('Training days saved.');
+    return;
+  }
+  if (f.id === 'nc-form') {
+    readDraft();
+    const d = ui.modal.draft;
+    if (d.myName) S.profile.name = d.myName.trim().slice(0, 30);
+    const c = CH.newChallenge(S, { tpl: d.tpl, p: d.p, days: d.days, msg: d.msg, to: d.to ? S.friends[d.to] : null }, t);
+    commit(CH.recordSent(S, c));
+    ui.modal = { type: 'share', kind: 'challenge', payload: c }; renderModal();
+    return;
+  }
   if (f.id === 'chat-form') { const v = f.msg.value; f.msg.value = ''; sendChat(v); return; }
   if (f.id === 'step-form') {
     const m = ui.modal;
@@ -537,7 +1002,16 @@ document.addEventListener('submit', e => {
   }
 });
 
-$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ui.modal?.type === 'step') { ui.modal = null; renderModal(); } });
+// A link opened while the app is already open (same tab) only changes the hash.
+window.addEventListener('hashchange', () => {
+  const inc = CH.decodeHash(location.hash);
+  if (!inc) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  ui.incoming = inc;
+  if (!ui.modal) render();
+});
+
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
 
 // ---------- toasts ----------
 function renderToasts() {
