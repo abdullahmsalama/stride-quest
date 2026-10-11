@@ -2,7 +2,8 @@ import * as E from './engine.js';
 import { RUN_LEVELS, PREP_STAGES, REBUILD_STAGES, WORLDS } from './data/tracks.js';
 import { EXERCISES, videoLink } from './data/exercises.js';
 import * as store from './store.js';
-import { askCoach, canListen, canSpeak, listen, speak } from './coach.js';
+import { askCoach, understand, canListen, canSpeak, listen, speak } from './coach.js';
+import * as ACT from './actions.js';
 import * as M from './motivation.js';
 import { renderMap, runAvatar, mapPageY, POINTS, H as MAP_H } from './map.js';
 import { playPlacementIntro } from './intro.js';
@@ -10,7 +11,7 @@ import * as sfx from './sound.js';
 import * as CH from './challenges.js';
 import * as K from './calendar.js';
 import { parseTime, formatTime, raceMinutes, estimateKm } from './time.js';
-import { dreamTarget, weeksUntil } from './goal.js';
+import { dreamTarget, weeksUntil, targetFromAI } from './goal.js';
 import * as TRI from './tri.js';
 import { renderTriMap, laneAvatarY, gateY as triGateY, TH as TRI_H } from './trimap.js';
 import { TRI_WORLDS } from './data/tri.js';
@@ -200,6 +201,16 @@ function hybridRaces(a) {
       `<label class="field"><span>Which one?</span><input type="text" name="otherName" value="${h(a.otherName || '')}" list="events-list" maxlength="60" placeholder="e.g. CrossFit Open"><datalist id="events-list">${OTHER_EVENTS.map(e => `<option value="${e}">`).join('')}</datalist></label>`)}`;
 }
 
+// Ask the AI what the dream means (non-blocking). The result screen shows it for a yes / not quite.
+async function readDream() {
+  const a = ui.ob.a, text = [a.dream, a.dreamEvent].filter(Boolean).join(' · ');
+  if (!text || a.dreamAI?.for === text) return;
+  const r = await understand('dream', text);
+  if (!r || r.track === 'none') return;
+  ui.ob.a.dreamAI = { for: text, ...r, accepted: true };
+  if (ui.ob && !S.placedAt || ui.retake) { const res = document.querySelector('.result'); if (res) renderOnboarding(); }
+}
+
 function normalize(a) {
   const n = v => (v === '' || v == null || isNaN(parseFloat(v)) ? 0 : parseFloat(v));
   const best5k = a.best5kText != null ? raceMinutes(a.best5kText, a.best5kMode, 5) : n(a.best5k) || null;
@@ -264,7 +275,9 @@ function renderOnboarding() {
         <p class="eyebrow">${h(w.name)}</p>
         <h2>Level ${lvl.n} · ${h(lvl.name)}</h2>
         <p>You qualify for Level ${preview.qualifying}. You start one level below it so the first wins come quickly. Pass the gates to climb back up fast.</p>
-        ${dreamLine(normalize(ui.ob.a), preview.placed)}
+        ${dreamLine({ ...normalize(ui.ob.a), ...(ui.ob.a.dreamAI?.accepted ? { target: targetFromAI(ui.ob.a.dreamAI) || undefined, dreamDate: ui.ob.a.dreamDate || ui.ob.a.dreamAI.date || '' } : {}) }, preview.placed)}
+        ${ui.ob.a.dreamAI ? `<div class="ai-read ${ui.ob.a.dreamAI.accepted ? '' : 'off'}"><span>🤖 Here's what I understood: <strong>${h(ui.ob.a.dreamAI.summary || '')}</strong></span>
+          <div class="row">${ui.ob.a.dreamAI.accepted ? '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="0">Not quite</button>' : '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="1">Use this reading</button>'}</div></div>` : ''}
         ${(ui.ob.a.tracks || []).includes('tri') ? (() => { const tri = TRI.placeTri(preview.state, normalize(ui.ob.a)); const w = TRI_WORLDS[tri.world];
           return `<div class="dream-box"><strong>🏊🚴🏃 Triathlon: ${w.emoji} ${h(w.name)}</strong><br><span class="hint">Swim: ${h(TRI.laneTarget('swim', tri.swim.stage + 1))} next · Bike: ${h(TRI.laneTarget('bike', tri.bike.stage + 1))} next · Run: your Run level${tri.learnToSwim ? ' · starting with swim lessons' : ''}</span></div>`; })() : ''}
         <p><strong>Prep Track:</strong> P${ps.n} ${h(ps.name)} (${h(ps.focus)})</p>
@@ -557,6 +570,19 @@ function afterMapRender() {
   } else if (levelChanged) saveAvatar(ui.avatarAt);
 }
 
+function suggestionCards(m, mi) {
+  if (!m.actions?.length) return '';
+  return `<div class="suggestions">${m.actions.map((a, ai) => {
+    const d = a.status === 'pending' ? ACT.describe(S, a, now()) : null;
+    if (a.status === 'pending' && !d) return '';
+    return `<div class="suggest ${a.status}">
+      <div><strong>${h(d ? d.label : a.label || '')}</strong>${d?.detail ? `<p class="hint">${h(d.detail)}</p>` : ''}${(d?.warnings || []).map(w => `<p class="hint warn-text">⚠️ ${h(w)}</p>`).join('')}</div>
+      ${a.status === 'pending' ? `<div class="row"><button class="btn primary small" data-act="sugg-apply" data-m="${mi}" data-a="${ai}">Apply</button><button class="btn ghost small" data-act="sugg-skip" data-m="${mi}" data-a="${ai}">No thanks</button></div>`
+        : `<span class="hint">${a.status === 'applied' ? 'Applied ✓' : 'Skipped'}</span>`}
+    </div>`;
+  }).join('')}</div>`;
+}
+
 // Coach replies may use **bold** and *italics*; everything else stays escaped text.
 const md = t => h(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|\s)\*(\S[^*]*?)\*(?=\s|$|[.,!?])/g, '$1<em>$2</em>');
 
@@ -659,10 +685,10 @@ function openIncoming() {
 }
 
 function viewCoach() {
-  const msgs = ui.chat.length ? ui.chat : [{ role: 'assistant', content: `Hey${S.profile.name ? ' ' + S.profile.name : ''}! I'm your coach. Ask me what to do today, how a drill works, or how you're feeling.` }];
+  const msgs = ui.chat.length ? ui.chat : [{ role: 'assistant', content: `Hey${S.profile.name ? ' ' + S.profile.name : ''}! I'm your coach. Ask me what to do today, how a drill works, or how you're feeling. I run on a free AI model, so give me a few seconds if I'm busy 🙂` }];
   return `<section class="chat">
-      <div class="chat-log">${msgs.map(m => `<div class="msg ${m.role}">${md(m.content)}${m.provider === 'offline' ? '<span class="tag">offline coach</span>' : ''}</div>`).join('')}
-        ${ui.thinking ? '<div class="msg assistant typing"><span></span><span></span><span></span></div>' : ''}</div>
+      <div class="chat-log">${msgs.map((m, mi) => `<div class="msg ${m.role}">${md(m.content)}${m.provider === 'offline' ? '<span class="tag">offline coach</span>' : ''}</div>${suggestionCards(m, mi)}`).join('')}
+        ${ui.thinking ? `<div class="msg assistant typing"><span></span><span></span><span></span>${ui.slow ? '<em class="slow-note">Still thinking… the AI is busy, a few more seconds</em>' : ''}</div>` : ''}</div>
       <div class="quick">${['What should I do today?', 'I feel sore', 'Explain my level', 'How fast should easy runs be?'].map(q => `<button class="pill" data-act="quick" data-q="${h(q)}">${h(q)}</button>`).join('')}</div>
       <form id="chat-form" class="chat-input">
         ${canListen ? `<button type="button" class="mic ${ui.listening ? 'on' : ''}" data-act="mic" aria-label="Speak">🎤</button>` : ''}
@@ -670,7 +696,7 @@ function viewCoach() {
         <button class="btn primary" type="submit" ${ui.thinking ? 'disabled' : ''}>Send</button>
       </form>
       ${canSpeak ? `<label class="choice small"><input type="checkbox" data-act="speak-toggle" ${ui.speakReplies ? 'checked' : ''}><span>Read replies aloud</span></label>` : ''}
-      <p class="hint">The coach explains your plan; the app decides levels. Not medical advice.</p>
+      <p class="hint">⏱️ The coach runs on a free AI model, so replies can take a few seconds when it's busy. It can suggest changes; nothing changes until you tap Apply. Messages go to Google's Gemini AI to write replies. Not medical advice.</p>
     </section>`;
 }
 
@@ -959,7 +985,10 @@ const actions = {
     state.profile.primary = tracks.includes(a.primary) ? a.primary : tracks[0];
     state.profile.view = a.view === 'full' ? 'full' : 'simple';
     state.tri = tracks.includes('tri') ? TRI.placeTri(state, a) : state.tri || null;
-    state.profile.dream = { text: String(a.dream || '').trim().slice(0, 160), event: String(a.dreamEvent || '').trim().slice(0, 60), date: a.dreamDate || '', target: dreamTarget(`${a.dream || ''} ${a.dreamEvent || ''}`) };
+    const ai = a.dreamAI?.accepted ? a.dreamAI : null;
+    state.profile.dream = { text: String(a.dream || '').trim().slice(0, 160), event: String(a.dreamEvent || ai?.event || '').trim().slice(0, 60),
+      date: a.dreamDate || (/^\d{4}-\d{2}-\d{2}$/.test(ai?.date || '') ? ai.date : ''), summary: ai?.summary || '',
+      target: (ai && targetFromAI(ai)) || dreamTarget(`${a.dream || ''} ${a.dreamEvent || ''}`) };
     ui.retake = false; ui.ob = { step: 0, a: {} }; ui.tab = 'today';
     if (fresh) {
       // Show off: the avatar blitzes from START to the placed level.
@@ -1012,6 +1041,18 @@ const actions = {
   reset() { if (confirm('Delete all progress in this browser?')) { store.clear(); localStorage.removeItem(CHAT_KEY); localStorage.removeItem(AVATAR_KEY); ui.avatarAt = null; ui.chat = []; S = E.newState(now()); render(); } },
   sound() { sfx.setSound(!sfx.soundOn()); if (sfx.soundOn()) { sfx.unlockAudio(); sfx.pop(); } render(); },
   quick(el) { sendChat(el.dataset.q); },
+  'dream-ai'(el) { if (ui.ob.a.dreamAI) { ui.ob.a.dreamAI.accepted = el.dataset.v === '1'; renderOnboarding(); } },
+  'sugg-apply'(el) {
+    const m = ui.chat[+el.dataset.m], a = m?.actions?.[+el.dataset.a];
+    if (!a || a.status !== 'pending' || !ACT.describe(S, a, now())) return toast('That suggestion no longer fits your plan.');
+    const label = ACT.describe(S, a, now()).label;
+    const { state, message, open } = ACT.apply(S, a, now());
+    a.status = 'applied'; a.label = label; saveChat();
+    S = state; store.save(S);
+    if (open) ui.modal = open;
+    toast(message); render();
+  },
+  'sugg-skip'(el) { const a = ui.chat[+el.dataset.m]?.actions?.[+el.dataset.a]; if (a) { a.label = ACT.describe(S, a, now())?.label || ''; a.status = 'skipped'; saveChat(); render(); } },
   'tri-node'(el) { const p = { kind: el.dataset.kind, lane: el.dataset.lane, world: el.dataset.world }; ui.triPopup = ui.triPopup && JSON.stringify(ui.triPopup) === JSON.stringify(p) ? null : p; render(); },
   'tri-bg'() { if (ui.triPopup) { ui.triPopup = null; render(); } },
   'tri-lane-step'(el) {
@@ -1101,11 +1142,14 @@ async function sendChat(text) {
   text = text.trim();
   if (!text || ui.thinking) return;
   ui.chat.push({ role: 'user', content: text });
-  ui.thinking = true; render();
+  ui.thinking = true; ui.slow = false; render();
+  const slowTimer = setTimeout(() => { if (ui.thinking) { ui.slow = true; if (ui.tab === 'coach') render(); } }, 4000);
   const history = ui.chat.slice(-12).map(({ role, content }) => ({ role, content }));
-  const { reply, provider } = await askCoach(history, E.coachContext(S, now()), S);
-  ui.chat.push({ role: 'assistant', content: reply, provider });
-  ui.thinking = false; saveChat(); render();
+  const { reply, provider, actions = [] } = await askCoach(history, `${E.coachContext(S, now())}\n${ACT.weekContext(S, now())}`, S);
+  const valid = actions.filter(a => ACT.describe(S, a, now()));
+  ui.chat.push({ role: 'assistant', content: reply, provider, actions: valid.map(a => ({ ...a, status: 'pending' })) });
+  clearTimeout(slowTimer);
+  ui.thinking = false; ui.slow = false; saveChat(); render();
   if (ui.speakReplies) speak(reply);
 }
 
@@ -1162,6 +1206,7 @@ document.addEventListener('submit', e => {
     if (f.querySelector('[name^=d_]') && (ui.ob.a.days || K.defaultDays(3)).length < 2) return toast('Pick at least 2 training days.');
     const badTime = [...f.querySelectorAll('.time-field input[type=text]')].find(i => i.value.trim() && parseTime(i.value) == null);
     if (badTime) { badTime.focus(); return toast('Use mm:ss or h:mm:ss, for example 27:30 or 1:05:00.'); }
+    if (f.querySelector('[name=dream]')) readDream();
     ui.ob.step++; renderOnboarding(); window.scrollTo(0, 0); return;
   }
   if (f.id === 'tri-form') {

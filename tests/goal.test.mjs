@@ -33,3 +33,12 @@ test('triathlon dreams point at a Tri world', () => {
   assert.equal(dreamTarget('a full Ironman').world, 5);
   assert.equal(dreamTarget('super sprint tri').world, 1);
 });
+
+test('AI readings map onto the same targets', async () => {
+  const { targetFromAI } = await import('../js/goal.js');
+  assert.equal(targetFromAI({ distance: '10k', targetMinutes: 50 }).level, 8);
+  assert.equal(targetFromAI({ distance: 'marathon', targetMinutes: 240 }).level, 12);
+  assert.equal(targetFromAI({ distance: 'olympic' }).world, 3);
+  assert.equal(targetFromAI({ distance: 'hyrox' }).track, 'hybrid');
+  assert.equal(targetFromAI({ distance: 'none' }), null);
+});

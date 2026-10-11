@@ -37,6 +37,16 @@ function timeIn(t) {
   return m[2] && !m[1].includes(':') ? v * 60 : v;
 }
 
+// The AI's reading of a dream -> the same target logic (the app decides levels, not the AI).
+const AI_WORDS = { '5k': '5k', '10k': '10k', half: 'half marathon', marathon: 'marathon', ultra: 'ultra', supersprint: 'super sprint triathlon',
+  sprint: 'sprint triathlon', olympic: 'olympic triathlon', '70.3': '70.3', full: 'full ironman', hyrox: 'hyrox', alphax: 'alpha x' };
+export function targetFromAI(r) {
+  if (!r || !AI_WORDS[r.distance]) return null;
+  const mins = Number(r.targetMinutes);
+  const time = mins > 0 ? ` sub ${Math.floor(mins / 60) ? `${Math.floor(mins / 60)}:${String(Math.round(mins % 60)).padStart(2, '0')}:00` : Math.round(mins)}` : '';
+  return dreamTarget(`${AI_WORDS[r.distance]}${time}`);
+}
+
 export function weeksUntil(dateStr, now) {
   if (!dateStr) return null;
   const d = Date.parse(dateStr);

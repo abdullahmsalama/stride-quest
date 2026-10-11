@@ -1,5 +1,6 @@
 import { WORKER_URL } from './config.js';
 import { activeTrack, nextStep, runLevel } from './engine.js';
+import { offlineActions } from './actions.js';
 
 // Ask the coach. Uses the Worker when configured, falls back to the offline coach otherwise.
 export async function askCoach(messages, context, state) {
@@ -11,11 +12,25 @@ export async function askCoach(messages, context, state) {
         body: JSON.stringify({ messages, context }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.reply) return { reply: data.reply, provider: data.provider };
+      if (res.ok && data.reply) return { reply: data.reply, actions: Array.isArray(data.actions) ? data.actions : [], provider: data.provider };
       if (res.status === 429) return { reply: data.error || 'Too many messages. Give it a minute.', provider: 'limit' };
     } catch { /* network error: fall through */ }
   }
-  return { reply: offlineReply(messages.at(-1)?.content || '', state), provider: 'offline' };
+  const last = messages.at(-1)?.content || '';
+  return { reply: offlineReply(last, state), actions: offlineActions(last, state), provider: 'offline' };
+}
+
+// Ask the AI to read free text (e.g. the dream). Resolves to null when offline or unsure.
+export async function understand(task, text) {
+  if (!WORKER_URL || !String(text || '').trim()) return null;
+  try {
+    const res = await fetch(`${WORKER_URL.replace(/\/$/, '')}/chat`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'understand', task, text }),
+    });
+    const data = await res.json().catch(() => ({}));
+    return res.ok ? data.result || null : null;
+  } catch { return null; }
 }
 
 // Rule-based answers so the app is useful with no LLM at all.
