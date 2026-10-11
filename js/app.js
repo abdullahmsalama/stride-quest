@@ -597,14 +597,14 @@ function todayParts(t) {
           <p class="tags">${it.keySession ? '<span class="tag-fit ok">Key</span>' : ''}${it.optional ? '<span class="tag-fit goal">Optional</span>' : ''}${it.track === 'prep' ? '<span class="tag-fit info">Prep</span>' : ''}</p></div>${itemBtn(it)}</div>`).join('')}
       </section>`
     : `<section class="card next rest-day" style="order:5"><p class="eyebrow">Today · ${K.DAY_NAMES[w.today]}</p>
-        <h3>${doneToday.length ? 'Done for today ✅' : S.mode?.type === 'sick' ? 'Rest and recover 💤' : 'Rest day 😴'}</h3>
+        <h3>${doneToday.length ? (doneToday.every(i => i.attempt) ? 'Logged for today 💛 Rest up, it\'s back on your next training day' : 'Done for today ✅') : S.mode?.type === 'sick' ? 'Rest and recover 💤' : 'Rest day 😴'}</h3>
         <p class="hint">${nextDay ? `Next: ${nextDay.name} · ${h(nextDay.items.find(i => !i.done).title)}` : 'Next sessions appear as you progress.'}</p>
         ${!doneToday.length && S.mode?.type !== 'sick' ? `<button class="btn ghost small" data-act="rest" ${restDoneToday ? 'disabled' : ''}>${restDoneToday ? 'Rest day logged ✓' : `😴 Log rest day (+${E.XP.restDay} XP)`}</button>` : ''}</section>`;
   // Rolling view: two days back, today, four days ahead (into next week when needed).
   const dayRow = d => `<li class="wk-day ${d.today ? 'today' : ''} ${d.past ? 'past' : ''} ${d.available ? '' : 'off'} ${d.week === 'next' && d.i === 0 ? 'wk-new' : ''}">
         <span class="wk-name">${d.today ? 'Today' : d.name}<small>${new Date(d.date).getDate()}</small></span>
         <div class="wk-items">${d.items.length ? d.items.map(it => `<div class="wk-item ${it.done ? 'done' : ''} ${it.optional ? 'opt' : ''}">
-            <span>${it.done ? (it.partial ? '◐' : '✅') : CLS_ICON[it.cls] || '•'} ${h(it.title)}${it.partial ? ' <em class="hint">partly done</em>' : ''}${it.keySession && !it.done ? ' <b class="key">KEY</b>' : ''}</span>
+            <span>${it.done ? (it.attempt ? '✗' : it.partial ? '◐' : '✅') : CLS_ICON[it.cls] || '•'} ${h(it.title)}${it.attempt ? ' <em class="hint">tried</em>' : it.partial ? ' <em class="hint">partly done</em>' : ''}${it.keySession && !it.done ? ' <b class="key">KEY</b>' : ''}</span>
             ${d.week === 'this' && !it.done && !it.sick && it.idx != null ? `<button class="link small" data-act="move-item" data-key="${h(it.key)}">Move</button>` : ''}</div>`).join('')
           : `<span class="hint">${d.past ? '–' : d.available ? 'Free' : 'Rest'}</span>`}</div></li>`;
   const week = `<section class="card week" style="order:6"><h3>Your week</h3>

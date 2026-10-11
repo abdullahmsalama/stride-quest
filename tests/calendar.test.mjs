@@ -137,3 +137,16 @@ test('the rolling window shows two days back and four ahead, across weeks, witho
   assert.equal(new Set(keys).size, keys.length); // nothing planned twice
   assert.ok(w.days.slice(3).some(d => d.items.length)); // next week is filled in
 });
+
+test('a logged session (or a failed attempt) uses the day: nothing else is planned on it', () => {
+  const MON = new Date(2026, 9, 12, 9).getTime();
+  const { state } = E.placeFromAnswers(E.newState(MON), { continuous: '30-45', longestKm: 10, best5k: 29, runsLast4w: 12, pain: 'none', daysPerWeek: 3 }, MON);
+  const s = K.setSchedule(state, [0, 2, 4], 4);
+  const planned = K.buildWeek(s, MON).days[0].items[0];
+  for (const result of ['full', 'none']) {
+    const after = E.completeStep(s, planned.track, planned.idx, { pain: 0, now: MON, result }).state;
+    const today = K.buildWeek(after, MON).days[0].items;
+    assert.equal(today.filter(i => !i.done).length, 0, result);
+    assert.equal(today.filter(i => i.done).length, 1, result);
+  }
+});
