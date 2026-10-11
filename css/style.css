@@ -371,3 +371,8 @@ a { color: var(--brand); font-weight: 600; }
 .modes { box-shadow: none; background: var(--surface-2); }
 .modes .row { margin-top: 6px; }
 .info-card { background: var(--info-soft); box-shadow: none; }
+.install { display: grid; gap: 8px; border-left: 5px solid var(--brand); }
+.install .row { margin-top: 0; }
+/* installed app on iPhone: keep the header clear of the status bar / notch */
+.top { padding-top: calc(14px + env(safe-area-inset-top)); }
+.onboarding { padding-top: calc(16px + env(safe-area-inset-top)); }

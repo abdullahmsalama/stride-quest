@@ -265,6 +265,7 @@ function viewToday() {
       <p class="boost-line">${h(M.dailyBoost(S, t))}</p>
       ${M.progressLine(S) ? `<p class="hint">${h(M.progressLine(S))}</p>` : ''}
     </section>
+    ${S.history.some(x => x.kind === 'session') ? installCard('today') : ''}
     ${todayCards(t)}
     <section class="card">
       <h3>${trackTitle(track)}</h3>
@@ -525,6 +526,7 @@ function viewMe() {
       </div></section>
     <section class="card"><h3>Recent activity</h3>${hist.length ? `<ul class="history">${hist.map(x =>
       `<li><span>${new Date(x.ts).toLocaleDateString()}</span>${h(x.title)}${x.pain != null ? ` <em>pain ${x.pain}/10</em>` : ''}<b>${x.xp ? `+${x.xp}` : ''}</b></li>`).join('')}</ul>` : '<p class="hint">Nothing yet. Your first step is on the Today tab.</p>'}</section>
+    ${installCard('me')}
     <section class="card"><h3>Your data</h3>
       <p class="hint">Progress is saved in this browser only. Export it to move to another device.</p>
       <div class="row wrap">
@@ -821,6 +823,8 @@ const actions = {
   reset() { if (confirm('Delete all progress in this browser?')) { store.clear(); localStorage.removeItem(CHAT_KEY); localStorage.removeItem(AVATAR_KEY); ui.avatarAt = null; ui.chat = []; S = E.newState(now()); render(); } },
   sound() { sfx.setSound(!sfx.soundOn()); if (sfx.soundOn()) { sfx.unlockAudio(); sfx.pop(); } render(); },
   quick(el) { sendChat(el.dataset.q); },
+  async install() { if (!installEvent) return; installEvent.prompt(); await installEvent.userChoice.catch(() => {}); installEvent = null; render(); },
+  'install-hide'() { try { localStorage.setItem(INSTALL_KEY, 'hide'); } catch { /* ignore */ } render(); },
   'move-item'(el) {
     const it = K.buildWeek(S, now()).days.flatMap(d => d.items).find(x => x.key === el.dataset.key);
     ui.modal = { type: 'move', key: el.dataset.key, title: it?.title || '', day: null }; renderModal();
@@ -1015,6 +1019,32 @@ window.addEventListener('hashchange', () => {
 });
 
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
+
+// ---------- installable app ----------
+const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const INSTALL_KEY = 'stride-quest:installHint';
+const installHidden = () => { try { return localStorage.getItem(INSTALL_KEY) === 'hide'; } catch { return false; } };
+let installEvent = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvent = e; if (S.placedAt) render(); });
+window.addEventListener('appinstalled', () => { installEvent = null; toast('Installed! Find Stride Quest on your home screen 📲'); render(); });
+
+function installCard(where) {
+  if (standalone()) return '';
+  if (where === 'today' && installHidden()) return '';
+  if (installEvent) return `<section class="card install"><div><strong>📲 Install Stride Quest</strong><p class="hint">One tap from your home screen, works offline, and keeps your progress safe.</p></div>
+    <div class="row"><button class="btn primary small" data-act="install">Install</button>${where === 'today' ? '<button class="btn ghost small" data-act="install-hide">Later</button>' : ''}</div></section>`;
+  if (isIOS()) return `<section class="card install"><div><strong>📲 Add to your Home Screen</strong>
+    <p class="hint">In Safari tap <b>Share</b> <span aria-hidden="true">⬆️</span>, then <b>Add to Home Screen</b>. It opens like an app and keeps your progress safe (Safari can clear websites after a week away).</p></div>
+    ${where === 'today' ? '<div class="row"><button class="btn ghost small" data-act="install-hide">Got it</button></div>' : ''}</section>`;
+  if (/android/i.test(navigator.userAgent)) return `<section class="card install"><div><strong>📲 Add to your Home Screen</strong>
+    <p class="hint">Open your browser menu <b>⋮</b>, then tap <b>Install app</b> or <b>Add to Home screen</b>. It opens like an app and keeps your progress safe.</p></div>
+    ${where === 'today' ? '<div class="row"><button class="btn ghost small" data-act="install-hide">Got it</button></div>' : ''}</section>`;
+  return '';
+}
+
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+navigator.storage?.persist?.().catch(() => {});
 
 // ---------- toasts ----------
 function renderToasts() {
