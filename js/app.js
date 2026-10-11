@@ -1252,13 +1252,16 @@ const MODALS = {
       <label class="field"><span>Anything else? <em class="hint">optional</em></span><textarea name="note" rows="2" maxlength="300" placeholder="e.g. hot day, legs heavy from Saturday, felt strong at the end"></textarea></label>
       <p class="hint">🤖 Your coach reads these two and replies in the Coach tab.</p>`;
     const simple = S.profile.view === 'simple';
+    // Already trained (or tried) today: say so, so a second log is a choice, not an accident.
+    const todays = S.history.filter(x => (x.kind === 'session' || x.kind === 'attempt') && E.dayKey(x.ts) === E.dayKey(t0()));
+    const already = st.type !== 'rest' && todays.length ? `<div class="banner warn">You already logged <strong>“${h(todays.at(-1).title)}”</strong> today. Log this one too only if you really did a second session, or if you did it on another day (pick the day below). Otherwise rest: recovery is training too 💛</div>` : '';
     return `<form id="step-form">
       <p class="eyebrow">${trackTitle(m.track)} · ${TYPE_LABEL[st.type]}</p>
       <h2>${h(st.title)}</h2>
       ${st.detail ? `<p>${h(st.detail)}</p>` : ''}
       ${exs ? `<ul class="exercises">${exs}</ul>` : ''}
-      ${gateNote}${passQ}${raceQ}
-      ${logQ && simple ? `<details class="log-more"><summary>Not today, not all of it, or want to add notes? Tap here</summary>${logQ}</details>` : logQ}
+      ${already}${gateNote}${passQ}${raceQ}
+      ${logQ && simple ? `<details class="log-more" ${already ? 'open' : ''}><summary>Not today, not all of it, or want to add notes? Tap here</summary>${logQ}</details>` : logQ}
       ${st.type === 'rest' ? '' : simple ? painButtons() : painSlider()}
       <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button>${st.type !== 'rest' && S.profile.view === 'simple' ? '' : `<button class="btn primary" type="submit">Log it (+${st.xp} XP)</button>`}</div>
     </form>`;

@@ -146,14 +146,18 @@ export function trackSteps(s, track) {
     if ((track === 'triGate' || track === 'hyGate') && s.rebuild.active && status === 'open') lock(s.rebuild.redFlag ? WHY.redFlag : WHY.rebuild); // races wait until rebuilt
     if ((track === 'strength' || track === 'engine') && status === 'open' && !HYB.inFocus(s, track)) { lock(WHY.held(track)); step = { ...step, held: true }; }
     if ((track === 'strength' || track === 'engine' || track === 'hyMaint') && s.rebuild.redFlag && status === 'open') lock(WHY.redFlag);
+    // Rebuild (no red flags): erg, swim, bike and upper-body work carry on; running and jumping wait.
+    if ((track === 'strength' || track === 'engine' || track === 'hyMaint') && s.rebuild.active && !s.rebuild.redFlag && status === 'open' && IMPACT.test(`${st.title} ${st.detail || ''}`)) lock(WHY.rebuildImpact);
     if (why) step = { ...step, lockReason: why };
     return { ...step, status, xp: XP[st.type] || 0 };
   });
 }
 
+const IMPACT = /\brun\b|running|race|simulation|\bsim\b|burpee|jump|lunge|sprint|wall ball|brick/i;
 export const WHY = {
   redFlag: 'Paused: you reported warning signs. Once a physio or doctor clears you, tap "I\'ve been cleared".',
   rebuild: 'Races wait while you\'re on the Rebuild Track. Finish it, or tap "I\'m pain-free" if the pain has gone.',
+  rebuildImpact: 'Running and jumping wait while you\'re on the Rebuild Track. Erg, bike and upper-body work carry on if they\'re pain-free.',
   held: lane => `This is a ${lane === 'strength' ? 'Engine' : 'Strength'} block: ${lane} is on maintenance and builds again next block.`,
 };
 function gateWhy(s, track) {

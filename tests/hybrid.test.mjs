@@ -162,3 +162,14 @@ test('placement never skips a race boss you have not done', () => {
   assert.equal(H.placeHybrid(state, { ...strong, hybridRaces: [{ event: 'Hyrox', division: 'open', format: 'solo' }] }, T0).world, 4);
   assert.equal(H.placeHybrid(state, { ...strong, hybridRaces: [{ event: 'Hyrox', division: 'pro', format: 'solo' }] }, T0).world, 5);
 });
+
+test('on the Rebuild Track, running and jumping Hybrid work waits; ergs carry on', () => {
+  const T0 = new Date(2026, 9, 12, 8).getTime();
+  let { state } = E.placeFromAnswers(E.newState(T0), { continuous: '60+', longestKm: 15, best5k: 22, runsLast4w: 12, pain: 'none', daysPerWeek: 4 }, T0);
+  state.profile.tracks = ['run', 'hybrid'];
+  state.hybrid = H.placeHybrid(state, { liftExp: 'y3', bodyweight: 80, squat5: 90, deadlift5: 120, liftUnit: 'kg', liftMode: '5', startBlock: 'engine', hybridRaces: [{ event: 'Hyrox', division: 'open', format: 'solo' }] }, T0);
+  state = E.enterRebuild(state, { now: T0 });
+  const eng = E.trackSteps(state, 'engine');
+  assert.ok(eng.filter(st => /Run \d/.test(st.title)).every(st => st.status === 'locked' && /Running and jumping/.test(st.lockReason)));
+  assert.ok(eng.some(st => st.status === 'open'));
+});

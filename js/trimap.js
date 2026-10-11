@@ -293,7 +293,7 @@ export function renderLaneMap(s, ui, id) {
   const lim = cfg.limiter(s)?.lane;
   const hud = `<div class="map-hud lane-hud">${cfg.lanes.map(l => {
     const v = cfg.value(s, l);
-    const txt = l === 'run' ? `L${v}` : v >= cfg.max(l) ? 'done' : sexText(short(cfg.stage(s, l).target), s.profile.sex);
+    const txt = l === 'run' ? `L${v}` : v >= cfg.max(l) ? 'done' : `Next: ${sexText(short(cfg.stage(s, l).target), s.profile.sex)}`;
     return `<button class="lane-chip ${lim === l ? 'lim' : ''}" data-act="lane-focus" data-map="${id}" data-lane="${l}"><span>${cfg.icon[l]}</span>${esc(txt)}</button>`;
   }).join('')}</div>`;
   return `<div class="worldmap trimap" style="background:${cfg.bandFill[0]}">
@@ -404,7 +404,11 @@ function popupHtml(s, cfg, p) {
     } else {
       const stage = cfg.stage(s, lane), max = cfg.max(lane);
       const rest = cfg.resting(s, lane);
-      html = `<p class="eyebrow">${cfg.icon[lane]} ${cfg.label[lane]}</p><h3>${v >= max ? 'Path complete' : `${esc(stage.name)} · ${esc(sexText(stage.target, s.profile.sex))}`}</h3>
+      const prevStage = cfg.stageAt(lane, v);
+      const why = lane === 'strength' && s.answers ? H.readLifts(s.answers, s.profile.sex) : null;
+      const read = why?.level ? `<p class="hint">📏 Placed from your answers: ${[why.sqRatio ? `squat ${why.sqRatio.toFixed(2)}× bodyweight` : '', why.dlRatio ? `deadlift ${why.dlRatio.toFixed(2)}×` : ''].filter(Boolean).join(', ')} (5-rep weights, bodyweight ${Math.round(why.bwKg)} kg). Wrong? Tell the coach your real numbers.</p>` : '';
+      html = `<p class="eyebrow">${cfg.icon[lane]} ${cfg.label[lane]}</p><h3>${v >= max ? 'Path complete' : `Working on: ${esc(stage.name)} · ${esc(sexText(stage.target, s.profile.sex))}`}</h3>
+        ${prevStage ? `<p class="hint">✓ Cleared: ${esc(prevStage.name)} (${esc(sexText(prevStage.target, s.profile.sex))})</p>` : ''}${read}
         <p class="hint">${v >= need ? `Ready for ${esc(cur.name)} ✅` : `${esc(cur.name)} needs ${esc(sexText(cfg.target(lane, need), s.profile.sex))}.`}</p>
         ${s.rebuild?.redFlag ? `<p class="hint">🔒 ${esc(WHY.redFlag)}</p><button class="btn primary small" data-act="cleared">I've been cleared</button>` : rest ? `<p class="hint">🔒 Maintaining this block: it builds again in a ${esc(cfg.label[lane])} block.</p>` : v < max ? `<button class="btn primary small" data-act="lane-step" data-lane="${lane}">Next ${esc(cfg.label[lane].toLowerCase())} session</button>` : ''}`;
     }
