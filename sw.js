@@ -1,6 +1,6 @@
 // Offline support. Network first, so new versions show up straight away; the cache is only
 // used when there is no connection. Bump VERSION to drop old caches.
-const VERSION = 'sq-v7';
+const VERSION = 'sq-v8';
 const SHELL = ['./', 'index.html', 'css/style.css', 'manifest.webmanifest', 'icons/icon-192.png',
   'js/app.js', 'js/engine.js', 'js/config.js', 'js/store.js', 'js/coach.js', 'js/map.js', 'js/intro.js',
   'js/sound.js', 'js/motivation.js', 'js/challenges.js', 'js/calendar.js',
@@ -22,8 +22,10 @@ self.addEventListener('fetch', e => {
   const sameOrigin = url.origin === self.location.origin;
   const fonts = /fonts\.(googleapis|gstatic)\.com$/.test(url.hostname);
   if (!sameOrigin && !fonts) return; // the coach Worker and other sites go straight to the network
+  // cache: 'no-cache' asks the server whether the file changed (instead of reusing the browser's
+  // 10-minute copy), so a new version shows up on the next open.
   e.respondWith(
-    fetch(req)
+    fetch(req, sameOrigin ? { cache: 'no-cache' } : {})
       .then(res => {
         if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
         return res;

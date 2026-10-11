@@ -1440,7 +1440,19 @@ function installCard(where) {
   return '';
 }
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  // When a new version takes over, reload once so the new code runs (not on the very first install).
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return;
+    reloaded = true;
+    try { sessionStorage.setItem('stride-quest:updated', '1'); } catch { /* ignore */ }
+    location.reload();
+  });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
+}
+setTimeout(() => { try { if (sessionStorage.getItem('stride-quest:updated')) { sessionStorage.removeItem('stride-quest:updated'); toast('Updated to the latest version ✨'); } } catch { /* ignore */ } }, 600);
 navigator.storage?.persist?.().catch(() => {});
 
 // ---------- toasts ----------
