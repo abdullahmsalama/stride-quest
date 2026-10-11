@@ -792,6 +792,7 @@ export function coachContext(s, now) {
     lines.push(`Hybrid: world "${HYB.hybWorld(s).name}"; strength ${HYB.strengthStage(s).name}, engine ${HYB.engineStage(s).name}, run = Run Track level ${s.run.level}. Current block: ${b.type === 'deload' ? 'deload week' : `${b.type} block (building ${b.type}, maintaining ${b.type === 'engine' ? 'strength' : 'engine'})`}. ${lim ? `Limiter: ${lim.lane}.` : 'All lanes ready: race gate open.'} Gym: ${s.hybrid.gym}.`);
   }
   if (s.answers?.hybridRaces?.length) lines.push(`Hybrid races finished: ${s.answers.hybridRaces.map(r => [r.event, r.division || r.category, r.format].filter(Boolean).join(' ')).join('; ')}.`);
+  if (s.answers && (s.answers.bodyweight || s.answers.squat5 || s.answers.deadlift5)) lines.push(`Lifts on file (${s.answers.liftUnit || 'kg'}, ${s.answers.liftMode === '1' ? '1-rep max' : '5 reps'}): bodyweight ${s.answers.bodyweight || '?'}, squat ${s.answers.squat5 || '?'}, deadlift ${s.answers.deadlift5 || '?'}, pull-ups ${s.answers.pullups || '?'}.`);
   if (s.answers) lines.push(`Assessment: ~${s.answers.weeklyKm || 0} km/week, longest run ~${s.answers.longestKm || 0} km, best 5K ${s.answers.best5k || 'n/a'} min, best 10K ${s.answers.best10k || 'n/a'} min.`);
   return lines.join('\n');
 }

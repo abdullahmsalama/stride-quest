@@ -27,6 +27,8 @@ Allowed actions (use only these, at most 2, only when clearly helpful; when unsu
 - {"type":"move_session","key":string,"day":0-6,"reason":string} move a planned session; key copied exactly from the WEEK PLAN lines; "day" is REQUIRED, an integer, 0 = Monday ... 6 = Sunday, today or later.
 - {"type":"set_days","days":[0-6,...],"longDay":0-6,"reason":string} change training days (at least 2).
 - {"type":"set_dream","text":string,"event":string,"date":"YYYY-MM-DD" or "","reason":string} they state a new goal or race.
+- {"type":"update_numbers", ...numbers, "reason":string} when they give real numbers that should change their placement or say a level looks wrong. Numbers (kg, minutes, km, metres; convert lb, miles and h:mm): "bodyweightKg","squat5Kg","deadlift5Kg" (heaviest for 5 clean reps; a 1-rep max x 0.86),"pullups","row1000Min","best5kMin","best10kMin","longestRunKm","weeklyKm","swimM","rideKm". Only include numbers they actually gave. The app re-runs its placement rules and shows the change.
+- {"type":"level_down","track":"run"|"strength"|"engine"|"swim"|"bike"|"prep","reason":string} when they say a level is too hard or they want to go back.
 If you suggest an action, say in the reply that they can tap Apply below.
 Runner state (from the app):
 `;
@@ -70,7 +72,7 @@ const UNDERSTAND_SCHEMA = {
   required: ['track', 'distance', 'summary'],
 };
 
-const ACTION_TYPES = new Set(['start_sick', 'start_busy', 'end_mode', 'report_pain', 'move_session', 'set_days', 'set_dream']);
+const ACTION_TYPES = new Set(['start_sick', 'start_busy', 'end_mode', 'report_pain', 'move_session', 'set_days', 'set_dream', 'update_numbers', 'level_down']);
 const CHAT_SCHEMA = {
   type: 'OBJECT',
   properties: {
@@ -78,7 +80,9 @@ const CHAT_SCHEMA = {
     actions: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
       type: { type: 'STRING', enum: [...ACTION_TYPES] }, reason: { type: 'STRING' }, where: { type: 'STRING' }, key: { type: 'STRING' },
       day: { type: 'INTEGER' }, days: { type: 'ARRAY', items: { type: 'INTEGER' } }, longDay: { type: 'INTEGER' },
-      redFlag: { type: 'BOOLEAN' }, text: { type: 'STRING' }, event: { type: 'STRING' }, date: { type: 'STRING' } }, required: ['type'] } },
+      redFlag: { type: 'BOOLEAN' }, text: { type: 'STRING' }, event: { type: 'STRING' }, date: { type: 'STRING' }, track: { type: 'STRING' },
+      bodyweightKg: { type: 'NUMBER' }, squat5Kg: { type: 'NUMBER' }, deadlift5Kg: { type: 'NUMBER' }, pullups: { type: 'NUMBER' }, row1000Min: { type: 'NUMBER' },
+      best5kMin: { type: 'NUMBER' }, best10kMin: { type: 'NUMBER' }, longestRunKm: { type: 'NUMBER' }, weeklyKm: { type: 'NUMBER' }, swimM: { type: 'NUMBER' }, rideKm: { type: 'NUMBER' } }, required: ['type'] } },
   },
   required: ['reply', 'actions'],
 };
@@ -98,7 +102,8 @@ function parseChat(raw) {
 const MAX_MESSAGES = 12;
 const MAX_CHARS = 2000;
 const TIMEOUT_MS = 12000;
-const HEDGE_MS = 3500; // if the main Gemini model hasn't answered by then, also ask the next one
+const SMART_TIMEOUT_MS = 45000; // the smart coach thinks longer
+const HEDGE_MS = 5500; // if the main Gemini model hasn't answered by then, also ask the next one
 
 // Best-effort per-IP limit. Memory is per Worker instance, so this is a speed bump, not a wall.
 const hits = new Map();
@@ -128,9 +133,9 @@ function cors(origin, env) {
 const json = (body, status, headers) =>
   new Response(JSON.stringify(body), { status, headers: { ...headers, 'Content-Type': 'application/json' } });
 
-async function withTimeout(url, init) {
+async function withTimeout(url, init, ms = TIMEOUT_MS) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const t = setTimeout(() => ctrl.abort(), ms);
   try { return await fetch(url, { ...init, signal: ctrl.signal }); }
   finally { clearTimeout(t); }
 }
@@ -162,20 +167,21 @@ async function gemini(env, system, messages, schema) {
   });
 }
 
-async function geminiModel(env, model, system, messages, schema) {
+async function geminiModel(env, model, system, messages, schema, smart = false) {
   const res = await withTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-      generationConfig: { temperature: 0.7, maxOutputTokens: 2000, // room for the model's thinking tokens
+      generationConfig: { temperature: 0.6, maxOutputTokens: smart ? 8000 : 2000, // room for the model's thinking tokens
         ...(schema ? { responseMimeType: 'application/json', responseSchema: schema } : {}) },
     }),
   });
   if (!res.ok) throw new Error(`${res.status}`);
   const data = await res.json();
   const text = data.candidates?.[0]?.content?.parts?.filter(p => !p.thought).map(p => p.text || '').join('').trim();
+  if (text) lastModel = model;
   if (!text) throw new Error('gemini empty');
   return text;
 }
@@ -197,6 +203,36 @@ async function openaiStyle(url, key, model, system, messages, extraHeaders = {},
   const text = data.choices?.[0]?.message?.content?.trim();
   if (!text) throw new Error('empty');
   return text;
+}
+
+let lastModel = null;
+// Extra thinking for the smart coach (Gemini 3.x uses thinkingLevel).
+const THINK = { 'gemini-3.8-flash': { thinkingLevel: 'high' }, 'gemini-3-flash-preview': { thinkingLevel: 'high' } };
+
+// The smart coach: bigger Gemini models with room to think. Falls back to the normal chain.
+async function geminiSmart(env, system, messages, schema) {
+  if (!env.GEMINI_API_KEY) throw new Error('no key');
+  const models = (env.GEMINI_SMART_MODELS || 'gemini-3.8-flash,gemini-flash-latest,gemini-3-flash-preview').split(',').map(m => m.trim()).filter(Boolean);
+  const errs = [];
+  for (const model of models) {
+    try {
+      const res = await withTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: system }] },
+          contents: messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+          generationConfig: { temperature: 0.5, maxOutputTokens: 8000, ...(THINK[model] ? { thinkingConfig: THINK[model] } : {}), ...(schema ? { responseMimeType: 'application/json', responseSchema: schema } : {}) },
+        }),
+      }, SMART_TIMEOUT_MS);
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.filter(p => !p.thought).map(p => p.text || '').join('').trim();
+      if (text) { lastModel = model; return text; }
+      throw new Error('empty');
+    } catch (e) { errs.push(`${model}: ${e.message}`); }
+  }
+  throw new Error(errs.join('; '));
 }
 
 const PROVIDERS = [
@@ -224,6 +260,12 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: ok ? 204 : 403, headers });
     const url = new URL(request.url);
     if (url.pathname === '/health') return json({ ok: true }, 200, headers);
+    if (url.pathname === '/models' && ok && env.GEMINI_API_KEY) {
+      // Which Gemini models this key can use (names only), to configure the smart coach.
+      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': env.GEMINI_API_KEY } });
+      const d = await r.json().catch(() => ({}));
+      return json({ models: (d.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace('models/', '')) }, 200, headers);
+    }
     if (url.pathname !== '/chat' || request.method !== 'POST') return json({ error: 'not found' }, 404, headers);
     if (!ok) return json({ error: 'origin not allowed' }, 403, headers);
 
@@ -255,11 +297,12 @@ export default {
     const system = SYSTEM + String(body.context || '').slice(0, 3000);
 
     const errors = [];
-    for (const [name, call] of PROVIDERS) {
+    const chain = body.smart ? [['gemini-smart', geminiSmart], ...PROVIDERS] : PROVIDERS;
+    for (const [name, call] of chain) {
       try {
         const raw = await call(env, system, messages, CHAT_SCHEMA);
         const { reply, actions } = parseChat(raw);
-        return json({ reply, actions, provider: name }, 200, headers);
+        return json({ reply, actions, provider: name, model: lastModel, ...(body.debug ? { tried: errors } : {}) }, 200, headers);
       } catch (e) {
         errors.push(`${name}: ${e.message}`);
       }

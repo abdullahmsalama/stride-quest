@@ -7,12 +7,12 @@ const now = new Date(2026, 9, 12, 9).getTime();
 const runner = (runAnswers = {}) => E.placeFromAnswers(E.newState(now), { continuous: '20-30', longestKm: 5, runsLast4w: 12, pain: 'none', daysPerWeek: 4, ...runAnswers }, now).state;
 const withTri = (s, a) => { s.profile.tracks = ['run', 'tri']; s.tri = T.placeTri(s, a); return s; };
 
-test('placement: lanes start one stage below ability, world = first not yet met', () => {
+test('placement: lanes are credited in full, world = first not yet met', () => {
   let s = withTri(runner(), { swimDist: '400', freestyle: 'yes', openWater: 'no', longestRide: '20', bikeAccess: 'road' });
   assert.equal(s.run.level, 3);
-  assert.equal(s.tri.swim.stage, 3); // can swim 400 m -> working on the 400 m gate
-  assert.equal(s.tri.bike.stage, 3); // 20 km rides -> working on the 20 km gate
-  assert.equal(s.tri.world, 1); // Lake Start's targets are already met -> Super Sprint Cove
+  assert.equal(s.tri.swim.stage, 4); // can swim 400 m -> 400 m cleared, 750 m gate next
+  assert.equal(s.tri.bike.stage, 4); // 20 km rides -> 20 km cleared, 40 km gate next
+  assert.equal(s.tri.world, 2); // Lake Start and Super Sprint targets met -> Sprint Bay
 });
 
 test('non-swimmer starts at Water Comfort with the learn-to-swim flag', () => {
@@ -23,8 +23,8 @@ test('non-swimmer starts at Water Comfort with the learn-to-swim flag', () => {
 });
 
 test('no freestyle caps swim at S2; no open water caps at S5', () => {
-  assert.equal(T.placeTri(runner(), { swimDist: '1500', freestyle: 'no' }).swim.stage, 1);
-  assert.equal(T.placeTri(runner(), { swimDist: '3800', freestyle: 'yes', openWater: 'no' }).swim.stage, 4);
+  assert.equal(T.placeTri(runner(), { swimDist: '1500', freestyle: 'no' }).swim.stage, 2);
+  assert.equal(T.placeTri(runner(), { swimDist: '3800', freestyle: 'yes', openWater: 'no' }).swim.stage, 5);
 });
 
 test('finished races move the world forward', () => {
@@ -105,6 +105,6 @@ test('run placement uses the category: a 32 min 5K is Level 6 territory for wome
 
 test('typed swim and ride distances beat the multiple choice', () => {
   const t = T.placeTri(runner(), { swimDist: '100', swimM: '1000', freestyle: 'yes', openWater: 'yes', longestRide: '40', rideKm: '65', bikeAccess: 'road' });
-  assert.equal(t.swim.stage, 4); // 1000 m covers 25..750 (5 targets) -> working on the 1500 m stage... minus one for early wins
-  assert.equal(t.bike.stage, 4); // 65 km covers 10, 20, 40 -> ability 5 -> working on the 40 km gate
+  assert.equal(t.swim.stage, 5); // 1000 m covers 25..750 -> 1500 m gate next
+  assert.equal(t.bike.stage, 5); // 65 km covers 10, 20, 40 -> 40 km cleared, 90 km gate next
 });

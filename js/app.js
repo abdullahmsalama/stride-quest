@@ -13,6 +13,7 @@ import * as K from './calendar.js';
 import { parseTime, formatTime, raceMinutes, estimateKm } from './time.js';
 import { dreamTarget, weeksUntil, targetFromAI } from './goal.js';
 import * as ST from './standards.js';
+import { APP_VERSION } from './config.js';
 import * as TRI from './tri.js';
 import { renderLaneMap, gateY as laneGateY, TH as LANE_H, TW as LANE_W, MAPS as LANE_MAPS, nodePoint, moveCharacter, celebrate, signature, START_POINT } from './trimap.js';
 import * as HYB from './hybrid.js';
@@ -48,6 +49,7 @@ const ui = {
   dismissed: new Set(),
   avatarAt: null,
   lanePopup: null,
+  smartCoach: (() => { try { return localStorage.getItem('stride-quest:smartCoach') === '1'; } catch { return false; } })(),
   incoming: incomingLink,
   socialTab: 'challenges',
   intro: null,
@@ -208,11 +210,11 @@ function hybQuestions(a) {
 function triQuestions(a) {
   const yn = (name, cur) => radio(name, [['yes', 'Yes'], ['no', 'Not yet']], cur || 'no');
   return `<p class="q">How far can you swim without stopping?</p>${radio('swimDist', SWIM_DIST, a.swimDist || '100')}
-    ${num('swimM', 'Or type it exactly', a.swimM, 'm')}
+    ${num('swimM', 'Or type it exactly (replaces the choice above)', a.swimM, 'm')}
     ${a.swimDist && a.swimDist !== 'none' ? `<p class="q">Do you swim freestyle (front crawl)?</p>${yn('freestyle', a.freestyle)}
       <p class="q">Have you swum in open water (lake or sea)?</p>${yn('openWater', a.openWater)}` : '<div class="banner info">No problem! You start with water comfort. Lessons with a swim coach are the fastest, safest way: we track your progress alongside.</div>'}
     <p class="q">Your bike</p>${radio('bikeAccess', [['road', 'Road or tri bike'], ['other', 'Another bike (hybrid, mountain bike)'], ['trainer', 'Indoor trainer only'], ['none', 'No bike yet']], a.bikeAccess || 'road')}
-    ${a.bikeAccess !== 'none' ? `<p class="q">Longest ride lately?</p>${radio('longestRide', RIDES, a.longestRide || '60')}${num('rideKm', 'Or type it exactly', a.rideKm, 'km')}` : ''}
+    ${a.bikeAccess !== 'none' ? `<p class="q">Longest ride lately?</p>${radio('longestRide', RIDES, a.longestRide || '60')}${num('rideKm', 'Or type it exactly (replaces the choice above)', a.rideKm, 'km')}` : ''}
     <p class="q">Pool sessions possible per week?</p>${radio('poolPerWeek', [['0', 'None'], ['1', '1'], ['2', '2'], ['3', '3 or more']], a.poolPerWeek || '2')}
     <p class="q">Triathlons finished <span class="hint">optional</span></p><div class="choices">${TRI_RACES.map(([k, l]) => check(`race_${k}`, l, a[`race_${k}`])).join('')}</div>`;
 }
@@ -906,9 +908,11 @@ function openIncoming() {
 
 function viewCoach() {
   const msgs = ui.chat.length ? ui.chat : [{ role: 'assistant', content: `Hey${S.profile.name ? ' ' + S.profile.name : ''}! I'm your coach. Ask me what to do today, how a drill works, or how you're feeling. I run on a free AI model, so give me a few seconds if I'm busy 🙂` }];
-  return `<section class="chat">
+  const modeSeg = `<div class="seg coach-seg">${[[false, '⚡ Quick'], [true, '🧠 Smart · slower']].map(([v, l]) => `<button class="${!!ui.smartCoach === v ? 'on' : ''}" data-act="coach-mode" data-v="${v ? 1 : 0}">${l}</button>`).join('')}</div>
+    <p class="hint coach-mode-hint">${ui.smartCoach ? '🧠 Smart coach thinks longer and is better at tricky questions like a wrong placement. Replies take about 5-30 seconds.' : '⚡ Quick coach answers in a couple of seconds. Switch to Smart for tricky questions.'}</p>`;
+  return `${modeSeg}<section class="chat">
       <div class="chat-log">${msgs.map((m, mi) => `<div class="msg ${m.role}">${md(m.content)}${m.provider === 'offline' ? '<span class="tag">offline coach</span>' : ''}</div>${suggestionCards(m, mi)}`).join('')}
-        ${ui.thinking ? `<div class="msg assistant typing"><span></span><span></span><span></span>${ui.slow ? '<em class="slow-note">Still thinking… the AI is busy, a few more seconds</em>' : ''}</div>` : ''}</div>
+        ${ui.thinking ? `<div class="msg assistant typing"><span></span><span></span><span></span>${ui.smartCoach ? '<em class="slow-note">🧠 Thinking it through…</em>' : ''}${ui.slow ? `<em class="slow-note">${ui.smartCoach ? 'Still thinking… smart answers take a bit longer' : 'Still thinking… the AI is busy, a few more seconds'}</em>` : ''}</div>` : ''}</div>
       <div class="quick">${['What should I do today?', 'I feel sore', 'Explain my level', 'How fast should easy runs be?'].map(q => `<button class="pill" data-act="quick" data-q="${h(q)}">${h(q)}</button>`).join('')}</div>
       <form id="chat-form" class="chat-input">
         ${canListen ? `<button type="button" class="mic ${ui.listening ? 'on' : ''}" data-act="mic" aria-label="Speak">🎤</button>` : ''}
@@ -969,7 +973,8 @@ function viewMe() {
         <button class="btn" data-act="retake">Retake assessment</button>
         <button class="btn" data-act="sound">${sfx.soundOn() ? '🔊 Sound on' : '🔇 Sound off'}</button>
         <button class="btn danger" data-act="reset">Reset everything</button>
-      </div></section>`;
+      </div></section>
+    <p class="hint version">Stride Quest ${APP_VERSION}</p>`;
 }
 
 // ---------- modals ----------
@@ -1290,6 +1295,7 @@ const actions = {
   reset() { if (confirm('Delete all progress in this browser?')) { store.clear(); localStorage.removeItem(CHAT_KEY); localStorage.removeItem(AVATAR_KEY); ui.avatarAt = null; ui.chat = []; S = E.newState(now()); render(); } },
   sound() { sfx.setSound(!sfx.soundOn()); if (sfx.soundOn()) { sfx.unlockAudio(); sfx.pop(); } render(); },
   quick(el) { sendChat(el.dataset.q); },
+  'coach-mode'(el) { ui.smartCoach = el.dataset.v === '1'; try { localStorage.setItem('stride-quest:smartCoach', ui.smartCoach ? '1' : '0'); } catch { /* ignore */ } render(); },
   async 'shout-rec'() {
     if (ui.recording) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') return toast('Recording is not supported in this browser. Try uploading a clip.');
@@ -1430,9 +1436,9 @@ async function sendChat(text) {
   if (!text || ui.thinking) return;
   ui.chat.push({ role: 'user', content: text });
   ui.thinking = true; ui.slow = false; render();
-  const slowTimer = setTimeout(() => { if (ui.thinking) { ui.slow = true; if (ui.tab === 'coach') render(); } }, 4000);
+  const slowTimer = setTimeout(() => { if (ui.thinking) { ui.slow = true; if (ui.tab === 'coach') render(); } }, ui.smartCoach ? 9000 : 4000);
   const history = ui.chat.slice(-12).map(({ role, content }) => ({ role, content }));
-  const { reply, provider, actions = [] } = await askCoach(history, `${E.coachContext(S, now())}\n${ACT.weekContext(S, now())}`, S);
+  const { reply, provider, actions = [] } = await askCoach(history, `${E.coachContext(S, now())}\n${ACT.weekContext(S, now())}`, S, ui.smartCoach);
   const valid = actions.filter(a => ACT.describe(S, a, now()));
   ui.chat.push({ role: 'assistant', content: reply, provider, actions: valid.map(a => ({ ...a, status: 'pending' })) });
   clearTimeout(slowTimer);
@@ -1484,6 +1490,9 @@ document.addEventListener('change', async e => {
 });
 
 document.addEventListener('input', e => {
+  // Typing an exact distance clears the multiple choice it replaces.
+  const pair = { swimM: 'swimDist', rideKm: 'longestRide' }[e.target.name];
+  if (pair && e.target.value.trim()) e.target.form?.querySelectorAll(`[name=${pair}]`).forEach(r => { r.checked = false; });
   if (e.target.dataset.act !== 'pain-range') return;
   const v = +e.target.value;
   $('#pain-val').textContent = v;

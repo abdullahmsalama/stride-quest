@@ -115,8 +115,9 @@ export function placeHybrid(s, a, now) {
   else if (races.length) eng = Math.max(eng, 3);
   eng = Math.max(eng, Math.min(4, Math.floor(s.run.level / 2)));
   if (big.some(r => r.format === 'solo' || r.format === 'pair')) str = Math.max(str, 4);
-  h.strength.stage = Math.max(0, Math.min(STR_MAX, str) - 1);
-  h.engine.stage = Math.max(0, Math.min(ENG_MAX, eng) - 1);
+  // What the athlete can already do counts in full (no step back for lanes).
+  h.strength.stage = Math.min(STR_MAX, str);
+  h.engine.stage = Math.min(ENG_MAX, eng);
   // World: the first one whose targets are not all met, nudged up by races already finished.
   const probe = { ...s, hybrid: h };
   let world = HYBRID_WORLDS.findIndex((_, i) => laneStatus(probe, i).some(l => !l.ok));

@@ -48,8 +48,8 @@ export function gateSteps(s) {
   return [{ type: 'gate', title: w.gate.title, detail: w.gate.detail, boss: !!w.gate.boss, nextDay: true }];
 }
 
-// Placement from the questionnaire. Like the Run Track, each lane starts one stage below what the
-// athlete can do, so the first gates are quick wins.
+// Placement from the questionnaire. What the athlete has done counts in full: 44 km ridden clears
+// the 40 km stage, so the next gate is 90 km. (The Run Track keeps its one-level-below start.)
 const SWIM_ABILITY = { none: 0, 25: 1, 100: 2, 200: 3, 400: 4, 750: 5, 1500: 6, 1900: 7, 3800: 8 };
 const BIKE_ABILITY = { none: 0, 30: 1, 60: 2, 10: 3, 20: 4, 40: 5, 90: 6, 180: 7 };
 const RACE_WORLD = { supersprint: 1, sprint: 2, olympic: 3, half: 4, full: 5 };
@@ -62,8 +62,8 @@ export function placeTri(s, a) {
   if (a.freestyle === false || a.freestyle === 'no') swim = Math.min(swim, 2); // freestyle comes in at S2
   if (a.openWater === false || a.openWater === 'no') swim = Math.min(swim, 5); // open water is part of S5
   const bike = a.bikeAccess === 'none' ? 0 : +a.rideKm > 0 ? Math.max(2, typed(+a.rideKm, [10, 20, 40, 90, 180]) + 2) : BIKE_ABILITY[a.longestRide] ?? 0;
-  tri.swim.stage = Math.max(0, swim - 1);
-  tri.bike.stage = Math.max(0, bike - 1);
+  tri.swim.stage = Math.min(SWIM_MAX, swim);
+  tri.bike.stage = Math.min(BIKE_MAX, bike);
   tri.learnToSwim = swim === 0;
   // Current world: the first one whose lane targets are not all met yet.
   const probe = { ...s, tri };

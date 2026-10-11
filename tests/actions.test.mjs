@@ -64,3 +64,20 @@ test('offline coach proposes the same actions', () => {
   assert.equal(A.offlineActions('my knee is swollen', s)[0].redFlag, true);
   assert.deepEqual(A.offlineActions('what should I do today?', s), []);
 });
+
+test('coach can fix a misread placement through the same rules, or step back', async () => {
+  const H = await import('../js/hybrid.js');
+  let s = placed();
+  s.profile.tracks = ['run', 'hybrid']; s.profile.sex = 'm';
+  s.hybrid = H.placeHybrid(s, { liftExp: 'y3', bodyweight: 176, squat5: 180, liftUnit: 'kg' }, MON); // lb bodyweight typed as kg
+  const before = s.hybrid.strength.stage;
+  const fix = { type: 'update_numbers', bodyweightKg: 80, squat5Kg: 180 };
+  const d = A.describe(s, fix, MON);
+  assert.match(d.detail, /Strength: .* → Pro Strength/);
+  const after = A.apply(s, fix, MON).state;
+  assert.ok(after.hybrid.strength.stage > before);
+  assert.equal(A.describe(after, fix, MON), null); // nothing left to change
+  const back = A.apply(after, { type: 'level_down', track: 'strength' }, MON).state;
+  assert.equal(back.hybrid.strength.stage, after.hybrid.strength.stage - 1);
+  assert.equal(A.describe(placed(), { type: 'level_down', track: 'swim' }, MON), null); // no tri track
+});

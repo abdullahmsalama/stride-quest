@@ -3,6 +3,57 @@
 import * as E from './engine.js';
 import * as K from './calendar.js';
 import { dreamTarget } from './goal.js';
+import * as H from './hybrid.js';
+import * as T from './tri.js';
+import { RUN_LEVELS } from './data/tracks.js';
+
+const LANE_NAMES = { run: '🏃 Run', strength: '🏋️ Strength', engine: '⚙️ Engine', swim: '🏊 Swim', bike: '🚴 Bike', prep: '🧱 Prep' };
+const stageName = (s, lane) => (lane === 'run' ? `Level ${s.run.level} ${RUN_LEVELS[s.run.level - 1].name}`
+  : lane === 'strength' ? H.strengthStage(s).name : lane === 'engine' ? H.engineStage(s).name
+  : lane === 'swim' ? T.swimStage(s).name : lane === 'bike' ? T.bikeStage(s).name : `P${s.prep.level}`);
+
+// New numbers -> run them through the same placement rules as the questionnaire.
+function withNumbers(s, a, now) {
+  const st = JSON.parse(JSON.stringify(s));
+  const ans = { ...(st.answers || {}) };
+  const set = (k, v) => { if (v != null && v !== '' && isFinite(+v) && +v > 0) ans[k] = +v; };
+  set('bodyweight', a.bodyweightKg); set('squat5', a.squat5Kg); set('deadlift5', a.deadlift5Kg); set('pullups', a.pullups);
+  set('row1000', a.row1000Min); set('best5k', a.best5kMin); set('best10k', a.best10kMin); set('longestKm', a.longestRunKm);
+  set('swimM', a.swimM); set('rideKm', a.rideKm); set('weeklyKm', a.weeklyKm);
+  if (a.squat5Kg || a.deadlift5Kg || a.bodyweightKg) { ans.liftUnit = 'kg'; ans.liftMode = '5'; }
+  const changes = [];
+  const run0 = st.run.level;
+  if (a.best5kMin || a.best10kMin || a.longestRunKm || a.weeklyKm) {
+    const runLevel = Math.max(1, E.qualifyingLevel({ ...ans, sex: st.profile.sex }) - 1);
+    if (runLevel !== run0) { st.run = { ...st.run, level: runLevel, done: {}, startedAt: now, gatePassed: false }; changes.push(['run', run0]); }
+  }
+  if (H.hasHybrid(st) && (a.squat5Kg || a.deadlift5Kg || a.bodyweightKg || a.pullups || a.row1000Min)) {
+    const fresh = H.placeHybrid(st, { ...ans, liftExp: ans.liftExp || 'lt1' }, now);
+    for (const lane of ['strength', 'engine']) {
+      if (fresh[lane].stage !== st.hybrid[lane].stage && (lane === 'strength' ? a.squat5Kg || a.deadlift5Kg || a.bodyweightKg || a.pullups : a.row1000Min)) {
+        changes.push([lane, st.hybrid[lane].stage]);
+        st.hybrid[lane] = { stage: fresh[lane].stage, done: {} };
+      }
+    }
+  }
+  if (T.hasTri(st) && (a.swimM || a.rideKm)) {
+    const fresh = T.placeTri(st, { ...ans, freestyle: ans.freestyle || 'yes', openWater: ans.openWater || 'yes', bikeAccess: ans.bikeAccess || 'road' });
+    for (const lane of ['swim', 'bike']) {
+      if ((lane === 'swim' ? a.swimM : a.rideKm) && fresh[lane].stage !== st.tri[lane].stage) { changes.push([lane, st.tri[lane].stage]); st.tri[lane] = { stage: fresh[lane].stage, done: {} }; }
+    }
+  }
+  st.answers = ans;
+  return { st, changes };
+}
+
+function oneBack(s, track) {
+  const st = JSON.parse(JSON.stringify(s));
+  if (track === 'run' && st.run.level > 1) { st.run = { ...st.run, level: st.run.level - 1, done: {}, gatePassed: false }; return st; }
+  if ((track === 'strength' || track === 'engine') && H.hasHybrid(st) && st.hybrid[track].stage > 0) { st.hybrid[track] = { stage: st.hybrid[track].stage - 1, done: {} }; return st; }
+  if ((track === 'swim' || track === 'bike') && T.hasTri(st) && st.tri[track].stage > 0) { st.tri[track] = { stage: st.tri[track].stage - 1, done: {} }; return st; }
+  if (track === 'prep' && st.prep.level > 0) { st.prep = { ...st.prep, level: st.prep.level - 1, done: {} }; return st; }
+  return null;
+}
 
 const DAY = K.DAY_NAMES;
 const clean = (v, n) => String(v ?? '').replace(/[<>]/g, '').trim().slice(0, n);
@@ -41,6 +92,16 @@ export function describe(s, a, now) {
       const longDay = days.includes(a.longDay) ? a.longDay : days.includes(5) ? 5 : days.at(-1);
       return { label: `📅 Train on ${days.map(d => DAY[d]).join(', ')}`, detail: `Longest session on ${DAY[longDay]}.` };
     }
+    case 'update_numbers': {
+      const { st, changes } = withNumbers(s, a, now);
+      if (!changes.length) return null;
+      return { label: `🔄 Update your placement`, detail: changes.map(([lane]) => `${LANE_NAMES[lane]}: ${stageName(s, lane)} → ${stageName(st, lane)}`).join(' · ') };
+    }
+    case 'level_down': {
+      const st = oneBack(s, a.track);
+      if (!st) return null;
+      return { label: `⬇️ One step back on ${LANE_NAMES[a.track] || a.track}`, detail: `${stageName(s, a.track)} → ${stageName(st, a.track)}. No shame: building a base is how you go faster later.` };
+    }
     case 'set_dream': {
       const text = clean(a.text, 160);
       if (!text) return null;
@@ -67,6 +128,11 @@ export function apply(s, a, now) {
       const days = [...new Set(a.days.filter(d => Number.isInteger(d) && d >= 0 && d <= 6))];
       return { state: K.setSchedule(s, days, a.longDay), message: 'Training days updated.' };
     }
+    case 'update_numbers': {
+      const { st, changes } = withNumbers(s, a, now);
+      return { state: st, message: changes.length ? 'Placement updated. Your maps show the new spots.' : 'Nothing to change.' };
+    }
+    case 'level_down': return { state: oneBack(s, a.track) || s, message: 'One step back. Strong foundations first 💪' };
     case 'set_dream': {
       const st = JSON.parse(JSON.stringify(s));
       const text = clean(a.text, 160), event = clean(a.event, 60);

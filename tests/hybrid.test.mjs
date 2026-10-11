@@ -13,8 +13,8 @@ const withHybrid = (s, a) => { s.profile.tracks = [...new Set([...(s.profile.tra
 test('placement from lifts relative to bodyweight, a row time and races', () => {
   const s = withHybrid(runner(), { liftExp: 'y3', bodyweight: 80, squat5: 100, deadlift5: 130, pullups: 6, row1000: 3.9, gym: 'full',
     hybridRaces: [{ event: 'Hyrox', division: 'open', format: 'pair' }] });
-  assert.equal(s.hybrid.strength.stage, 5); // squat 1.25 x and deadlift 1.6 x bodyweight -> Strong Hybrid gate next (a quick win)
-  assert.equal(s.hybrid.engine.stage, 3);
+  assert.equal(s.hybrid.strength.stage, 6); // squat 1.25 x and deadlift 1.6 x bodyweight -> credited in full, Pro Strength gate next
+  assert.equal(s.hybrid.engine.stage, 4);
   assert.ok(s.hybrid.world >= 3); // a finished Doubles race puts you at Solo Stadium or beyond
 });
 
@@ -135,5 +135,5 @@ test('lifts: units, single lifts and strong squatters', () => {
   // pull-ups only cap the very top, and only when given
   assert.equal(H.readLifts({ bodyweight: 80, squat5: 170, deadlift5: 200, pullups: 3 }, 'm').level, 6);
   const s = withHybrid(runner(), { liftExp: 'y3', bodyweight: 80, squat5: 170 });
-  assert.equal(s.hybrid.strength.stage, 6);
+  assert.equal(s.hybrid.strength.stage, 7); // 2x bodyweight squat: the whole strength ladder
 });
