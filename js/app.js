@@ -9,6 +9,7 @@ import { playPlacementIntro } from './intro.js';
 import * as sfx from './sound.js';
 import * as CH from './challenges.js';
 import * as K from './calendar.js';
+import { parseTime, formatTime, raceMinutes, estimateKm } from './time.js';
 import { confetti } from './intro.js';
 
 // ---------- state ----------
@@ -76,6 +77,13 @@ const SELF_TEST = [
 const radio = (name, opts, cur) => `<div class="choices">${opts.map(([v, l]) =>
   `<label class="choice"><input type="radio" name="${name}" value="${h(v)}" ${String(cur) === String(v) ? 'checked' : ''}><span>${h(l)}</span></label>`).join('')}</div>`;
 const check = (name, label, cur) => `<label class="choice"><input type="checkbox" name="${name}" ${cur ? 'checked' : ''}><span>${label}</span></label>`;
+// A time typed as mm:ss / h:mm:ss, optionally as a pace per km (modeName toggles Total time / Pace).
+const timeField = (name, label, cur, placeholder, modeName, mode) => `<div class="field time-field"><span>${h(label)}</span>
+  <div class="time-row"><input type="text" name="${name}" value="${h(cur ?? '')}" placeholder="${h(placeholder)}" autocomplete="off" spellcheck="false" inputmode="text">
+  ${modeName ? `<div class="seg mini">${[['time', 'Total time'], ['pace', 'Pace /km']].map(([v, l]) => `<label class="${(mode || 'time') === v ? 'on' : ''}"><input type="radio" name="${modeName}" value="${v}" ${(mode || 'time') === v ? 'checked' : ''} hidden>${l}</label>`).join('')}</div>` : ''}</div></div>`;
+const tip = (text, label = 'More info') => `<details class="tip"><summary aria-label="${h(label)}">ⓘ</summary><p>${h(text)}</p></details>`;
+const select = (name, opts, cur) => `<select name="${name}">${opts.map(([v, l]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${h(l)}</option>`).join('')}</select>`;
+const OTHER_EVENTS = ['CrossFit Open', 'CrossFit Games', 'Wodapalooza', 'Rogue Invitational', 'Tough Mudder', 'Spartan Race', 'DEKA', 'ATHX'];
 const num = (name, label, cur, unit) => `<label class="field"><span>${h(label)}</span><span class="with-unit"><input type="number" inputmode="decimal" min="0" step="any" name="${name}" value="${cur ?? ''}"><em>${h(unit)}</em></span></label>`;
 
 function obSteps(a) {
@@ -88,10 +96,14 @@ function obSteps(a) {
         <p class="q">Main goal</p>${radio('goal', GOALS, a.goal)}` },
     { title: 'How many times did you run in the last 4 weeks?', body: radio('runsLast4w', RUNS, a.runsLast4w) },
     { title: 'Longest you can run without stopping?', body: radio('continuous', CONTINUOUS, a.continuous) },
-    { title: 'Your running volume', body: `${num('weeklyKm', 'Roughly how many km per week lately?', a.weeklyKm, 'km')}${num('longestKm', 'Longest run in the last 2 months?', a.longestKm, 'km')}` },
-    { title: 'Recent best times (optional)', body: `<p class="hint">Last 6 months. Leave empty if you don't know.</p>
-        ${num('best5k', 'Best 5K', a.best5k, 'min')}${num('best10k', 'Best 10K', a.best10k, 'min')}
-        <div class="choices">${check('halfDone', 'I have finished a half marathon', a.halfDone)}${check('marathonDone', 'I have finished a marathon', a.marathonDone)}${check('ultraDone', 'I have finished an ultra', a.ultraDone)}</div>` },
+    { title: 'Your running volume', body: `${num('weeklyKm', 'Roughly how many km per week lately?', a.weeklyKm, 'km')}
+        <p class="q">Longest run in the last 2 months?</p><p class="hint">Distance, time, or both.</p>
+        ${num('longestKm', 'Distance', a.longestKm, 'km')}${timeField('longestTime', 'Time', a.longestTime, 'h:mm:ss, e.g. 1:05:00')}` },
+    { title: 'Recent best times (optional)', body: `<p class="hint">Last 6 months. Type mm:ss (or h:mm:ss), as a total time or your pace per km. Leave empty if you don't know.</p>
+        ${timeField('best5kText', 'Best 5K', a.best5kText ?? (a.best5k ? formatTime(a.best5k) : ''), (a.best5kMode || 'time') === 'pace' ? 'pace, e.g. 5:30' : 'e.g. 27:30', 'best5kMode', a.best5kMode)}
+        ${timeField('best10kText', 'Best 10K', a.best10kText ?? (a.best10k ? formatTime(a.best10k) : ''), (a.best10kMode || 'time') === 'pace' ? 'pace, e.g. 5:45' : 'e.g. 58:00 or 1:02:30', 'best10kMode', a.best10kMode)}
+        <div class="choices">${check('halfDone', 'I have finished a half marathon', a.halfDone)}${check('marathonDone', 'I have finished a marathon', a.marathonDone)}${check('ultraDone', 'I have finished an ultra', a.ultraDone)}</div>
+        ${(a.tracks || []).includes('hybrid') ? hybridRaces(a) : ''}` },
     { title: 'Any pain or injury right now?', body: `${radio('pain', [['none', 'No pain'], ['mild', 'Mild or nagging (3/10 or less)'], ['more', 'More than that, or a diagnosed injury']], a.pain)}
         <label class="field"><span>Where? (optional)</span><input type="text" name="painWhere" value="${h(a.painWhere || '')}" maxlength="60" placeholder="e.g. left knee, right Achilles"></label>
         <p class="q">Any of these?</p><div class="choices">${RED_FLAGS.map(([k, l]) => check(`rf_${k}`, h(l), (a.redFlags || []).includes(k))).join('')}</div>` },
@@ -107,12 +119,42 @@ function obSteps(a) {
   return steps;
 }
 
+const cap = w => w ? w[0].toUpperCase() + w.slice(1) : '';
+const FORMAT_LABEL = { solo: 'Solo', pair: 'Pair', relay: 'Relay' };
+const raceLabel = r => [r.event, cap(r.division || r.category), r.event === 'Hyrox' && r.format === 'pair' ? 'Doubles' : FORMAT_LABEL[r.format]]
+  .filter(Boolean).join(' · ') + (r.time ? ` (${formatTime(r.time)})` : '');
+
+function hybridRaces(a) {
+  const formats = (pair) => [['solo', 'Solo'], ['pair', pair], ['relay', 'Relay']];
+  const block = (key, name, info, extra) => `<div class="race-opt">
+      <div class="race-head">${check(`hx_${key}`, `I have finished <strong>${name}</strong>`, a[`hx_${key}`])}${info ? tip(info, `About ${name}`) : ''}</div>
+      ${a[`hx_${key}`] ? `<div class="race-detail">${extra}${timeField(`${key}Time`, 'Finish time (optional)', a[`${key}Time`], 'h:mm:ss')}</div>` : ''}</div>`;
+  return `<p class="q">Hybrid races</p>
+    ${block('alphax', 'Alpha X', 'Alpha X is about 75% endurance, so it leans toward an endurance race. Your Hybrid plan adds real strength blocks on top.',
+      `<label class="field"><span>Category</span>${select('alphaxCat', [['base', 'Base'], ['open', 'Open']], a.alphaxCat || 'base')}</label><label class="field"><span>Format</span>${select('alphaxFormat', formats('Pair'), a.alphaxFormat || 'solo')}</label>`)}
+    ${block('hyrox', 'Hyrox', 'Hyrox is about 80% endurance: closer to an endurance race than truly hybrid. Your Hybrid plan adds real strength blocks on top.',
+      `<label class="field"><span>Division</span>${select('hyroxDiv', [['open', 'Open'], ['pro', 'Pro']], a.hyroxDiv || 'open')}</label><label class="field"><span>Format</span>${select('hyroxFormat', formats('Doubles (pair)'), a.hyroxFormat || 'solo')}</label>`)}
+    ${block('other', 'another competition', '',
+      `<label class="field"><span>Which one?</span><input type="text" name="otherName" value="${h(a.otherName || '')}" list="events-list" maxlength="60" placeholder="e.g. CrossFit Open"><datalist id="events-list">${OTHER_EVENTS.map(e => `<option value="${e}">`).join('')}</datalist></label>`)}`;
+}
+
 function normalize(a) {
   const n = v => (v === '' || v == null || isNaN(parseFloat(v)) ? 0 : parseFloat(v));
+  const best5k = a.best5kText != null ? raceMinutes(a.best5kText, a.best5kMode, 5) : n(a.best5k) || null;
+  const best10k = a.best10kText != null ? raceMinutes(a.best10kText, a.best10kMode, 10) : n(a.best10k) || null;
+  const longestMin = parseTime(a.longestTime);
+  let longestKm = n(a.longestKm), longestEstimated = false;
+  if (!longestKm && longestMin) { longestKm = estimateKm(longestMin, best5k); longestEstimated = true; }
+  const hybrid = [];
+  if (a.hx_alphax) hybrid.push({ event: 'Alpha X', category: a.alphaxCat || 'base', format: a.alphaxFormat || 'solo', time: parseTime(a.alphaxTime) });
+  if (a.hx_hyrox) hybrid.push({ event: 'Hyrox', division: a.hyroxDiv || 'open', format: a.hyroxFormat || 'solo', time: parseTime(a.hyroxTime) });
+  if (a.hx_other && a.otherName) hybrid.push({ event: String(a.otherName).slice(0, 60), time: parseTime(a.otherTime) });
+  // A Hyrox finished solo or as doubles means running 8 x 1 km within the race.
+  if (hybrid.some(r => r.event === 'Hyrox' && r.format !== 'relay')) longestKm = Math.max(longestKm, 8);
   return {
     ...a,
-    runsLast4w: n(a.runsLast4w), weeklyKm: n(a.weeklyKm), longestKm: n(a.longestKm),
-    best5k: n(a.best5k) || null, best10k: n(a.best10k) || null,
+    runsLast4w: n(a.runsLast4w), weeklyKm: n(a.weeklyKm), longestKm, longestEstimated, longestMin,
+    best5k: best5k || null, best10k: best10k || null, hybridRaces: hybrid,
     continuous: a.continuous || 'none', pain: a.pain || 'none', daysPerWeek: (a.days || K.defaultDays(3)).length,
   };
 }
@@ -160,6 +202,8 @@ function renderOnboarding() {
         <h2>Level ${lvl.n} · ${h(lvl.name)}</h2>
         <p>You qualify for Level ${preview.qualifying}. You start one level below it so the first wins come quickly. Pass the gates to climb back up fast.</p>
         <p><strong>Prep Track:</strong> P${ps.n} ${h(ps.name)} (${h(ps.focus)})</p>
+        ${normalize(ui.ob.a).longestEstimated ? `<p class="hint">Longest run estimated at about ${normalize(ui.ob.a).longestKm} km from its time.</p>` : ''}
+        ${normalize(ui.ob.a).hybridRaces.length ? `<p class="hint">Races on record: ${h(normalize(ui.ob.a).hybridRaces.map(raceLabel).join(', '))}. They feed your Hybrid track when it opens.</p>` : ''}
         ${rb.active ? `<div class="banner warn"><strong>Rebuild Track first.</strong> Because you reported pain, you start with the Rebuild Track. Your level is saved and you come back to it afterwards.${rb.seeProfessional ? ' Please get it checked by a physio or doctor first.' : ''}</div>` : ''}
         <p class="hint">Coming in Phase 2: upload Strava/Garmin files or screenshots to verify this.</p>
       </div>`;
@@ -933,7 +977,7 @@ function readDraft() {
 document.addEventListener('change', async e => {
   const el = e.target;
   if (el.closest('#nc-form') && el.name !== 'msg' && el.name !== 'myName') { readDraft(); renderModal(); return; }
-  if (el.closest('#ob-form') && el.name?.startsWith('tr_')) { collectOb(); renderOnboarding(); return; }
+  if (el.closest('#ob-form') && (el.name?.startsWith('tr_') || el.name?.startsWith('hx_') || /Mode$/.test(el.name || ''))) { collectOb(); renderOnboarding(); return; }
   if (el.dataset.act === 'speak-toggle') ui.speakReplies = el.checked;
   if (el.dataset.act === 'import' && el.files[0]) {
     try { commit(await store.importFile(el.files[0])); toast('Progress imported.'); }
@@ -957,6 +1001,8 @@ document.addEventListener('submit', e => {
     collectOb();
     if (f.querySelector('[name^=tr_]') && !(ui.ob.a.tracks || []).length) return toast('Pick at least one thing you train for.');
     if (f.querySelector('[name^=d_]') && (ui.ob.a.days || K.defaultDays(3)).length < 2) return toast('Pick at least 2 training days.');
+    const badTime = [...f.querySelectorAll('.time-field input[type=text]')].find(i => i.value.trim() && parseTime(i.value) == null);
+    if (badTime) { badTime.focus(); return toast('Use mm:ss or h:mm:ss, for example 27:30 or 1:05:00.'); }
     ui.ob.step++; renderOnboarding(); window.scrollTo(0, 0); return;
   }
   if (f.id === 'days-form') {

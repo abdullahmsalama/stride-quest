@@ -376,3 +376,21 @@ a { color: var(--brand); font-weight: 600; }
 /* installed app on iPhone: keep the header clear of the status bar / notch */
 .top { padding-top: calc(14px + env(safe-area-inset-top)); }
 .onboarding { padding-top: calc(16px + env(safe-area-inset-top)); }
+
+/* time inputs, race history, info tips */
+.time-field { display: grid; gap: 6px; margin: 12px 0; font-weight: 600; }
+.time-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.time-row input { flex: 1 1 140px; min-width: 0; font: 16px var(--body); padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); font-variant-numeric: tabular-nums; }
+.seg.mini { margin: 0; padding: 3px; flex: none; }
+.seg.mini label { padding: 7px 10px; border-radius: 8px; font: 600 12.5px var(--body); color: var(--ink-2); cursor: pointer; }
+.seg.mini label.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.race-opt { border: 1px solid var(--line); border-radius: 14px; padding: 4px; margin-bottom: 8px; }
+.race-head { display: flex; align-items: center; gap: 4px; }
+.race-head .choice { flex: 1; border: 0; }
+.race-detail { padding: 0 12px 6px; }
+.race-detail .field { margin: 8px 0; }
+.tip { position: relative; flex: none; }
+.tip summary { list-style: none; cursor: pointer; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: var(--info); font-weight: 700; }
+.tip summary::-webkit-details-marker { display: none; }
+.tip[open] summary { background: var(--info-soft); }
+.tip p { position: absolute; right: 0; top: 34px; z-index: 5; width: min(260px, 70vw); background: var(--ink); color: var(--bg); padding: 10px 12px; border-radius: 12px; font-size: 13px; font-weight: 500; box-shadow: var(--shadow); margin: 0; }

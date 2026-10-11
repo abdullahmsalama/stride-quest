@@ -666,6 +666,7 @@ export function coachContext(s, now) {
   lines.push(`Tone: this runner is ${tone}.`);
   if (s.mode) lines.push(s.mode.type === 'sick' ? `SICK MODE (${s.mode.where === 'above' ? 'symptoms above the neck: easy movement only' : 'below the neck or fever: full rest, no training'}).` : 'BUSY MODE: only key sessions this week.');
   if (s.profile.tracks?.length) lines.push(`Trains for: ${s.profile.tracks.join(', ')}${s.profile.primary ? `; main focus ${s.profile.primary}` : ''}.`);
+  if (s.answers?.hybridRaces?.length) lines.push(`Hybrid races finished: ${s.answers.hybridRaces.map(r => [r.event, r.division || r.category, r.format].filter(Boolean).join(' ')).join('; ')}.`);
   if (s.answers) lines.push(`Assessment: ~${s.answers.weeklyKm || 0} km/week, longest run ~${s.answers.longestKm || 0} km, best 5K ${s.answers.best5k || 'n/a'} min, best 10K ${s.answers.best10k || 'n/a'} min.`);
   return lines.join('\n');
 }
