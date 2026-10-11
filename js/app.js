@@ -586,7 +586,8 @@ const CLS_ICON = { long: '🛣️', hard: '⚡', test: '🏁', easy: '🏃', str
 function todayParts(t) {
   const w = K.buildWeek(S, t);
   const todayItems = w.days[w.today].items.filter(i => !i.done);
-  const nextDay = w.days.slice(w.today + 1).find(d => d.items.some(i => !i.done));
+  const win = K.buildWindow(S, t, 2, 7);
+  const nextDay = win.days.slice(3).find(d => d.items.some(i => !i.done));
   const doneToday = w.days[w.today].items.filter(i => i.done);
   const itemBtn = it => it.sick || it.idx == null ? '' : `<button class="btn primary small" data-act="open-step" data-track="${it.track}" data-idx="${it.idx}">Start</button>`;
   const restDoneToday = S.daily[E.dayKey(t)]?.rest;
@@ -597,24 +598,22 @@ function todayParts(t) {
       </section>`
     : `<section class="card next rest-day" style="order:5"><p class="eyebrow">Today · ${K.DAY_NAMES[w.today]}</p>
         <h3>${doneToday.length ? 'Done for today ✅' : S.mode?.type === 'sick' ? 'Rest and recover 💤' : 'Rest day 😴'}</h3>
-        <p class="hint">${nextDay ? `Next: ${nextDay.name} · ${h(nextDay.items.find(i => !i.done).title)}` : 'Fresh week starts Monday.'}</p>
+        <p class="hint">${nextDay ? `Next: ${nextDay.name} · ${h(nextDay.items.find(i => !i.done).title)}` : 'Next sessions appear as you progress.'}</p>
         ${!doneToday.length && S.mode?.type !== 'sick' ? `<button class="btn ghost small" data-act="rest" ${restDoneToday ? 'disabled' : ''}>${restDoneToday ? 'Rest day logged ✓' : `😴 Log rest day (+${E.XP.restDay} XP)`}</button>` : ''}</section>`;
-  const upcoming = w.days.slice(w.today).some(d => d.items.some(i => !i.done));
-  const nw = upcoming ? null : K.buildWeek(S, w.monday + 7 * E.DAY + 6 * 36e5);
-  const weekList = (wk, movable) => `<ul class="wk">${wk.days.map(d => `<li class="wk-day ${movable && d.today ? 'today' : ''} ${movable && d.past ? 'past' : ''} ${d.available ? '' : 'off'}">
-        <span class="wk-name">${d.name}<small>${new Date(d.date).getDate()}</small></span>
+  // Rolling view: two days back, today, four days ahead (into next week when needed).
+  const dayRow = d => `<li class="wk-day ${d.today ? 'today' : ''} ${d.past ? 'past' : ''} ${d.available ? '' : 'off'} ${d.week === 'next' && d.i === 0 ? 'wk-new' : ''}">
+        <span class="wk-name">${d.today ? 'Today' : d.name}<small>${new Date(d.date).getDate()}</small></span>
         <div class="wk-items">${d.items.length ? d.items.map(it => `<div class="wk-item ${it.done ? 'done' : ''} ${it.optional ? 'opt' : ''}">
-            <span>${it.done ? '✅' : CLS_ICON[it.cls] || '•'} ${h(it.title)}${it.keySession && !it.done ? ' <b class="key">KEY</b>' : ''}</span>
-            ${movable && !it.done && !it.sick && it.idx != null ? `<button class="link small" data-act="move-item" data-key="${h(it.key)}">Move</button>` : ''}</div>`).join('')
-          : `<span class="hint">${movable && d.past ? '–' : d.available ? 'Free' : 'Rest'}</span>`}</div></li>`).join('')}</ul>`;
-  const week = `<section class="card week" style="order:6"><h3>This week</h3>
-      ${weekList(w, true)}
+            <span>${it.done ? (it.partial ? '◐' : '✅') : CLS_ICON[it.cls] || '•'} ${h(it.title)}${it.partial ? ' <em class="hint">partly done</em>' : ''}${it.keySession && !it.done ? ' <b class="key">KEY</b>' : ''}</span>
+            ${d.week === 'this' && !it.done && !it.sick && it.idx != null ? `<button class="link small" data-act="move-item" data-key="${h(it.key)}">Move</button>` : ''}</div>`).join('')
+          : `<span class="hint">${d.past ? '–' : d.available ? 'Free' : 'Rest'}</span>`}</div></li>`;
+  const week = `<section class="card week" style="order:6"><h3>Your week</h3>
+      <ul class="wk">${win.days.slice(0, 7).map(dayRow).join('')}</ul>
       ${w.warnings.map(x => `<div class="fit-box warn">${h(x.text)}</div>`).join('')}
-      ${nw ? '' : w.notes.map(n => `<p class="hint">${h(n)}</p>`).join('')}
+      ${w.notes.filter(n => !/No training days left/.test(n)).map(n => `<p class="hint">${h(n)}</p>`).join('')}
       <button class="link small" data-act="edit-days">Change training days</button>
     </section>`;
-  const nextWeek = nw ? `<section class="card week next-week" style="order:7"><h3>Next week <span class="hint">preview</span></h3>${weekList(nw, false)}
-      ${nw.notes.map(n => `<p class="hint">${h(n)}</p>`).join('')}</section>` : '';
+  const nextWeek = '';
   const coming = [];
   const tracksCard = coming.length ? `<section class="card info-card" style="order:8"><p>${coming.map(k => k === 'hybrid' ? '🏋️ <strong>Hybrid track</strong>' : '🏊 <strong>Triathlon track</strong>').join(' and ')} ${coming.length > 1 ? 'are' : 'is'} being built. Your training already counts toward ${coming.length > 1 ? 'them' : 'it'}: carry-over will show the moment ${coming.length > 1 ? 'they open' : 'it opens'}.</p></section>` : '';
 

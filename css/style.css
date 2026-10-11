@@ -568,3 +568,5 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .log-more[open] summary { margin-bottom: .4rem; }
 #step-form textarea { width: 100%; font: inherit; padding: .5rem .7rem; border: 1px solid var(--line, #d0d5dd); border-radius: 10px; background: var(--card, #fff); color: inherit; box-sizing: border-box; }
 [hidden] { display: none !important; }
+.wk-day.wk-new { border-top: 2px dashed var(--line, #d0d5dd); position: relative; }
+.wk-day.wk-new::before { content: 'Next week'; position: absolute; top: -.7rem; right: .5rem; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 0 .4rem; background: var(--card, #fff); color: var(--muted, #6b7280); }

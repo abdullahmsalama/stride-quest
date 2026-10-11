@@ -113,8 +113,9 @@ export function warningsFor(byDay) {
   return out;
 }
 
-// Build the week containing `now`.
-export function buildWeek(s, now) {
+// Build the week containing `now`. `skip`: item keys already planned elsewhere (e.g. the rest of this
+// week, when previewing next week), so nothing shows twice.
+export function buildWeek(s, now, { skip } = {}) {
   const monday = mondayOf(now);
   const wk = weekKey(now);
   const today = dayIndex(now);
@@ -125,7 +126,7 @@ export function buildWeek(s, now) {
   // Past: what was actually done this week.
   for (const h of s.history) {
     if (h.kind !== 'session' || h.ts < monday || weekKey(h.ts) !== wk) continue;
-    byDay[dayIndex(h.ts)].push({ title: h.title, track: h.track, done: true, xp: h.xp, cls: 'done' });
+    byDay[dayIndex(h.ts)].push({ title: h.title, track: h.track, done: true, xp: h.xp, cls: 'done', ...(h.partial ? { partial: true } : {}) });
   }
 
   // Free slots from today on: available days with nothing done yet.
@@ -143,6 +144,7 @@ export function buildWeek(s, now) {
   }
 
   let list = candidates(s);
+  if (skip?.size) list = list.filter(it => !skip.has(itemKey(it)));
   const moves = s.calendar?.moves?.[wk] || {};
   const blocked = prepBlocksRun(s) != null;
   list = list.map(it => ({ ...it, cls: classify(it, s.prep.level), key: itemKey(it) }));
@@ -183,6 +185,22 @@ export function buildWeek(s, now) {
   const left = list.length - take.length;
   if (!slots.length) notes.push('No training days left this week. Next week picks up from here.');
   return { weekKey: wk, monday, today, days: frame(byDay, monday, today, days), warnings: warningsFor(byDay), notes, mode, left };
+}
+
+// A rolling view around today: `back` days before, today, and `ahead` days after, across week
+// boundaries. Earlier weeks show what was done; next week is a preview of what comes after this one.
+export function buildWindow(s, now, back = 2, ahead = 4) {
+  const w = buildWeek(s, now);
+  const planned = new Set(w.days.slice(w.today).flatMap(d => d.items.filter(i => !i.done && i.key).map(i => i.key)));
+  const next = buildWeek(s, dateOf(w.monday, 7) + 6 * 36e5, { skip: planned });
+  const prev = buildWeek(s, dateOf(w.monday, -7) + 6 * 36e5);
+  const all = [
+    ...prev.days.map(d => ({ ...d, items: d.items.filter(i => i.done), past: true, today: false, week: 'prev' })),
+    ...w.days.map(d => ({ ...d, week: 'this' })),
+    ...next.days.map(d => ({ ...d, past: false, today: false, week: 'next' })),
+  ];
+  const at = 7 + w.today;
+  return { days: all.slice(at - back, at + ahead + 1), week: w, next };
 }
 
 function frame(byDay, monday, today, avail) {

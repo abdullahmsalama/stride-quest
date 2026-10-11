@@ -123,3 +123,17 @@ test('busy short gap changes nothing', () => {
   assert.equal(state.refresher, null);
   assert.equal(state.run.level, 5);
 });
+
+test('the rolling window shows two days back and four ahead, across weeks, without repeats', () => {
+  const SUN = new Date(2026, 9, 18, 9).getTime();
+  const { state } = E.placeFromAnswers(E.newState(SUN), { continuous: '30-45', longestKm: 10, best5k: 29, runsLast4w: 12, pain: 'none', daysPerWeek: 4 }, SUN);
+  const s = K.setSchedule(state, [0, 2, 4, 6], 6);
+  const w = K.buildWindow(s, SUN);
+  assert.equal(w.days.length, 7);
+  assert.deepEqual(w.days.map(d => d.name), ['Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu']);
+  assert.ok(w.days[2].today);
+  assert.equal(w.days[3].week, 'next');
+  const keys = w.days.flatMap(d => d.items.filter(i => !i.done).map(i => i.key));
+  assert.equal(new Set(keys).size, keys.length); // nothing planned twice
+  assert.ok(w.days.slice(3).some(d => d.items.length)); // next week is filled in
+});
