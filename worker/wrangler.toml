@@ -1,0 +1,19 @@
+name = "stride-quest-coach"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+# Comma-separated list of sites allowed to call the Worker (your GitHub Pages URL).
+# localhost is always allowed for testing.
+ALLOWED_ORIGINS = "https://YOUR-GITHUB-USERNAME.github.io"
+SITE_URL = "https://YOUR-GITHUB-USERNAME.github.io/stride-quest/"
+RATE_PER_MINUTE = "10"
+# Model names change over time; update these if a provider retires one.
+GEMINI_MODEL = "gemini-2.5-flash"
+GROQ_MODEL = "llama-3.3-70b-versatile"
+OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+
+# Secrets (never put them in this file):
+#   npx wrangler secret put GEMINI_API_KEY
+#   npx wrangler secret put GROQ_API_KEY
+#   npx wrangler secret put OPENROUTER_API_KEY   (optional)

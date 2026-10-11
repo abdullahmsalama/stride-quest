@@ -1,0 +1,616 @@
+// Game rules. Pure functions over a plain state object, so they run in the browser and in Node tests.
+// Every function that changes state returns a new state; `now` is a timestamp in ms.
+import { RUN_LEVELS, PREP_STAGES, REBUILD_STAGES, WORLDS, DAILY_ORDERS } from './data/tracks.js';
+
+export const DAY = 864e5;
+export const XP = { run: 30, prep: 20, slot: 20, rest: 10, gate: 100, proveit: 30, painCheck: 5, daily: 5, restDay: 10, weekBonus: 50 };
+const SESSION_TYPES = new Set(['run', 'prep', 'slot', 'gate', 'proveit']);
+
+// ---------- dates ----------
+export function dayKey(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+export function weekKey(ts) {
+  const d = new Date(ts);
+  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+  return dayKey(monday.getTime());
+}
+const daysBetween = (a, b) => Math.floor((startOfDay(b) - startOfDay(a)) / DAY);
+const startOfDay = ts => { const d = new Date(ts); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+const clone = s => JSON.parse(JSON.stringify(s));
+
+// ---------- state ----------
+export function newState(now) {
+  return {
+    v: 1,
+    createdAt: now,
+    profile: { name: '', goal: '', daysPerWeek: 3 },
+    run: { level: 1, done: {}, startedAt: now, stars: {}, reclaim: null, gatePassed: false },
+    prep: { level: 0, done: {}, startedAt: now, mastered: false },
+    rebuild: { active: false, stage: 0, done: {}, savedRunLevel: null, redFlag: false },
+    refresher: null,
+    needsReassessment: null,
+    xp: 0,
+    history: [],
+    pending: [],
+    weekBonus: {},
+    daily: {},
+    badges: {},
+    returnHandledFor: null,
+  };
+}
+
+export const runLevel = n => RUN_LEVELS[n - 1];
+export const worldOf = level => WORLDS.find(w => w.id === level.world);
+
+// ---------- placement ----------
+const CONTINUOUS_MIN = { none: 0, jogwalk20: 0, '10-15': 12, '20-30': 25, '30-45': 40, '45-75': 60, '75-120': 90, '120+': 150 };
+
+const CRITERIA = {
+  1: () => true,
+  2: a => a.continuous !== 'none',
+  3: a => CONTINUOUS_MIN[a.continuous] >= 10,
+  4: a => a.longestKm >= 5,
+  5: a => a.best5k > 0 && a.best5k <= 35 && a.runsLast4w / 4 >= 2,
+  6: a => a.best5k > 0 && a.best5k <= 30,
+  7: a => a.longestKm >= 8,
+  8: a => a.best10k > 0 && a.best10k <= 60,
+  9: a => a.longestKm >= 14,
+  10: a => !!a.halfDone,
+  11: a => a.longestKm >= 25 && a.weeklyKm >= 40,
+  12: a => !!a.marathonDone,
+  13: a => !!a.ultraDone || a.longestKm >= 50,
+};
+
+// Highest level whose criteria are met. Someone who has barely run in the last 4 weeks is
+// treated like a long break (over 12 weeks: up to 3 levels lower).
+export function qualifyingLevel(a) {
+  let q = 1;
+  for (let n = 13; n >= 1; n--) if (CRITERIA[n](a)) { q = n; break; }
+  if ((a.runsLast4w ?? 0) < 2) q = Math.max(1, q - 3);
+  return q;
+}
+
+// Prep stage from the self-test: consecutive gates passed, capped at P3 until the
+// in-app landing and hop tests are done.
+export function prepFromSelfTest(selfTest = {}) {
+  let p = 0;
+  for (const k of ['t0', 't1', 't2', 't3']) { if (selfTest[k]) p++; else break; }
+  return Math.min(p, 3);
+}
+
+export function placeFromAnswers(state, a, now) {
+  const s = clone(state);
+  const q = qualifyingLevel(a);
+  let placed = Math.max(1, q - 1);
+  if (s.needsReassessment) {
+    placed = Math.max(s.needsReassessment.oldLevel - 3, placed, 1);
+    s.needsReassessment = null;
+  }
+  s.answers = a;
+  s.profile = { ...s.profile, name: a.name || s.profile.name, goal: a.goal || '', daysPerWeek: clampInt(a.daysPerWeek, 2, 6, 3) };
+  s.run = { ...s.run, level: placed, done: {}, startedAt: now, gatePassed: false };
+  s.prep = { ...s.prep, level: q >= 3 ? prepFromSelfTest(a.selfTest) : 0, done: {}, startedAt: now };
+  const redFlag = (a.redFlags || []).length > 0;
+  if (a.pain === 'mild' || a.pain === 'more' || redFlag) {
+    s.rebuild = { active: true, stage: 0, done: {}, savedRunLevel: placed, redFlag, seeProfessional: a.pain === 'more' || redFlag };
+  }
+  s.placedAt = now;
+  return { state: s, qualifying: q, placed };
+}
+const clampInt = (v, lo, hi, def) => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
+
+// ---------- which track is active ----------
+// rebuild > refresher > run. The Prep Track runs beside run/refresher, and pauses during rebuild.
+export function activeTrack(s) {
+  if (s.rebuild.active) return 'rebuild';
+  if (s.refresher) return 'refresher';
+  return 'run';
+}
+
+// Steps for a track, resolved for the runner (alt versions when Prep is too low) with status.
+export function trackSteps(s, track) {
+  let steps, done;
+  if (track === 'run') { steps = runLevel(s.run.level).steps; done = s.run.done; }
+  else if (track === 'prep') { steps = PREP_STAGES[s.prep.level].steps; done = s.prep.done; }
+  else if (track === 'rebuild') { steps = REBUILD_STAGES[s.rebuild.stage].steps; done = s.rebuild.done; }
+  else if (track === 'refresher') { steps = s.refresher?.steps || []; done = s.refresher?.done || {}; }
+  const gateOpen = gateUnlocked(s, track);
+  return steps.map((st, idx) => {
+    let step = { ...st, idx };
+    if (st.prepReq != null && s.prep.level < st.prepReq && st.alt) step = { ...step, ...st.alt, swapped: true };
+    const d = done[idx];
+    let status = d ? (d.provisional ? 'provisional' : 'done') : 'open';
+    if (status === 'open' && st.type === 'gate' && !gateOpen) status = 'locked';
+    if (status === 'open' && track === 'run' && st.type === 'slot') status = 'slot';
+    if (track === 'rebuild' && s.rebuild.redFlag && status === 'open' && !(s.rebuild.stage === 0 && idx === 1)) status = 'locked';
+    return { ...step, status, xp: XP[st.type] || 0 };
+  });
+}
+
+export function levelXpTarget(steps) {
+  const total = steps.filter(st => st.type !== 'gate').reduce((t, st) => t + (XP[st.type] || 0), 0);
+  return Math.round(total * 0.7 / 10) * 10;
+}
+function earnedInLevel(steps, done) {
+  return steps.reduce((t, st, i) => t + (done[i] && st.type !== 'gate' ? XP[st.type] || 0 : 0), 0);
+}
+
+// Run gate: needs 70% of the level's step XP. Prep/rebuild gates: 2 of the 3 sessions.
+export function gateUnlocked(s, track) {
+  if (track === 'run') { const st = runLevel(s.run.level).steps; return earnedInLevel(st, s.run.done) >= levelXpTarget(st); }
+  if (track === 'prep') return Object.keys(s.prep.done).length >= 2;
+  if (track === 'rebuild') return !s.rebuild.redFlag && Object.keys(s.rebuild.done).length >= 2;
+  if (track === 'refresher') return true;
+  return false;
+}
+
+export function levelProgress(s) {
+  const steps = runLevel(s.run.level).steps;
+  return { earned: earnedInLevel(steps, s.run.done), target: levelXpTarget(steps) };
+}
+
+// ---------- XP helpers ----------
+export function streakMultiplier(s, now) {
+  let weeks = 0;
+  for (let i = 1; i <= 8; i++) { if (s.weekBonus[weekKey(now - i * 7 * DAY)]) weeks++; else break; }
+  return weeks >= 4 ? 1.25 : weeks >= 2 ? 1.1 : 1;
+}
+
+export function dayStreak(s, now) {
+  const days = new Set(s.history.map(h => dayKey(h.ts)));
+  Object.keys(s.daily).forEach(k => { if (s.daily[k].rest || (s.daily[k].orders || []).length) days.add(k); });
+  let n = 0;
+  for (let i = 0; ; i++) { const k = dayKey(now - i * DAY); if (days.has(k)) n++; else if (i === 0) continue; else break; }
+  return n;
+}
+
+function award(s, amount, now, entry) {
+  s.xp += amount;
+  s.history.push({ ts: now, xp: amount, ...entry });
+}
+
+function sessionsThisWeek(s, now) {
+  const wk = weekKey(now);
+  return s.history.filter(h => h.kind === 'session' && weekKey(h.ts) === wk).length;
+}
+
+function afterSession(s, now, msgs) {
+  const wk = weekKey(now);
+  if (!s.weekBonus[wk] && sessionsThisWeek(s, now) >= s.profile.daysPerWeek) {
+    s.weekBonus[wk] = true;
+    award(s, XP.weekBonus, now, { kind: 'bonus', title: 'Weekly consistency bonus' });
+    msgs.push(`Weekly consistency bonus: +${XP.weekBonus} XP`);
+  }
+  badge(s, 'first_step', now, msgs);
+  if (new Date(now).getHours() < 7) badge(s, 'early_bird', now, msgs);
+  const streak = dayStreak(s, now);
+  if (streak >= 7) badge(s, 'streak_7', now, msgs);
+  if (streak >= 30) badge(s, 'streak_30', now, msgs);
+  if (streak >= 100) badge(s, 'streak_100', now, msgs);
+}
+
+export const BADGES = {
+  first_step: { name: 'First Step', emoji: '👟', desc: 'Completed your first session' },
+  early_bird: { name: 'Early Bird', emoji: '🌅', desc: 'Logged a session before 7am' },
+  streak_7: { name: 'Streak 7', emoji: '🔁', desc: '7 days in a row with activity' },
+  streak_30: { name: 'Streak 30', emoji: '🔥', desc: '30 days in a row with activity' },
+  streak_100: { name: 'Streak 100', emoji: '💯', desc: '100 days in a row with activity' },
+  first_boss: { name: 'First Race', emoji: '🏁', desc: 'Beat a boss level' },
+  comeback: { name: 'Comeback', emoji: '🔄', desc: 'Finished a refresher course' },
+  rebuilt: { name: 'Rebuilt', emoji: '🩹', desc: 'Finished the Rebuild Track' },
+  prep_master: { name: 'Elastic', emoji: '🪃', desc: 'Finished the whole Prep Track' },
+};
+function badge(s, id, now, msgs) {
+  if (s.badges[id]) return;
+  s.badges[id] = now;
+  msgs.push(`Badge unlocked: ${BADGES[id].emoji} ${BADGES[id].name}`);
+}
+
+// ---------- completing steps ----------
+// opts: { pain (0-10), passed (Prove It / boss result), now }
+// Returns { state, outcome } where outcome.status is one of:
+//   done | provisional | repeat | stepBack | rebuildPrompt
+export function completeStep(state, track, idx, opts) {
+  const s = clone(state);
+  const now = opts.now;
+  const pain = opts.pain ?? 0;
+  const step = trackSteps(s, track)[idx];
+  const msgs = [];
+  const out = st => ({ state: s, outcome: { status: st, messages: msgs, xp: s.xp - state.xp } });
+  if (!step || step.status === 'done' || step.status === 'locked') return out('ignored');
+  const isRest = step.type === 'rest';
+
+  if (!isRest) award(s, XP.painCheck, now, { kind: 'check', title: 'Pain check-in', pain });
+
+  if (!isRest && pain >= 5) {
+    if (track === 'rebuild') {
+      s.rebuild.stage = Math.max(0, s.rebuild.stage - 1);
+      s.rebuild.done = {};
+      msgs.push('Pain 5/10 or more: stepping back one stage. Please consider getting it checked by a physio or doctor.');
+      return out('stepBack');
+    }
+    msgs.push('Pain 5/10 or more: stop this session. The Rebuild Track is the safer path for now.');
+    return out('rebuildPrompt');
+  }
+  if (!isRest && pain >= 3) {
+    msgs.push(`Pain ${pain}/10: this step is not counted yet. Repeat it when it feels better.`);
+    return out('repeat');
+  }
+
+  // Pain 0-2: the step counts.
+  const mult = streakMultiplier(s, now);
+  const base = step.type === 'slot' ? XP.prep : XP[step.type] || 0;
+  const gained = Math.round(base * mult);
+  const doneMap = track === 'run' ? s.run.done : track === 'prep' ? s.prep.done : track === 'rebuild' ? s.rebuild.done : s.refresher.done;
+  const provisional = step.type === 'gate' && step.nextDay;
+  doneMap[idx] = { ts: now, pain, ...(provisional ? { provisional: true } : {}), ...(opts.passed != null ? { passed: !!opts.passed } : {}) };
+  award(s, gained, now, { kind: isRest ? 'rest' : 'session', track, level: levelNumber(s, track), idx, title: step.title, pain });
+  msgs.push(`+${gained} XP${mult > 1 ? ` (streak x${mult})` : ''}`);
+  if (isRest) s.daily[dayKey(now)] = { ...(s.daily[dayKey(now)] || {}), rest: true };
+
+  // Pending next-morning check for runs and next-day gates.
+  if (step.type === 'run' || step.type === 'proveit' || provisional) {
+    s.pending.push({ ts: now, track, level: levelNumber(s, track), idx, gate: provisional, pain });
+  }
+
+  // A Prep Track step also fills the next empty Prep slot in the run level.
+  if (track === 'prep' && activeTrack(s) === 'run') {
+    const slotIdx = runLevel(s.run.level).steps.findIndex((st, i) => st.type === 'slot' && !s.run.done[i]);
+    if (slotIdx >= 0) { s.run.done[slotIdx] = { ts: now, pain, viaPrep: true }; msgs.push('Also filled a Prep slot in your run level.'); }
+  }
+
+  if (step.type === 'gate' && !provisional) passGate(s, track, now, msgs, opts);
+  if (track === 'refresher') refresherProgress(s, step, opts, now, msgs);
+  if (!isRest) afterSession(s, now, msgs);
+  return out(provisional ? 'provisional' : 'done');
+}
+
+function levelNumber(s, track) {
+  if (track === 'run') return s.run.level;
+  if (track === 'prep') return s.prep.level;
+  if (track === 'rebuild') return s.rebuild.stage;
+  return 'refresher';
+}
+
+function passGate(s, track, now, msgs, opts = {}) {
+  if (track === 'run') {
+    const lvl = runLevel(s.run.level);
+    const stars = starsFor(s, now);
+    s.run.stars[lvl.n] = Math.max(s.run.stars[lvl.n] || 0, stars);
+    msgs.push(`${lvl.name} cleared with ${'⭐'.repeat(stars)}`);
+    if (lvl.steps.find(st => st.type === 'gate')?.boss) badge(s, 'first_boss', now, msgs);
+    s.run.gatePassed = true;
+    tryAdvanceRun(s, now, msgs);
+  } else if (track === 'prep') {
+    if (s.prep.level >= 7) { s.prep.mastered = true; s.prep.done = {}; badge(s, 'prep_master', now, msgs); return; }
+    s.prep.level += 1;
+    s.prep.done = {};
+    s.prep.startedAt = now;
+    msgs.push(`Prep stage up: P${s.prep.level} ${PREP_STAGES[s.prep.level].name}`);
+    tryAdvanceRun(s, now, msgs);
+  } else if (track === 'rebuild') {
+    if (s.rebuild.stage < 3) {
+      s.rebuild.stage += 1;
+      s.rebuild.done = {};
+      msgs.push(`Rebuild stage up: R${s.rebuild.stage + 1} ${REBUILD_STAGES[s.rebuild.stage].name}`);
+    } else {
+      const saved = s.rebuild.savedRunLevel || s.run.level;
+      const back = Math.max(1, saved - 1);
+      s.run = { ...s.run, level: back, done: {}, startedAt: now, gatePassed: false, reclaim: saved > back ? saved : s.run.reclaim };
+      s.rebuild = { active: false, stage: 0, done: {}, savedRunLevel: null, redFlag: false };
+      badge(s, 'rebuilt', now, msgs);
+      msgs.push(`Rebuild complete. Back on the Run Track at ${runLevel(back).name}; reclaim ${runLevel(saved).name} quickly.`);
+    }
+  }
+}
+
+// Stars: 1 = gate passed, 2 = gate + every step, 3 = every step + no gap over 7 days in the level.
+function starsFor(s, now) {
+  const steps = runLevel(s.run.level).steps;
+  const allDone = steps.every((st, i) => st.type === 'gate' || s.run.done[i]);
+  if (!allDone) return 1;
+  const times = [s.run.startedAt, ...Object.values(s.run.done).map(d => d.ts), now].sort((a, b) => a - b);
+  const consistent = times.every((t, i) => i === 0 || daysBetween(times[i - 1], t) <= 7);
+  return consistent ? 3 : 2;
+}
+
+function tryAdvanceRun(s, now, msgs) {
+  if (!s.run.gatePassed || s.run.level >= RUN_LEVELS.length) return;
+  const next = runLevel(s.run.level + 1);
+  if (s.prep.level < next.needsPrep) {
+    msgs.push(`${next.name} unlocks when you reach Prep stage P${next.needsPrep}. Keep going on the Prep Track.`);
+    return;
+  }
+  s.run = { ...s.run, level: next.n, done: {}, startedAt: now, gatePassed: false };
+  if (s.run.reclaim && next.n >= s.run.reclaim) s.run.reclaim = null;
+  msgs.push(`Level up! Welcome to ${next.name} (${worldOf(next).emoji} ${worldOf(next).name})`);
+}
+
+export function prepBlocksRun(s) {
+  if (!s.run.gatePassed || s.run.level >= RUN_LEVELS.length) return null;
+  const next = runLevel(s.run.level + 1);
+  return s.prep.level < next.needsPrep ? next.needsPrep : null;
+}
+
+// ---------- pain flows ----------
+export function enterRebuild(state, { redFlag = false, now }) {
+  const s = clone(state);
+  s.rebuild = { active: true, stage: 0, done: {}, savedRunLevel: Math.max(s.run.level, s.refresher?.fromLevel || 0), redFlag, seeProfessional: true };
+  s.refresher = null;
+  s.pending = [];
+  s.history.push({ ts: now, kind: 'event', title: 'Entered Rebuild Track', xp: 0 });
+  return s;
+}
+
+export function clearRedFlag(state, now) {
+  const s = clone(state);
+  s.rebuild.redFlag = false;
+  s.history.push({ ts: now, kind: 'event', title: 'Cleared by a professional', xp: 0 });
+  return s;
+}
+
+// Next-morning check for everything logged before today. One pain rating covers them all.
+export function pendingChecks(s, now) {
+  return s.pending.filter(p => dayKey(p.ts) !== dayKey(now));
+}
+
+export function morningCheck(state, pain, now) {
+  const s = clone(state);
+  const due = pendingChecks(s, now);
+  const msgs = [];
+  s.pending = s.pending.filter(p => !due.includes(p) && dayKey(p.ts) === dayKey(now));
+  const worse = due.some(p => pain - (p.pain ?? 0) >= 2);
+  award(s, XP.painCheck, now, { kind: 'check', title: 'Morning pain check', pain });
+
+  for (const p of due.filter(p => p.gate)) {
+    const map = p.track === 'run' ? s.run.done : p.track === 'prep' ? s.prep.done : p.track === 'rebuild' ? s.rebuild.done : s.refresher?.done;
+    if (!map || !map[p.idx] || levelNumber(s, p.track) !== p.level) continue;
+    if (pain <= 2) { delete map[p.idx].provisional; passGate(s, p.track, now, msgs); }
+    else { delete map[p.idx]; msgs.push('Gate not passed yet: next-morning pain was above 2/10. Retake it when ready.'); }
+  }
+
+  let status = 'ok';
+  if (pain >= 5 || (worse && pain >= 3)) {
+    if (s.rebuild.active) {
+      s.rebuild.stage = Math.max(0, s.rebuild.stage - 1);
+      s.rebuild.done = {};
+      msgs.push('Pain is up this morning: stepping back one Rebuild stage. Consider a physio check.');
+      status = 'stepBack';
+    } else {
+      msgs.push('Pain is up this morning. The Rebuild Track is the safer path for now.');
+      status = 'rebuildPrompt';
+    }
+  } else if (pain >= 3) {
+    msgs.push(`Morning pain ${pain}/10: take it easy today and repeat yesterday's load before progressing.`);
+    status = 'caution';
+  } else {
+    msgs.push('Morning check looks good.');
+  }
+  return { state: s, outcome: { status, messages: msgs } };
+}
+
+// ---------- return after a break ----------
+export function lastActive(s) {
+  const sessions = s.history.filter(h => h.kind === 'session' || h.kind === 'rest').map(h => h.ts);
+  return Math.max(s.placedAt || s.createdAt, ...sessions);
+}
+
+export function returnCheck(s, now) {
+  if (!s.placedAt) return { needed: false };
+  const last = lastActive(s);
+  const gapDays = daysBetween(last, now);
+  return { needed: gapDays >= 7 && s.returnHandledFor !== last, gapDays, last };
+}
+
+// load = easy run min + 1.5 x hard run min + 0.5 x cross-training min (all weekly averages)
+export function retention({ easyMin = 0, hardMin = 0, crossMin = 0 }, requiredWeeklyMin) {
+  const load = easyMin + 1.5 * hardMin + 0.5 * crossMin;
+  return {
+    aerobic: requiredWeeklyMin > 0 ? load / requiredWeeklyMin : 0,
+    impact: requiredWeeklyMin > 0 ? (easyMin + hardMin) / requiredWeeklyMin : 0,
+    intensity: hardMin > 0,
+  };
+}
+
+export function effectiveGapDays(gapDays, ret) {
+  let factor;
+  if (ret.aerobic >= 0.8) factor = ret.intensity ? 0 : 0.5;
+  else if (ret.aerobic >= 0.5) factor = 0.5;
+  else if (ret.aerobic >= 0.2) factor = 0.75;
+  else factor = 1;
+  return Math.round(gapDays * factor);
+}
+
+export function refresherTier(effDays) {
+  if (effDays < 7) return { id: 'none', drop: 0 };
+  if (effDays < 14) return { id: 'warmup', drop: 0 };
+  if (effDays < 28) return { id: 'week', drop: 0 };
+  if (effDays < 56) return { id: 'drop1', drop: 1 };
+  if (effDays < 84) return { id: 'drop2', drop: 2 };
+  return { id: 'reassess', drop: 3 };
+}
+
+const ex = (stage, session) => PREP_STAGES[stage].steps[session].ex;
+
+function buildRefresher(tier, fromLevel, toLevel, daysPerWeek) {
+  const usual = runLevel(toLevel).weeklyMin / Math.max(3, daysPerWeek);
+  const min = f => `${Math.max(10, Math.round(usual * f / 5) * 5)} min`;
+  const prove = { type: 'proveit', title: `Prove It: ${runLevel(fromLevel).proveIt}`, detail: 'Hit it with pain 2/10 or less and you skip the rest of this refresher.' };
+  const landing = { type: 'gate', title: 'Check: landing and hop test', detail: '10 quiet stick landings and 10 single-leg hops each leg, pain-free.', ex: ['stick_landing', 'single_leg_hop'] };
+  const steps = { warmup: [prove,
+      { type: 'run', title: `Easy run ${min(0.75)}`, detail: 'About 75% of your usual run.' },
+      { type: 'run', title: `Easy run ${min(0.75)}`, detail: '' }],
+    week: [prove,
+      { type: 'run', title: `Easy run ${min(0.7)}`, detail: '' },
+      { type: 'prep', title: 'Strength review (P2)', ex: ex(2, 0) },
+      { type: 'run', title: `Easy run ${min(0.8)}`, detail: '' },
+      { type: 'prep', title: 'Landing review (P3)', ex: ex(3, 0) },
+      { type: 'run', title: `Easy run ${min(0.9)}`, detail: '' },
+      { type: 'gate', title: `Check: ${runLevel(toLevel).proveIt}`, detail: 'Pain-free the next day.' }],
+    drop1: [prove,
+      { type: 'run', title: `Easy run ${min(0.6)}`, detail: '' },
+      { type: 'prep', title: 'Strength review (P2)', ex: ex(2, 0) },
+      { type: 'run', title: `Easy run ${min(0.65)}`, detail: '' },
+      { type: 'run', title: `Easy run ${min(0.7)}`, detail: '' },
+      { type: 'prep', title: 'Landing review (P3)', ex: ex(3, 0) },
+      { type: 'run', title: `Easy run ${min(0.8)}`, detail: '' },
+      { type: 'run', title: `Easy run ${min(0.85)}`, detail: '' },
+      { type: 'prep', title: 'Landing review (P3)', ex: ex(3, 1) },
+      { type: 'run', title: `Easy run ${min(0.9)}`, detail: '' },
+      landing],
+    drop2: [prove,
+      { type: 'run', title: `Run/walk ${min(0.5)}`, detail: 'Walk breaks whenever needed.' },
+      { type: 'prep', title: 'Stability review (P1)', ex: ex(1, 0) },
+      { type: 'run', title: `Easy run ${min(0.55)}`, detail: '' },
+      { type: 'prep', title: 'Strength review (P2)', ex: ex(2, 0) },
+      { type: 'run', title: `Easy run ${min(0.6)}`, detail: '' },
+      { type: 'run', title: `Easy run ${min(0.7)}`, detail: '' },
+      { type: 'prep', title: 'Strength review (P2)', ex: ex(2, 1) },
+      { type: 'run', title: `Easy run ${min(0.8)}`, detail: '' },
+      { type: 'prep', title: 'Landing review (P3)', ex: ex(3, 0) },
+      { type: 'run', title: `Easy run ${min(0.9)}`, detail: '' },
+      landing],
+  };
+  return steps[tier] || [];
+}
+
+const HEALTH_STEPS = [
+  { type: 'run', title: 'Health check: easy 20 min walk', detail: 'No intensity. Stop if you feel unwell.' },
+  { type: 'run', title: 'Health check: very easy 15-20 min jog or walk', detail: 'No intensity. Fever or chest symptoms = rest.' },
+];
+
+// answers: { reason: 'injury'|'illness'|'busy', easyMin, hardMin, crossMin, now }
+export function applyReturn(state, answers) {
+  const s = clone(state);
+  const now = answers.now;
+  const { gapDays, last } = returnCheck(s, now);
+  s.returnHandledFor = last;
+  const baseLevel = s.rebuild.active ? (s.rebuild.savedRunLevel || s.run.level) : s.refresher?.fromLevel || s.run.level;
+  const ret = retention(answers, runLevel(baseLevel).weeklyMin);
+  const eff = effectiveGapDays(gapDays, ret);
+  const tier = refresherTier(eff);
+  const summary = { gapDays, effectiveDays: eff, retention: ret, tier: tier.id, fromLevel: baseLevel, toLevel: baseLevel, notes: [] };
+
+  if (tier.id === 'reassess') {
+    s.needsReassessment = { oldLevel: baseLevel };
+    s.refresher = null;
+    summary.notes.push('Long break: a short re-assessment places you again (at most 3 levels below where you were).');
+    return { state: s, summary };
+  }
+
+  const toLevel = Math.max(1, baseLevel - tier.drop);
+  summary.toLevel = toLevel;
+  if (toLevel !== s.run.level || tier.drop > 0) {
+    s.run = { ...s.run, level: toLevel, done: {}, startedAt: now, gatePassed: false, reclaim: tier.drop > 0 ? Math.max(baseLevel, s.run.reclaim || 0) : s.run.reclaim };
+  }
+
+  const prepBefore = s.prep.level;
+  if (tier.id === 'drop2') s.prep.level = Math.max(0, s.prep.level - 1);
+  if (ret.impact < 0.5 && eff >= 14) s.prep.level = Math.min(s.prep.level, 3);
+  if (s.prep.level !== prepBefore) {
+    s.prep.done = {};
+    summary.notes.push(`Prep set to P${s.prep.level} ${PREP_STAGES[s.prep.level].name}: landing and hop control come back before plyometrics.`);
+  }
+
+  if (answers.reason === 'injury') {
+    s.rebuild = { active: true, stage: 0, done: {}, savedRunLevel: toLevel, redFlag: false, seeProfessional: true };
+    s.refresher = null;
+    summary.notes.push('Injury: the Rebuild Track comes first, then you return to your level.');
+    return { state: s, summary };
+  }
+
+  let steps = buildRefresher(tier.id, baseLevel, toLevel, s.profile.daysPerWeek);
+  if (answers.reason === 'illness') steps = [...HEALTH_STEPS.slice(0, eff >= 14 ? 2 : 1), ...steps];
+  s.refresher = steps.length ? { steps, done: {}, fromLevel: baseLevel, toLevel, tier: tier.id, startedAt: now } : null;
+  if (tier.drop > 0) summary.notes.push(`Dropped ${tier.drop} level${tier.drop > 1 ? 's' : ''}. Your old level is marked Reclaim.`);
+  if (!s.refresher) summary.notes.push('Short break: carry on where you left off.');
+  return { state: s, summary };
+}
+
+function refresherProgress(s, step, opts, now, msgs) {
+  const r = s.refresher;
+  if (step.type === 'proveit' && opts.passed) {
+    s.run = { ...s.run, level: r.fromLevel, done: r.fromLevel === s.run.level ? s.run.done : {}, startedAt: now, gatePassed: false, reclaim: null };
+    s.refresher = null;
+    s.pending = s.pending.filter(p => p.track !== 'refresher');
+    badge(s, 'comeback', now, msgs);
+    msgs.push(`Proved it! Back at ${runLevel(r.fromLevel).name}, refresher skipped.`);
+    return;
+  }
+  const all = r.steps.every((_, i) => r.done[i] && !r.done[i].provisional);
+  if (all) {
+    s.refresher = null;
+    s.pending = s.pending.filter(p => p.track !== 'refresher');
+    badge(s, 'comeback', now, msgs);
+    msgs.push('Refresher complete. Back on the Run Track.');
+  }
+}
+
+// ---------- daily orders and rest ----------
+export function dailyOrders(now) {
+  const k = dayKey(now);
+  let h = 0;
+  for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const idx = [];
+  while (idx.length < 3) { const i = h % DAILY_ORDERS.length; if (!idx.includes(i)) idx.push(i); h = (h * 1103515245 + 12345) >>> 0; }
+  return idx.map(i => ({ i, title: DAILY_ORDERS[i] }));
+}
+
+export function completeOrder(state, i, now) {
+  const s = clone(state);
+  const k = dayKey(now);
+  const d = s.daily[k] || {};
+  const orders = d.orders || [];
+  if (orders.includes(i)) return s;
+  s.daily[k] = { ...d, orders: [...orders, i] };
+  award(s, XP.daily, now, { kind: 'daily', title: DAILY_ORDERS[i] });
+  return s;
+}
+
+export function restCheckIn(state, now) {
+  const s = clone(state);
+  const k = dayKey(now);
+  const sessionToday = s.history.some(h => h.kind === 'session' && dayKey(h.ts) === k);
+  if (s.daily[k]?.rest || sessionToday) return s;
+  s.daily[k] = { ...(s.daily[k] || {}), rest: true };
+  award(s, XP.restDay, now, { kind: 'rest', title: 'Rest day check-in' });
+  return s;
+}
+
+// Next open step of a track; a Prep slot resolves to the Prep step that fills it.
+export function nextStep(s, track) {
+  const st = trackSteps(s, track).find(x => x.status === 'open' || x.status === 'slot');
+  if (st?.type !== 'slot') return st;
+  const p = trackSteps(s, 'prep').find(x => x.status === 'open');
+  return p ? { ...p, title: `Prep: ${p.title}`, detail: 'Counts toward the run level too.' } : st;
+}
+
+// ---------- coach context ----------
+export function coachContext(s, now) {
+  const lvl = runLevel(s.run.level);
+  const track = activeTrack(s);
+  const next = nextStep(s, track);
+  const prep = PREP_STAGES[s.prep.level];
+  const pains = s.history.filter(h => h.pain != null).slice(-3).map(h => `${h.pain}/10`).join(', ') || 'none logged';
+  const lines = [
+    `Runner: ${s.profile.name || 'unnamed'}; goal: ${s.profile.goal || 'not set'}; trains ${s.profile.daysPerWeek} days/week.`,
+    `Run Track: Level ${lvl.n} "${lvl.name}" in ${worldOf(lvl).name}. Level XP ${levelProgress(s).earned}/${levelProgress(s).target}. Total XP ${s.xp}.`,
+    `Prep Track: P${s.prep.level} "${prep.name}" (${prep.focus}).`,
+    `Active track: ${track}.`,
+    next ? `Next step: ${next.title}${next.detail ? ' - ' + next.detail : ''}.` : 'No open step right now.',
+    `Recent pain ratings: ${pains}.`,
+    `Day streak: ${dayStreak(s, now)}.`,
+  ];
+  if (s.rebuild.active) lines.push(`In Rebuild Track stage R${s.rebuild.stage + 1} "${REBUILD_STAGES[s.rebuild.stage].name}"${s.rebuild.redFlag ? '; RED FLAGS reported: running paused until cleared by a professional' : ''}.`);
+  if (s.refresher) lines.push(`On a refresher course after a break (from level ${s.refresher.fromLevel} to ${s.refresher.toLevel}).`);
+  if (s.run.reclaim) lines.push(`Previously reached level ${s.run.reclaim}; reclaiming it.`);
+  const tone = s.rebuild.active ? 'coming back from pain or injury: be patient, reassuring and celebrate small wins'
+    : s.refresher || s.run.reclaim ? 'returning after a break: welcome them back warmly, remind them fitness returns fast'
+    : s.run.level === 1 && (s.answers?.runsLast4w ?? 0) === 0 ? 'starting from no training at all: be very encouraging, make walking and tiny wins feel big'
+    : s.run.level <= 3 ? 'a beginner: be encouraging, normalise walk breaks and slow pace' : 'an experienced runner: be encouraging and direct';
+  lines.push(`Tone: this runner is ${tone}.`);
+  if (s.answers) lines.push(`Assessment: ~${s.answers.weeklyKm || 0} km/week, longest run ~${s.answers.longestKm || 0} km, best 5K ${s.answers.best5k || 'n/a'} min, best 10K ${s.answers.best10k || 'n/a'} min.`);
+  return lines.join('\n');
+}
