@@ -450,3 +450,22 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 /* selected half of any switch: clear in light and dark */
 .seg button.on { background: var(--brand-soft); color: var(--brand); box-shadow: inset 0 0 0 1.5px var(--brand); }
 .seg.mini label.on { background: var(--brand-soft); color: var(--brand); box-shadow: inset 0 0 0 1.5px var(--brand); }
+
+/* triathlon */
+.tri-card { border-left: 5px solid #29a0e0; }
+.lane-bars { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
+.lane-bars > div { background: var(--surface-2); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
+.lane-bars span { font-size: 22px; }
+.lane-bars b { font-size: 12.5px; }
+.lane-bars em { font-style: normal; font-size: 11px; color: var(--ink-2); }
+.lane-bars .ok { background: var(--lime-soft); }
+.lane-bars .ok em { color: var(--lime); font-weight: 700; }
+.lane-bars .lim { background: var(--danger-soft); box-shadow: inset 0 0 0 1.5px var(--danger); }
+.lane-bars .lim em { color: var(--danger); font-weight: 700; }
+.trimap { background: #b9e4a8; }
+.tri-node, .tri-gate, .tri-avatar { cursor: pointer; }
+.tri-gate .halo, .tri-avatar .halo { animation: halo 1.6s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+.tri-avatar .bob { animation: idle 1.4s ease-in-out infinite; }
+.tri-avatar.limiter .bob { animation: bob .5s ease-in-out infinite alternate; }
+@media (prefers-reduced-motion: reduce) { .tri-avatar .bob, .tri-gate .halo, .tri-avatar .halo { animation: none !important; } }
+.lane-check { list-style: none; padding: 0; margin: 6px 0; text-align: left; font-size: 13px; display: grid; gap: 3px; }

@@ -25,3 +25,11 @@ test('weeks until a date', () => {
   assert.equal(weeksUntil('2026-12-20', now), 10);
   assert.equal(weeksUntil('', now), null);
 });
+
+test('triathlon dreams point at a Tri world', () => {
+  assert.equal(dreamTarget('Finish an Olympic triathlon').world, 3);
+  assert.equal(dreamTarget('my first sprint triathlon').world, 2);
+  assert.equal(dreamTarget('Ironman 70.3 Dubai').world, 4);
+  assert.equal(dreamTarget('a full Ironman').world, 5);
+  assert.equal(dreamTarget('super sprint tri').world, 1);
+});

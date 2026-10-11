@@ -1,9 +1,10 @@
 // Game rules. Pure functions over a plain state object, so they run in the browser and in Node tests.
 // Every function that changes state returns a new state; `now` is a timestamp in ms.
 import { RUN_LEVELS, PREP_STAGES, REBUILD_STAGES, WORLDS, DAILY_ORDERS } from './data/tracks.js';
+import * as TRI from './tri.js';
 
 export const DAY = 864e5;
-export const XP = { run: 30, prep: 20, slot: 20, rest: 10, gate: 100, proveit: 30, painCheck: 5, daily: 5, restDay: 10, weekBonus: 50 };
+export const XP = { run: 30, swim: 30, bike: 30, prep: 20, slot: 20, rest: 10, gate: 100, proveit: 30, painCheck: 5, daily: 5, restDay: 10, weekBonus: 50 };
 const SESSION_TYPES = new Set(['run', 'prep', 'slot', 'gate', 'proveit']);
 
 // ---------- dates ----------
@@ -116,6 +117,9 @@ export function trackSteps(s, track) {
   else if (track === 'prep') { steps = PREP_STAGES[s.prep.level].steps; done = s.prep.done; }
   else if (track === 'rebuild') { steps = REBUILD_STAGES[s.rebuild.stage].steps; done = s.rebuild.done; }
   else if (track === 'refresher') { steps = s.refresher?.steps || []; done = s.refresher?.done || {}; }
+  else if (track === 'swim') { steps = TRI.swimSteps(s); done = s.tri.swim.done; }
+  else if (track === 'bike') { steps = TRI.bikeSteps(s); done = s.tri.bike.done; }
+  else if (track === 'triGate') { steps = TRI.gateSteps(s); done = s.tri.done; }
   const gateOpen = gateUnlocked(s, track);
   return steps.map((st, idx) => {
     let step = { ...st, idx };
@@ -125,6 +129,8 @@ export function trackSteps(s, track) {
     if (status === 'open' && st.type === 'gate' && !gateOpen) status = 'locked';
     if (status === 'open' && track === 'run' && st.type === 'slot') status = 'slot';
     if (track === 'rebuild' && s.rebuild.redFlag && status === 'open' && !(s.rebuild.stage === 0 && idx === 1)) status = 'locked';
+    if ((track === 'swim' || track === 'bike') && s.rebuild.redFlag && status === 'open') status = 'locked';
+    if (track === 'triGate' && s.rebuild.active && status === 'open') status = 'locked'; // races wait until rebuilt
     return { ...step, status, xp: XP[st.type] || 0 };
   });
 }
@@ -143,6 +149,9 @@ export function gateUnlocked(s, track) {
   if (track === 'prep') return Object.keys(s.prep.done).length >= 2;
   if (track === 'rebuild') return !s.rebuild.redFlag && Object.keys(s.rebuild.done).length >= 2;
   if (track === 'refresher') return true;
+  if (track === 'swim') return Object.keys(s.tri.swim.done).length >= 2;
+  if (track === 'bike') return Object.keys(s.tri.bike.done).length >= 2;
+  if (track === 'triGate') return TRI.lanesReady(s);
   return false;
 }
 
@@ -212,6 +221,7 @@ export const BADGES = {
   rebuilt: { name: 'Rebuilt', emoji: '🩹', desc: 'Finished the Rebuild Track' },
   prep_master: { name: 'Elastic', emoji: '🪃', desc: 'Finished the whole Prep Track' },
   challenger: { name: 'Challenger', emoji: '🏆', desc: 'Completed a friend challenge' },
+  tri_gate: { name: 'Transition', emoji: '⚡', desc: 'Cleared a triathlon transition gate' },
 };
 function badge(s, id, now, msgs) {
   if (s.badges[id]) return;
@@ -242,6 +252,7 @@ export function completeStep(state, track, idx, opts) {
       msgs.push('Pain 5/10 or more: stepping back one stage. Please consider getting it checked by a physio or doctor.');
       return out('stepBack');
     }
+    if (s.rebuild.active) { msgs.push('Pain 5/10 or more: stop and rest today. Please get it checked if it continues.'); return out('repeat'); }
     msgs.push('Pain 5/10 or more: stop this session. The Rebuild Track is the safer path for now.');
     return out('rebuildPrompt');
   }
@@ -254,7 +265,7 @@ export function completeStep(state, track, idx, opts) {
   const mult = streakMultiplier(s, now);
   const base = step.type === 'slot' ? XP.prep : XP[step.type] || 0;
   const gained = Math.round(base * mult);
-  const doneMap = track === 'run' ? s.run.done : track === 'prep' ? s.prep.done : track === 'rebuild' ? s.rebuild.done : s.refresher.done;
+  const doneMap = doneMapOf(s, track);
   const provisional = step.type === 'gate' && step.nextDay;
   doneMap[idx] = { ts: now, pain, ...(provisional ? { provisional: true } : {}), ...(opts.passed != null ? { passed: !!opts.passed } : {}) };
   award(s, gained, now, { kind: isRest ? 'rest' : 'session', track, level: levelNumber(s, track), idx, title: step.title, pain });
@@ -282,7 +293,15 @@ function levelNumber(s, track) {
   if (track === 'run') return s.run.level;
   if (track === 'prep') return s.prep.level;
   if (track === 'rebuild') return s.rebuild.stage;
+  if (track === 'swim') return s.tri.swim.stage;
+  if (track === 'bike') return s.tri.bike.stage;
+  if (track === 'triGate') return s.tri.world;
   return 'refresher';
+}
+
+function doneMapOf(s, track) {
+  return { run: s.run.done, prep: s.prep.done, rebuild: s.rebuild.done, refresher: s.refresher?.done,
+    swim: s.tri?.swim.done, bike: s.tri?.bike.done, triGate: s.tri?.done }[track];
 }
 
 function passGate(s, track, now, msgs, opts = {}) {
@@ -294,6 +313,7 @@ function passGate(s, track, now, msgs, opts = {}) {
     if (lvl.steps.find(st => st.type === 'gate')?.boss) badge(s, 'first_boss', now, msgs);
     s.run.gatePassed = true;
     tryAdvanceRun(s, now, msgs);
+    if (TRI.hasTri(s) && TRI.lanesReady(s)) msgs.push(`🌉 Your running unlocked the ${TRI.triWorld(s).name} transition gate on the Tri map!`);
   } else if (track === 'prep') {
     if (s.prep.level >= 7) { s.prep.mastered = true; s.prep.done = {}; badge(s, 'prep_master', now, msgs); return; }
     s.prep.level += 1;
@@ -301,6 +321,22 @@ function passGate(s, track, now, msgs, opts = {}) {
     s.prep.startedAt = now;
     msgs.push(`Prep stage up: P${s.prep.level} ${PREP_STAGES[s.prep.level].name}`);
     tryAdvanceRun(s, now, msgs);
+  } else if (track === 'swim' || track === 'bike') {
+    const lane = s.tri[track];
+    lane.stage += 1;
+    lane.done = {};
+    const ladder = track === 'swim' ? TRI.SWIM_MAX : TRI.BIKE_MAX;
+    msgs.push(lane.stage >= ladder ? `${TRI.LANE_ICON[track]} ${TRI.LANE_LABEL[track]} ladder complete!`
+      : `${TRI.LANE_ICON[track]} ${TRI.LANE_LABEL[track]} stage up: ${(track === 'swim' ? TRI.swimStage(s) : TRI.bikeStage(s)).name}`);
+    if (TRI.lanesReady(s)) msgs.push(`🌉 All three lanes are ready: the ${TRI.triWorld(s).name} transition gate is open!`);
+  } else if (track === 'triGate') {
+    const w = TRI.triWorld(s);
+    s.tri.done = {};
+    badge(s, 'tri_gate', now, msgs);
+    if (w.gate.boss) badge(s, 'first_boss', now, msgs);
+    if (s.tri.world >= 5) { s.tri.finished = true; msgs.push(`🏆 ${w.name} conquered. Full-distance triathlete!`); return; }
+    s.tri.world += 1;
+    msgs.push(`🌉 ${w.name} cleared! Welcome to ${TRI.triWorld(s).emoji} ${TRI.triWorld(s).name}`);
   } else if (track === 'rebuild') {
     if (s.rebuild.stage < 3) {
       s.rebuild.stage += 1;
@@ -376,7 +412,7 @@ export function morningCheck(state, pain, now) {
   award(s, XP.painCheck, now, { kind: 'check', title: 'Morning pain check', pain });
 
   for (const p of due.filter(p => p.gate)) {
-    const map = p.track === 'run' ? s.run.done : p.track === 'prep' ? s.prep.done : p.track === 'rebuild' ? s.rebuild.done : s.refresher?.done;
+    const map = doneMapOf(s, p.track);
     if (!map || !map[p.idx] || levelNumber(s, p.track) !== p.level) continue;
     if (pain <= 2) { delete map[p.idx].provisional; passGate(s, p.track, now, msgs); }
     else { delete map[p.idx]; msgs.push('Gate not passed yet: next-morning pain was above 2/10. Retake it when ready.'); }
@@ -666,6 +702,10 @@ export function coachContext(s, now) {
   lines.push(`Tone: this runner is ${tone}.`);
   if (s.mode) lines.push(s.mode.type === 'sick' ? `SICK MODE (${s.mode.where === 'above' ? 'symptoms above the neck: easy movement only' : 'below the neck or fever: full rest, no training'}).` : 'BUSY MODE: only key sessions this week.');
   if (s.profile.tracks?.length) lines.push(`Trains for: ${s.profile.tracks.join(', ')}${s.profile.primary ? `; main focus ${s.profile.primary}` : ''}.`);
+  if (TRI.hasTri(s)) {
+    const lim = TRI.limiter(s);
+    lines.push(`Triathlon: world "${TRI.triWorld(s).name}"; swim ${TRI.swimStage(s).name} (${TRI.swimStage(s).target}), bike ${TRI.bikeStage(s).name} (${TRI.bikeStage(s).target}), run = Run Track level ${s.run.level}. ${lim ? `Limiter: ${lim.lane}.` : 'All lanes ready: transition gate open.'}${s.tri.learnToSwim ? ' Cannot swim yet: suggest lessons with a coach, never swim alone.' : ''}`);
+  }
   if (s.answers?.hybridRaces?.length) lines.push(`Hybrid races finished: ${s.answers.hybridRaces.map(r => [r.event, r.division || r.category, r.format].filter(Boolean).join(' ')).join('; ')}.`);
   if (s.answers) lines.push(`Assessment: ~${s.answers.weeklyKm || 0} km/week, longest run ~${s.answers.longestKm || 0} km, best 5K ${s.answers.best5k || 'n/a'} min, best 10K ${s.answers.best10k || 'n/a'} min.`);
   return lines.join('\n');

@@ -2,6 +2,7 @@
 // today and later days get the next open steps, placed by simple safety rules. Missed sessions never
 // pile up because the plan always restarts from today. Pure functions.
 import { DAY, dayKey, weekKey, activeTrack, trackSteps, prepBlocksRun } from './engine.js';
+import { hasTri } from './tri.js';
 
 export const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DEFAULT_DAYS = { 2: [1, 5], 3: [0, 2, 5], 4: [0, 2, 4, 5], 5: [0, 1, 3, 4, 5], 6: [0, 1, 2, 3, 4, 5] };
@@ -22,6 +23,8 @@ export function classify(step, prepLevel = 0) {
   if (step.type === 'gate' || step.type === 'proveit') return 'test';
   if (step.type === 'prep' || step.type === 'slot') return prepLevel >= 3 ? 'impact' : 'strength';
   const t = `${step.title} ${step.detail || ''}`.toLowerCase();
+  if (step.type === 'swim') return 'swim';
+  if (step.type === 'bike') return /long ride|brick|\b(5|6|9|10|12)0 km/.test(t) ? 'long' : /threshold|ftp|race effort/.test(t) ? 'hard' : 'bike';
   if (/long run|long easy|time on feet|back-to-back|long run/.test(t)) return 'long';
   if (/tempo|interval|hill|pace|timed|x 1 km|hard/.test(t)) return 'hard'; // strides alone stay easy
   return 'easy';
@@ -45,10 +48,24 @@ function candidates(s) {
     if (st.status === 'open') out.push({ track, level: levelOf(s, track), ...st });
   }
   // Prep steps not tied to a slot still count as optional extras.
-  for (; prepI < prepOpen.length; prepI++) out.push({ track: 'prep', level: s.prep.level, ...prepOpen[prepI], extra: true });
-  return out;
+  const extras = [];
+  for (; prepI < prepOpen.length; prepI++) extras.push({ track: 'prep', level: s.prep.level, ...prepOpen[prepI], extra: true });
+  if (!hasTri(s)) return [...out, ...extras];
+
+  // Triathletes: mix swim and bike sessions in. Tri leading the week -> swim, bike, run; else run first.
+  const lane = t => trackSteps(s, t).filter(st => st.status === 'open').map(st => ({ track: t, level: t === 'swim' ? s.tri.swim.stage : t === 'bike' ? s.tri.bike.stage : s.tri.world, ...st }));
+  const queues = { swim: lane('swim'), bike: lane('bike'), run: out };
+  const gate = lane('triGate');
+  const pattern = s.profile.primary === 'tri' ? ['swim', 'bike', 'run'] : ['run', 'swim', 'run', 'bike'];
+  const mixed = [];
+  for (let i = 0; Object.values(queues).some(q => q.length) && i < 60; i++) {
+    const q = queues[pattern[i % pattern.length]];
+    if (q.length) mixed.push(q.shift());
+  }
+  return [...gate, ...mixed, ...extras];
 }
 const levelOf = (s, track) => (track === 'run' ? s.run.level : track === 'prep' ? s.prep.level : track === 'rebuild' ? s.rebuild.stage : 'refresher');
+// (swim / bike / triGate items carry their own level from candidates)
 export const itemKey = it => `${it.track}:${it.level}:${it.idx}`;
 
 export function warningsFor(byDay) {
@@ -119,7 +136,9 @@ export function buildWeek(s, now) {
     const ok = f.filter(d => !hardDays().includes(d + 1));
     put(it, (ok.length ? ok : f)[0] ?? slots[0]);
   }
-  for (const it of rest.filter(x => x.cls === 'easy')) { const f = [...free]; put(it, f[0] ?? slots[0]); }
+  // Swims and easy rides spread between the harder days; everything else fills what's left.
+  for (const it of rest.filter(x => x.cls === 'swim' || x.cls === 'bike')) { const f = [...free]; put(it, far(f.length ? f : slots, placed.filter(p => p.it.track === it.track).map(p => p.d)) ?? slots[0]); }
+  for (const it of rest.filter(x => !placed.some(p => p.it === x))) { const f = [...free]; put(it, f[0] ?? slots[0]); }
 
   let keyCount = 0;
   for (const { it, d } of placed.sort((a, b) => a.d - b.d)) {

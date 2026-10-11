@@ -1,3 +1,5 @@
+import { TRI_EXERCISES } from './tri.js';
+
 // Exercise library. `video` is filled in only after someone has watched and approved a clip;
 // until then the app links to a YouTube search for `search`.
 export const EXERCISES = {
@@ -59,6 +61,8 @@ export const EXERCISES = {
   hill_bounding: { name: 'Hill bounding', dose: '4 x 15 m', cues: ['Gentle hill', 'Drive the knee, push the ground away', 'Walk down recovery'], search: 'hill bounding drill' },
   fast_leg_drill: { name: 'Fast-leg drill', dose: '4 x 15 m', cues: ['Cycle one leg quickly while jogging', 'Heel up under the hip', 'Switch legs each rep'], search: 'fast leg drill running' },
 };
+
+Object.assign(EXERCISES, TRI_EXERCISES);
 
 export function videoLink(id) {
   const ex = EXERCISES[id];

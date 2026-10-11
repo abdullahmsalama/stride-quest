@@ -7,7 +7,10 @@ export function dreamTarget(text) {
   const t = String(text || '').toLowerCase();
   if (!t.trim()) return null;
   if (/hyrox|alpha ?x|crossfit|tough mudder|spartan|deka|hybrid/.test(t)) return { track: 'hybrid', level: null, label: 'Hybrid goal' };
-  if (/triathlon|ironman|70\.3|sprint tri|olympic tri/.test(t)) return { track: 'tri', level: null, label: 'Triathlon goal' };
+  if (/triathlon|ironman|70\.3|sprint tri|olympic tri|\btri\b/.test(t)) {
+    const world = /70\.3|half iron/.test(t) ? 4 : /ironman|full distance|full tri|140\.6/.test(t) ? 5 : /olympic|standard distance/.test(t) ? 3 : /super ?sprint/.test(t) ? 1 : /sprint/.test(t) ? 2 : null;
+    return { track: 'tri', level: null, world, label: 'Triathlon goal' };
+  }
   const time = timeIn(t);
   if (/ultra|50 ?k|100 ?k|100 ?mile/.test(t)) return { track: 'run', level: 13, label: 'Ultra' };
   if (/marathon/.test(t) && !/half/.test(t)) return { track: 'run', level: 12, label: time ? 'Marathon goal time' : 'Marathon' };
