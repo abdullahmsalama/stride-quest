@@ -577,7 +577,9 @@ const laneNow = id => { const cfg = LANE_MAPS[id]; return { ...Object.fromEntrie
 function prepareLaneMap(id) {
   if (ui.laneAnimating) return;
   const seen = readSeen()[id], cur = laneNow(id);
-  ui.laneShown = { ...(ui.laneShown || {}), [id]: seen ? Object.fromEntries(LANE_MAPS[id].lanes.map(l => [l, Math.min(seen[l] ?? cur[l], cur[l])])) : null };
+  // Never seen before: everyone starts at START and travels up to where they are now.
+  const base = seen || Object.fromEntries(LANE_MAPS[id].lanes.map(l => [l, 0]));
+  ui.laneShown = { ...(ui.laneShown || {}), [id]: Object.fromEntries(LANE_MAPS[id].lanes.map(l => [l, Math.min(base[l] ?? cur[l], cur[l])])) };
 }
 
 function afterTriRender() {
@@ -586,7 +588,8 @@ function afterTriRender() {
   const cur = laneNow(id), all = readSeen(), seen = all[id];
   const shown = ui.laneShown?.[id];
   const moves = shown ? cfg.lanes.filter(l => cur[l] > shown[l]) : [];
-  const focusY = () => { const ys = cfg.lanes.map(l => nodePoint(cfg, l, Math.min(cur[l] + 1, cfg.worlds.at(-1)[l])).y); return ys.reduce((a, b) => a + b, 0) / ys.length; };
+  const focusLane = cfg.limiter(S)?.lane || cfg.lanes[0];
+  const focusY = () => nodePoint(cfg, focusLane, cur[focusLane]).y;
   if (!moves.length) {
     if (ui.mapScroll || ui.frameTop == null) { ui.mapScroll = false; triFollow(focusY()); }
     else if (frame && frame.scrollHeight > frame.clientHeight + 4) frame.scrollTop = ui.frameTop;
@@ -596,29 +599,24 @@ function afterTriRender() {
     }
     return;
   }
-  // Animate each lane that moved, one after another, then celebrate.
+  // Animate every lane that moved at the same time; the camera follows the limiter (or the first mover).
   ui.laneAnimating = true; ui.mapScroll = false;
-  const queue = [...moves];
-  const step = () => {
-    const lane = queue.shift();
-    if (!lane) {
-      ui.laneAnimating = false; ui.laneShown = { ...ui.laneShown, [id]: null };
-      if (seen && cur.world > seen.world) worldCleared(id, seen.world);
-      all[id] = cur; writeSeen(all);
-      return;
-    }
-    const from = shown[lane];
-    triFollow(nodePoint(cfg, lane, from).y);
-    setTimeout(() => moveCharacter(id, lane, from, cur[lane], {
-      follow: y => triFollow(y),
-      onDone: pt => {
-        sfx.unlockAudio(); sfx.levelDing(cur[lane]);
-        if (pt) celebrate(pt.x, pt.y - 70, lane === 'run' ? `Level ${cur[lane]}! 🏃` : `${cfg.icon[lane]} Stage up! 🎉`);
-        setTimeout(step, 900);
-      },
-    }), 500);
-  };
-  step();
+  const lead = moves.includes(focusLane) ? focusLane : moves[0];
+  let left = moves.length;
+  triFollow(nodePoint(cfg, lead, shown[lead]).y);
+  setTimeout(() => moves.forEach(lane => moveCharacter(id, lane, shown[lane], cur[lane], {
+    follow: lane === lead ? y => triFollow(y) : null,
+    onDone: pt => {
+      sfx.unlockAudio(); sfx.levelDing(cur[lane]);
+      if (pt) celebrate(pt.x, pt.y - 70, !seen ? `${cfg.icon[lane]} Here I am!` : lane === 'run' ? `Level ${cur[lane]}! 🏃` : `${cfg.icon[lane]} Stage up! 🎉`);
+      if (--left === 0) {
+        ui.laneAnimating = false; ui.laneShown = { ...ui.laneShown, [id]: null };
+        if (seen && cur.world > seen.world) worldCleared(id, seen.world);
+        all[id] = cur; writeSeen(all);
+        setTimeout(() => triFollow(focusY()), 1200);
+      }
+    },
+  })), 600);
 }
 
 function worldCleared(id, fromWorld) {
@@ -1160,6 +1158,12 @@ const actions = {
   reset() { if (confirm('Delete all progress in this browser?')) { store.clear(); localStorage.removeItem(CHAT_KEY); localStorage.removeItem(AVATAR_KEY); ui.avatarAt = null; ui.chat = []; S = E.newState(now()); render(); } },
   sound() { sfx.setSound(!sfx.soundOn()); if (sfx.soundOn()) { sfx.unlockAudio(); sfx.pop(); } render(); },
   quick(el) { sendChat(el.dataset.q); },
+  'lane-focus'(el) {
+    const cfg = LANE_MAPS[el.dataset.map], lane = el.dataset.lane;
+    triFollow(nodePoint(cfg, lane, Math.min(cfg.value(S, lane), cfg.worlds.at(-1)[lane])).y);
+    ui.lanePopup = { map: el.dataset.map, kind: 'lane', lane }; ui.frameTop = document.querySelector('.worldmap')?.scrollTop ?? null;
+    const before = window.scrollY; render(); window.scrollTo(0, before);
+  },
   'set-theme'(el) { try { localStorage.setItem(THEME_KEY, el.dataset.t); } catch { /* ignore */ } applyTheme(el.dataset.t); render(); },
   'dream-ai'(el) { if (ui.ob.a.dreamAI) { ui.ob.a.dreamAI.accepted = el.dataset.v === '1'; renderOnboarding(); } },
   'sugg-apply'(el) {

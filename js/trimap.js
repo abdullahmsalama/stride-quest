@@ -236,7 +236,14 @@ export function renderLaneMap(s, ui, id) {
   const pts = Object.fromEntries(cfg.lanes.map(l => [l, lanePoints(cfg, l)]));
   const shown = ui.laneShown?.[id] || {};
   const popup = ui.lanePopup?.map === id ? popupHtml(s, cfg, ui.lanePopup) : '';
+  const lim = cfg.limiter(s)?.lane;
+  const hud = `<div class="map-hud lane-hud">${cfg.lanes.map(l => {
+    const v = cfg.value(s, l);
+    const txt = l === 'run' ? `L${v}` : v >= cfg.max(l) ? 'done' : short(cfg.stage(s, l).target);
+    return `<button class="lane-chip ${lim === l ? 'lim' : ''}" data-act="lane-focus" data-map="${id}" data-lane="${l}"><span>${cfg.icon[l]}</span>${esc(txt)}</button>`;
+  }).join('')}</div>`;
   return `<div class="worldmap trimap" style="background:${cfg.bandFill[0]}">
+      ${hud}
       <div class="map-canvas" style="aspect-ratio:${TW}/${TH}">
       <svg viewBox="0 0 ${TW} ${TH}" xmlns="http://www.w3.org/2000/svg" data-act="lane-bg">
         ${bands(cfg)}
