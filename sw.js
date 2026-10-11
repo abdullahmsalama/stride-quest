@@ -1,10 +1,10 @@
 // Offline support. Network first, so new versions show up straight away; the cache is only
 // used when there is no connection. Bump VERSION to drop old caches.
-const VERSION = 'sq-v9';
+const VERSION = 'sq-v10';
 const SHELL = ['./', 'index.html', 'css/style.css', 'manifest.webmanifest', 'icons/icon-192.png',
   'js/app.js', 'js/engine.js', 'js/config.js', 'js/store.js', 'js/coach.js', 'js/map.js', 'js/intro.js',
   'js/sound.js', 'js/motivation.js', 'js/challenges.js', 'js/calendar.js',
-  'js/data/tracks.js', 'js/data/exercises.js', 'js/data/motivation.js', 'js/time.js', 'js/goal.js', 'js/tri.js', 'js/trimap.js', 'js/data/tri.js', 'js/actions.js', 'js/hybrid.js', 'js/data/hybrid.js'];
+  'js/data/tracks.js', 'js/data/exercises.js', 'js/data/motivation.js', 'js/time.js', 'js/goal.js', 'js/tri.js', 'js/trimap.js', 'js/data/tri.js', 'js/actions.js', 'js/hybrid.js', 'js/data/hybrid.js', 'js/standards.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

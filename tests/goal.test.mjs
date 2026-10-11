@@ -42,3 +42,10 @@ test('AI readings map onto the same targets', async () => {
   assert.equal(targetFromAI({ distance: 'hyrox' }).track, 'hybrid');
   assert.equal(targetFromAI({ distance: 'none' }), null);
 });
+
+test('hybrid dreams point at a Hybrid world', () => {
+  assert.equal(dreamTarget('Finish my first Hyrox').world, 3);
+  assert.equal(dreamTarget('Hyrox Open under 1:30').world, 4);
+  assert.equal(dreamTarget('Hyrox Pro').world, 5);
+  assert.equal(dreamTarget('Alpha X pairs with my brother').world, 2);
+});

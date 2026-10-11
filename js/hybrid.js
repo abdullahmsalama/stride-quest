@@ -1,6 +1,7 @@
 // Hybrid rules. Three lanes: Strength and Engine ladders here, the Run lane is the Run Track.
 // Blocks: build one lane for BLOCK_WEEKS while maintaining the other, deload a week, switch, repeat.
 import { STRENGTH_STAGES, ENGINE_STAGES, HYBRID_WORLDS, MAINTENANCE, BLOCK_WEEKS } from './data/hybrid.js';
+import { liftFactor, rowFactor } from './standards.js';
 
 export const STR_MAX = STRENGTH_STAGES.length; // 7
 export const ENG_MAX = ENGINE_STAGES.length;
@@ -104,7 +105,8 @@ export function placeHybrid(s, a, now) {
   const bw = +a.bodyweight, sq = +a.squat5 * k, dl = +a.deadlift5 * k, pu = +a.pullups;
   let str = EXPERIENCE[a.liftExp] ?? 0;
   if (bw > 30 && (sq || dl)) {
-    const r = (x, k) => x && x >= k * bw;
+    const lf = liftFactor(a.sex || s.profile.sex);
+    const r = (x, k) => x && x >= k * lf * bw;
     if (r(dl, 1.75) && r(sq, 1.5) && pu >= 8) str = 7;
     else if (r(sq, 1.25) && r(dl, 1.5)) str = Math.max(str, 5);
     else if (r(sq, 1) && r(dl, 1.25) && pu >= 3) str = Math.max(str, 4);
@@ -113,7 +115,8 @@ export function placeHybrid(s, a, now) {
   }
   // Engine: from a 1000 m row, finished races and the running level.
   const row = +a.row1000; // minutes
-  let eng = row ? (row < 3.83 ? 5 : row < 4.25 ? 4 : row < 4.75 ? 3 : 2) : 1;
+  const rf = rowFactor(a.sex || s.profile.sex);
+  let eng = row ? (row < 3.83 * rf ? 5 : row < 4.25 * rf ? 4 : row < 4.75 * rf ? 3 : 2) : 1;
   // Alpha X Base (10 x 400 m, lighter) counts less than a Hyrox or Alpha X Open.
   const races = a.hybridRaces || [];
   const big = races.filter(r => !(r.event === 'Alpha X' && r.category === 'base'));

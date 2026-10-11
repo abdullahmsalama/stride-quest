@@ -3,6 +3,7 @@
 import { RUN_LEVELS, PREP_STAGES, REBUILD_STAGES, WORLDS, DAILY_ORDERS } from './data/tracks.js';
 import * as TRI from './tri.js';
 import * as HYB from './hybrid.js';
+import * as ST from './standards.js';
 
 export const DAY = 864e5;
 export const XP = { run: 30, swim: 30, bike: 30, lift: 30, engine: 30, maint: 25, prep: 20, slot: 20, rest: 10, gate: 100, proveit: 30, painCheck: 5, daily: 5, restDay: 10, weekBonus: 50 };
@@ -54,10 +55,10 @@ const CRITERIA = {
   2: a => a.continuous !== 'none',
   3: a => CONTINUOUS_MIN[a.continuous] >= 10,
   4: a => a.longestKm >= 5,
-  5: a => a.best5k > 0 && a.best5k <= 35 && a.runsLast4w / 4 >= 2,
-  6: a => a.best5k > 0 && a.best5k <= 30,
+  5: a => a.best5k > 0 && a.best5k <= 35 * ST.timeFactor(a.sex) && a.runsLast4w / 4 >= 2,
+  6: a => a.best5k > 0 && a.best5k <= 30 * ST.timeFactor(a.sex),
   7: a => a.longestKm >= 8,
-  8: a => a.best10k > 0 && a.best10k <= 60,
+  8: a => a.best10k > 0 && a.best10k <= 60 * ST.timeFactor(a.sex),
   9: a => a.longestKm >= 14,
   10: a => !!a.halfDone,
   11: a => a.longestKm >= 25 && a.weeklyKm >= 40,
@@ -91,7 +92,7 @@ export function placeFromAnswers(state, a, now) {
     s.needsReassessment = null;
   }
   s.answers = a;
-  s.profile = { ...s.profile, name: a.name || s.profile.name, goal: a.goal || '', daysPerWeek: clampInt(a.daysPerWeek, 2, 6, 3) };
+  s.profile = { ...s.profile, sex: a.sex || s.profile.sex, name: a.name || s.profile.name, goal: a.goal || '', daysPerWeek: clampInt(a.daysPerWeek, 2, 6, 3) };
   s.run = { ...s.run, level: placed, done: {}, startedAt: now, gatePassed: false };
   s.prep = { ...s.prep, level: q >= 3 ? prepFromSelfTest(a.selfTest) : 0, done: {}, startedAt: now };
   const redFlag = (a.redFlags || []).length > 0;
@@ -126,9 +127,10 @@ export function trackSteps(s, track) {
   else if (track === 'hyGate') { steps = HYB.gateSteps(s); done = s.hybrid.done; }
   else if (track === 'hyMaint') { steps = HYB.maintSteps(s); done = s.hybrid.maint.done; }
   const gateOpen = gateUnlocked(s, track);
+  const sex = s.profile.sex;
   return steps.map((st, idx) => {
-    let step = { ...st, idx };
-    if (st.prepReq != null && s.prep.level < st.prepReq && st.alt) step = { ...step, ...st.alt, swapped: true };
+    let step = { ...st, idx, title: ST.sexText(st.title, sex), detail: ST.sexText(st.detail, sex) };
+    if (st.prepReq != null && s.prep.level < st.prepReq && st.alt) step = { ...step, ...st.alt, title: ST.sexText(st.alt.title, sex), detail: ST.sexText(st.alt.detail, sex), swapped: true };
     const d = done[idx];
     let status = d ? (d.provisional ? 'provisional' : 'done') : 'open';
     if (status === 'open' && st.type === 'gate' && !gateOpen) status = 'locked';
@@ -235,6 +237,7 @@ export const BADGES = {
   challenger: { name: 'Challenger', emoji: '🏆', desc: 'Completed a friend challenge' },
   tri_gate: { name: 'Transition', emoji: '⚡', desc: 'Cleared a triathlon transition gate' },
   hybrid_gate: { name: 'Station Master', emoji: '🏋️', desc: 'Cleared a Hybrid race gate' },
+  finisher: { name: 'Finisher', emoji: '🏅', desc: 'Finished a race, any time counts' },
 };
 function badge(s, id, now, msgs) {
   if (s.badges[id]) return;
@@ -280,7 +283,7 @@ export function completeStep(state, track, idx, opts) {
   const gained = Math.round(base * mult);
   const doneMap = doneMapOf(s, track);
   const provisional = step.type === 'gate' && step.nextDay;
-  doneMap[idx] = { ts: now, pain, ...(provisional ? { provisional: true } : {}), ...(opts.passed != null ? { passed: !!opts.passed } : {}) };
+  doneMap[idx] = { ts: now, pain, ...(provisional ? { provisional: true } : {}), ...(opts.passed != null ? { passed: !!opts.passed } : {}), ...(opts.race ? { race: opts.race } : {}) };
   award(s, gained, now, { kind: isRest ? 'rest' : 'session', track, level: levelNumber(s, track), idx, title: step.title, pain });
   msgs.push(`+${gained} XP${mult > 1 ? ` (streak x${mult})` : ''}`);
   if (isRest) s.daily[dayKey(now)] = { ...(s.daily[dayKey(now)] || {}), rest: true };
@@ -358,7 +361,18 @@ function passGate(s, track, now, msgs, opts = {}) {
     if (HYB.lanesReady(s)) msgs.push(`🏁 All three lanes are ready: the ${HYB.hybWorld(s).name} race gate is open!`);
   } else if (track === 'hyGate') {
     const w = HYB.hybWorld(s);
+    const r = raceResult(s, 'hyGate');
     s.hybrid.done = {};
+    s.hybrid.stars = { ...(s.hybrid.stars || {}), [s.hybrid.world]: Math.max(s.hybrid.stars?.[s.hybrid.world] || 0, r.stars) };
+    badge(s, 'finisher', now, msgs);
+    if (r.label) msgs.push(r.label);
+    // Strong Finish needs a solid solo time to unlock the Pro League.
+    if (s.hybrid.world === 4 && !(r.solo && (r.tier === 'solid' || r.tier === 'fast'))) {
+      s.hybrid.speedFocus = true; s.hybrid.block.next = 'engine';
+      msgs.push(`Great finish! 🏅 The Pro League opens with a solo race under ${r.std ? fmtMin(r.std.solid) : 'your solid standard'}. Your plan now leans on engine and race-pace work.`);
+      return;
+    }
+    if (r.tier === 'slow') { s.hybrid.speedFocus = true; s.hybrid.block.next = 'engine'; msgs.push('You finished, that counts! Next up: some speed work to move faster through the stations and runs.'); }
     badge(s, 'hybrid_gate', now, msgs);
     if (w.gate.boss) badge(s, 'first_boss', now, msgs);
     if (s.hybrid.world >= 5) { s.hybrid.finished = true; msgs.push(`👑 ${w.name} conquered!`); return; }
@@ -366,7 +380,18 @@ function passGate(s, track, now, msgs, opts = {}) {
     msgs.push(`🏁 ${w.name} cleared! Welcome to ${HYB.hybWorld(s).emoji} ${HYB.hybWorld(s).name}`);
   } else if (track === 'triGate') {
     const w = TRI.triWorld(s);
+    const r = raceResult(s, 'triGate');
     s.tri.done = {};
+    s.tri.stars = { ...(s.tri.stars || {}), [s.tri.world]: Math.max(s.tri.stars?.[s.tri.world] || 0, r.stars) };
+    if (w.gate.boss) badge(s, 'finisher', now, msgs);
+    if (r.label) msgs.push(r.label);
+    // 70.3 and full distance only count inside the official cut-off.
+    if (r.std?.cutoff && r.minutes > r.std.cutoff) {
+      s.tri.speedFocus = true;
+      msgs.push(`You went the whole distance, respect! 🏅 To clear ${w.name} the finish needs to be within the official cut-off (${fmtMin(r.std.cutoff)}). Your plan adds pacing and speed work for your limiter.`);
+      return;
+    }
+    if (r.tier === 'slow') { s.tri.speedFocus = true; msgs.push('Finished! Next up: some pace work on your limiter to move faster.'); }
     badge(s, 'tri_gate', now, msgs);
     if (w.gate.boss) badge(s, 'first_boss', now, msgs);
     if (s.tri.world >= 5) { s.tri.finished = true; msgs.push(`🏆 ${w.name} conquered. Full-distance triathlete!`); return; }
@@ -396,6 +421,26 @@ function starsFor(s, now) {
   const times = [s.run.startedAt, ...Object.values(s.run.done).map(d => d.ts), now].sort((a, b) => a - b);
   const consistent = times.every((t, i) => i === 0 || daysBetween(times[i - 1], t) <= 7);
   return consistent ? 3 : 2;
+}
+
+const fmtMin = m => `${Math.floor(m / 60)}:${String(Math.round(m % 60)).padStart(2, '0')}`;
+
+// Finish time at a race gate -> speed tier and stars, against the athlete's own category.
+function raceResult(s, track) {
+  const done = track === 'hyGate' ? s.hybrid.done : s.tri.done;
+  const race = done?.[0]?.race || {};
+  const minutes = +race.time || 0;
+  let std = null, solo = true;
+  if (track === 'hyGate') {
+    solo = (race.format || 'solo') === 'solo';
+    if (solo && (race.event === 'hyrox' || race.event === 'alphax')) std = ST.raceStandard(race.event, race.division, s.profile.sex);
+  } else {
+    std = ST.raceStandard(ST.TRI_WORLD_RACE[s.tri.world], null, s.profile.sex);
+  }
+  const tier = ST.raceTier(minutes, std);
+  const stars = ST.TIER_STARS[tier];
+  const label = minutes ? `⏱️ ${fmtMin(minutes)}: ${ST.TIER_LABEL[tier]} ${'⭐'.repeat(stars)}${std ? ` (solid ${fmtMin(std.solid)}, fast ${fmtMin(std.fast)})` : ''}` : '';
+  return { minutes, std, tier, stars, solo, label };
 }
 
 function tryAdvanceRun(s, now, msgs) {
@@ -741,6 +786,7 @@ export function coachContext(s, now) {
     const lim = TRI.limiter(s);
     lines.push(`Triathlon: world "${TRI.triWorld(s).name}"; swim ${TRI.swimStage(s).name} (${TRI.swimStage(s).target}), bike ${TRI.bikeStage(s).name} (${TRI.bikeStage(s).target}), run = Run Track level ${s.run.level}. ${lim ? `Limiter: ${lim.lane}.` : 'All lanes ready: transition gate open.'}${s.tri.learnToSwim ? ' Cannot swim yet: suggest lessons with a coach, never swim alone.' : ''}`);
   }
+  if (s.profile.sex) lines.push(`Race category: ${ST.SEX_LABEL[s.profile.sex]}. Use this category's weights and time standards.`);
   if (HYB.hasHybrid(s)) {
     const lim = HYB.limiter(s), b = s.hybrid.block;
     lines.push(`Hybrid: world "${HYB.hybWorld(s).name}"; strength ${HYB.strengthStage(s).name}, engine ${HYB.engineStage(s).name}, run = Run Track level ${s.run.level}. Current block: ${b.type === 'deload' ? 'deload week' : `${b.type} block (building ${b.type}, maintaining ${b.type === 'engine' ? 'strength' : 'engine'})`}. ${lim ? `Limiter: ${lim.lane}.` : 'All lanes ready: race gate open.'} Gym: ${s.hybrid.gym}.`);

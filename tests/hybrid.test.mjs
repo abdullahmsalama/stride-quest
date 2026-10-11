@@ -92,3 +92,35 @@ test('deload week drops hard and long runs from the plan', () => {
   assert.ok(items.every(i => !['hard', 'test', 'long'].includes(i.cls)));
   assert.ok(items.some(i => /Deload/.test(i.title)));
 });
+
+test('speed at race gates: a 4-hour Hyrox Pro counts, but Strong Finish needs a solid solo time', () => {
+  const ready = sex => {
+    let s = withHybrid(runner(), { liftExp: 'y3', startBlock: 'engine' });
+    s.profile.sex = sex;
+    s.hybrid.world = 4; s.hybrid.strength.stage = 6; s.hybrid.engine.stage = 6; s.run.level = 8;
+    return s;
+  };
+  const race = (s, event, division, time) => {
+    s = E.completeStep(s, 'hyGate', 0, { pain: 0, now: MON, race: { event, division, format: 'solo', time } }).state;
+    return E.morningCheck(s, 0, MON + E.DAY);
+  };
+  let r = race(ready('m'), 'hyrox', 'pro', 240);
+  assert.equal(r.state.hybrid.world, 4); // not promoted
+  assert.ok(r.state.badges.finisher);
+  assert.ok(r.state.hybrid.speedFocus);
+  assert.ok(r.outcome.messages.some(m => /Pro League opens with a solo race under 1:38/.test(m)));
+  r = race(ready('m'), 'hyrox', 'pro', 96);
+  assert.equal(r.state.hybrid.world, 5);
+  assert.equal(r.state.hybrid.stars[4], 2);
+  // the same 1:30 Open: solid for a woman, finisher-tier for a man
+  assert.equal(race(ready('f'), 'hyrox', 'open', 90).state.hybrid.stars[4], 2);
+  assert.equal(race(ready('m'), 'hyrox', 'open', 90).state.hybrid.stars[4], 1);
+});
+
+test('women lift and row standards are scaled in placement', () => {
+  const a = { liftExp: 'y3', bodyweight: 60, squat5: 60, deadlift5: 75, pullups: 3, row1000: 4.3 };
+  const m = H.placeHybrid({ ...runner(), profile: { ...runner().profile, sex: 'm' } }, { ...a, sex: 'm' }, MON);
+  const f = H.placeHybrid({ ...runner(), profile: { ...runner().profile, sex: 'f' } }, { ...a, sex: 'f' }, MON);
+  assert.ok(f.strength.stage > m.strength.stage);
+  assert.ok(f.engine.stage >= m.engine.stage);
+});

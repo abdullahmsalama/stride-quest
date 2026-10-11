@@ -7,6 +7,7 @@ import { RUN_LEVELS } from './data/tracks.js';
 import { DECO, G, shadow, RUNNER, rng, addToMap, bubble } from './map.js';
 import * as T from './tri.js';
 import * as H from './hybrid.js';
+import { sexText } from './standards.js';
 
 export const TW = 400;
 const BAND = 420;
@@ -180,7 +181,7 @@ function nodes(s, cfg, lane) {
     const p = nodePoint(cfg, lane, n);
     const done = n <= v, current = n === v + 1;
     const isTarget = r.includes(n);
-    const label = lane === 'run' ? `L${n}` : short(cfg.target(lane, n));
+    const label = lane === 'run' ? `L${n}` : sexText(short(cfg.target(lane, n)), s.profile.sex);
     const fill = done ? '#7cb342' : current ? '#ff6b35' : '#bdbdbd';
     const rad = current ? 13 : isTarget ? 12 : 9;
     const pill = isTarget || current;
@@ -203,7 +204,7 @@ function gateNode(s, cfg, i) {
   const current = i === cfg.world(s) && !cfg.finished(s);
   const open = current && cfg.ready(s);
   const color = passed ? '#7cb342' : open ? '#ff6b35' : '#8d6e63';
-  const dream = cfg.id === 'tri' ? s.profile?.dream?.target?.track === 'tri' && s.profile.dream.target.world === i : false;
+  const dream = s.profile?.dream?.target?.track === (cfg.id === 'tri' ? 'tri' : 'hybrid') && s.profile.dream.target.world === i;
   const y = gateY(i);
   return `<g class="tri-gate ${open ? 'open' : ''}" data-act="lane-node" data-map="${cfg.id}" data-kind="gate" data-world="${i}" role="button" tabindex="0" aria-label="${esc(w.name)} ${cfg.gateWord}">
       <rect x="14" y="${y - 70}" width="8" height="82" rx="3" fill="#6d4c41"/><rect x="${TW - 22}" y="${y - 70}" width="8" height="82" rx="3" fill="#6d4c41"/>
@@ -239,7 +240,7 @@ export function renderLaneMap(s, ui, id) {
   const lim = cfg.limiter(s)?.lane;
   const hud = `<div class="map-hud lane-hud">${cfg.lanes.map(l => {
     const v = cfg.value(s, l);
-    const txt = l === 'run' ? `L${v}` : v >= cfg.max(l) ? 'done' : short(cfg.stage(s, l).target);
+    const txt = l === 'run' ? `L${v}` : v >= cfg.max(l) ? 'done' : sexText(short(cfg.stage(s, l).target), s.profile.sex);
     return `<button class="lane-chip ${lim === l ? 'lim' : ''}" data-act="lane-focus" data-map="${id}" data-lane="${l}"><span>${cfg.icon[l]}</span>${esc(txt)}</button>`;
   }).join('')}</div>`;
   return `<div class="worldmap trimap" style="background:${cfg.bandFill[0]}">
@@ -299,14 +300,14 @@ function popupHtml(s, cfg, p) {
     const open = current && cfg.ready(s);
     x = TW / 2; y = gateY(i);
     html = `<p class="eyebrow">${w.emoji} ${esc(w.name)} · ${cfg.gateWord}</p><h3>${esc(w.race)}</h3>
-      <ul class="lane-check">${st.map(l => `<li>${l.ok ? '✅' : '⬜'} ${cfg.icon[l.lane]} ${cfg.label[l.lane]}: ${esc(cfg.target(l.lane, l.need))}</li>`).join('')}</ul>
+      <ul class="lane-check">${st.map(l => `<li>${l.ok ? '✅' : '⬜'} ${cfg.icon[l.lane]} ${cfg.label[l.lane]}: ${esc(sexText(cfg.target(l.lane, l.need), s.profile.sex))}</li>`).join('')}</ul>
       ${i < cfg.world(s) || (cfg.finished(s) && i === cfg.world(s)) ? '<p class="hint">Cleared ✅</p>' : open ? `<button class="btn primary small" data-act="open-step" data-track="${cfg.gateTrack}" data-idx="0">Start the ${cfg.gateWord}</button>`
         : current ? '<p class="hint">Opens when all three lanes reach their flags.</p>' : `<p class="hint">🔒 ${cfg.further}</p>`}`;
   } else if (p.kind === 'node' && +p.v !== cfg.value(s, p.lane) + 1) {
     const lane = p.lane, v = +p.v, pt = nodePoint(cfg, lane, v);
     x = pt.x; y = pt.y;
     const done = v <= cfg.value(s, lane);
-    const name = lane === 'run' ? `Level ${v} · ${RUN_LEVELS[v - 1]?.name}` : `${cfg.stageAt(lane, v)?.name} · ${cfg.stageAt(lane, v)?.target}`;
+    const name = lane === 'run' ? `Level ${v} · ${RUN_LEVELS[v - 1]?.name}` : `${cfg.stageAt(lane, v)?.name} · ${sexText(cfg.stageAt(lane, v)?.target, s.profile.sex)}`;
     html = `<p class="eyebrow">${cfg.icon[lane]} ${cfg.label[lane]}</p><h3>${esc(name)}</h3><p class="hint">${done ? 'Cleared ✅' : '🔒 Coming up on this path'}</p>`;
   } else {
     const lane = p.lane, v = cfg.value(s, lane), pt = nodePoint(cfg, lane, Math.min(v + 1, maxVal(cfg, lane)));
@@ -320,8 +321,8 @@ function popupHtml(s, cfg, p) {
     } else {
       const stage = cfg.stage(s, lane), max = cfg.max(lane);
       const rest = cfg.resting(s, lane);
-      html = `<p class="eyebrow">${cfg.icon[lane]} ${cfg.label[lane]}</p><h3>${v >= max ? 'Path complete' : `${esc(stage.name)} · ${esc(stage.target)}`}</h3>
-        <p class="hint">${v >= need ? `Ready for ${esc(cur.name)} ✅` : `${esc(cur.name)} needs ${esc(cfg.target(lane, need))}.`}</p>
+      html = `<p class="eyebrow">${cfg.icon[lane]} ${cfg.label[lane]}</p><h3>${v >= max ? 'Path complete' : `${esc(stage.name)} · ${esc(sexText(stage.target, s.profile.sex))}`}</h3>
+        <p class="hint">${v >= need ? `Ready for ${esc(cur.name)} ✅` : `${esc(cur.name)} needs ${esc(sexText(cfg.target(lane, need), s.profile.sex))}.`}</p>
         ${rest ? `<p class="hint">🔒 Maintaining this block: it builds again in a ${esc(cfg.label[lane])} block.</p>` : v < max ? `<button class="btn primary small" data-act="lane-step" data-lane="${lane}">Next ${esc(cfg.label[lane].toLowerCase())} session</button>` : ''}`;
     }
   }

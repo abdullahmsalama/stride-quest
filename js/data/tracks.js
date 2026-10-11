@@ -88,7 +88,7 @@ export const RUN_LEVELS = [
   },
   {
     n: 5, world: '5k', name: '5K Chaser', needsPrep: 2, weeklyMin: 120,
-    criteria: '5K under ~35 min, 2-3 runs a week',
+    criteria: '5K under ~{min:35}, 2-3 runs a week',
     proveIt: 'Run 5 km continuous, comfortable',
     steps: [
       { type: 'run', title: 'Easy run 25 min', detail: '' },
@@ -103,8 +103,8 @@ export const RUN_LEVELS = [
     ],
   },
   {
-    n: 6, world: '5k', name: 'Sub-30 Hunter', needsPrep: 3, weeklyMin: 140,
-    criteria: '5K under ~30 min',
+    n: 6, world: '5k', name: '5K Hunter', needsPrep: 3, weeklyMin: 140,
+    criteria: '5K under ~{min:30}',
     proveIt: '5 km at a steady effort, close to your old pace',
     steps: [
       { type: 'run', title: 'Easy 30 min + 6 x 20s strides', detail: '', prepReq: 3, alt: { title: 'Easy 30 min', detail: 'Strides unlock at Prep stage P3.' } },
@@ -115,7 +115,7 @@ export const RUN_LEVELS = [
       slot,
       { type: 'run', title: 'Tempo: 2 x 8 min comfortably hard, 2 min jog between', detail: '' },
       slot,
-      { type: 'gate', title: 'Boss: timed 5K', detail: 'Parkrun or solo. Under 30 min for 3 stars.', boss: true, nextDay: true },
+      { type: 'gate', title: 'Boss: timed 5K', detail: 'Parkrun or solo. Under {min:30} for 3 stars.', boss: true, nextDay: true },
     ],
   },
   {
@@ -136,7 +136,7 @@ export const RUN_LEVELS = [
   },
   {
     n: 8, world: '10k', name: '10K Racer', needsPrep: 4, weeklyMin: 180,
-    criteria: '10K under ~60 min',
+    criteria: '10K under ~{min:60}',
     proveIt: '8 km including 2 km at a steady, hard effort',
     steps: [
       { type: 'run', title: 'Intervals: 5 x 1 km at 10K effort, 2 min jog', detail: '', prepReq: 4, alt: { title: 'Tempo 20 min comfortably hard', detail: 'Intervals unlock at Prep stage P4.' } },
@@ -147,7 +147,7 @@ export const RUN_LEVELS = [
       slot,
       { type: 'run', title: 'Tempo 20 min', detail: '' },
       slot,
-      { type: 'gate', title: 'Boss: timed 10K', detail: 'Under 60 min for 3 stars.', boss: true, nextDay: true },
+      { type: 'gate', title: 'Boss: timed 10K', detail: 'Under {min:60} for 3 stars.', boss: true, nextDay: true },
     ],
   },
   {

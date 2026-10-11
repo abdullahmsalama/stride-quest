@@ -36,6 +36,19 @@ const UNDERSTAND = `You read what an athlete typed about their dream goal and re
 "summary" is one short, encouraging sentence that restates the goal, e.g. "Run a 10K in under 50 minutes at the Dubai 10K".
 Today is TODAY. If they give a month or season without a year, pick the next one.`;
 
+const UNDERSTAND_LIFTS = `An athlete describes lifts or strength tests they know (machines, other exercises, reps, maxes). Estimate, conservatively, the heaviest BACK SQUAT and DEADLIFT they could do for 5 clean reps, and their strict pull-ups. Return JSON only:
+{"squat5Kg": number or null, "deadlift5Kg": number or null, "pullups": number or null, "bodyweightKg": number or null, "confidence": "low"|"medium"|"high", "summary": string}
+Rules: use standard conversions (1RM about weight x (1 + reps/30); a 5-rep weight is about 86% of the 1RM). Machines and dumbbells translate to lower barbell numbers: a goblet squat 5-rep weight x about 2-2.5 gives a back squat 5-rep weight; a leg press translates to roughly 40-50% for a back squat; a kettlebell swing or DB RDL x about 2 for a deadlift. When unsure, estimate lower. Use null when there is nothing to go on. Convert pounds to kg. "summary" is one short sentence, e.g. "Squat about 60 kg x 5 and deadlift about 80 kg x 5, estimated from your leg press and kettlebell work".`;
+
+const LIFTS_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    squat5Kg: { type: 'NUMBER', nullable: true }, deadlift5Kg: { type: 'NUMBER', nullable: true }, pullups: { type: 'NUMBER', nullable: true },
+    bodyweightKg: { type: 'NUMBER', nullable: true }, confidence: { type: 'STRING', enum: ['low', 'medium', 'high'] }, summary: { type: 'STRING' },
+  },
+  required: ['confidence', 'summary'],
+};
+
 const UNDERSTAND_SCHEMA = {
   type: 'OBJECT',
   properties: {
@@ -212,10 +225,11 @@ export default {
     if (body.mode === 'understand') {
       const text = String(body.text || '').slice(0, 300).trim();
       if (!text) return json({ error: 'no text' }, 400, headers);
-      const sys = UNDERSTAND.replace('TODAY', new Date().toISOString().slice(0, 10));
+      const lifts = body.task === 'lifts';
+      const sys = lifts ? UNDERSTAND_LIFTS : UNDERSTAND.replace('TODAY', new Date().toISOString().slice(0, 10));
       for (const [name, call] of PROVIDERS) {
         try {
-          const raw = await call(env, sys, [{ role: 'user', content: text }], UNDERSTAND_SCHEMA);
+          const raw = await call(env, sys, [{ role: 'user', content: text }], lifts ? LIFTS_SCHEMA : UNDERSTAND_SCHEMA);
           const result = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, ''));
           return json({ result, provider: name }, 200, headers);
         } catch { /* try the next provider */ }

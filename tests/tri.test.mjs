@@ -85,3 +85,26 @@ test('weekly calendar mixes swim, bike and run for triathletes', async () => {
   assert.equal(K.classify({ type: 'bike', title: 'Brick: 15 km ride + 2 km run' }), 'long');
   assert.equal(K.classify({ type: 'bike', title: '3 x 6 min at threshold' }), 'hard');
 });
+
+test('70.3 past the official cut-off is a finish, but does not clear the world', () => {
+  let s = withTri(runner(), { swimDist: '3800', freestyle: 'yes', openWater: 'yes', longestRide: '180', bikeAccess: 'road' });
+  s.tri.world = 4; s.tri.swim.stage = 8; s.tri.bike.stage = 7; s.run.level = 11;
+  let r = E.morningCheck(E.completeStep(s, 'triGate', 0, { pain: 0, now, race: { time: 525 } }).state, 0, now + E.DAY);
+  assert.equal(r.state.tri.world, 4);
+  assert.ok(r.outcome.messages.some(m => /cut-off \(8:30\)/.test(m)));
+  r = E.morningCheck(E.completeStep(s, 'triGate', 0, { pain: 0, now, race: { time: 330 } }).state, 0, now + E.DAY);
+  assert.equal(r.state.tri.world, 5);
+  assert.equal(r.state.tri.stars[4], 2);
+});
+
+test('run placement uses the category: a 32 min 5K is Level 6 territory for women, not for men', () => {
+  const place = sex => E.placeFromAnswers(E.newState(now), { sex, continuous: '30-45', longestKm: 6, best5k: 32, runsLast4w: 12, pain: 'none', daysPerWeek: 3 }, now);
+  assert.equal(place('m').qualifying, 5);
+  assert.equal(place('f').qualifying, 6);
+});
+
+test('typed swim and ride distances beat the multiple choice', () => {
+  const t = T.placeTri(runner(), { swimDist: '100', swimM: '1000', freestyle: 'yes', openWater: 'yes', longestRide: '40', rideKm: '65', bikeAccess: 'road' });
+  assert.equal(t.swim.stage, 4); // 1000 m covers 25..750 (5 targets) -> working on the 1500 m stage... minus one for early wins
+  assert.equal(t.bike.stage, 4); // 65 km covers 10, 20, 40 -> ability 5 -> working on the 40 km gate
+});

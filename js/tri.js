@@ -56,10 +56,12 @@ const RACE_WORLD = { supersprint: 1, sprint: 2, olympic: 3, half: 4, full: 5 };
 
 export function placeTri(s, a) {
   const tri = newTri();
-  let swim = SWIM_ABILITY[a.swimDist] ?? 0;
+  // A typed distance beats the multiple choice: count every stage target it covers.
+  const typed = (value, targets) => targets.filter(t => value >= t).length;
+  let swim = +a.swimM > 0 ? typed(+a.swimM, [25, 100, 200, 400, 750, 1500, 1900, 3800]) : SWIM_ABILITY[a.swimDist] ?? 0;
   if (a.freestyle === false || a.freestyle === 'no') swim = Math.min(swim, 2); // freestyle comes in at S2
   if (a.openWater === false || a.openWater === 'no') swim = Math.min(swim, 5); // open water is part of S5
-  const bike = a.bikeAccess === 'none' ? 0 : BIKE_ABILITY[a.longestRide] ?? 0;
+  const bike = a.bikeAccess === 'none' ? 0 : +a.rideKm > 0 ? Math.max(2, typed(+a.rideKm, [10, 20, 40, 90, 180]) + 2) : BIKE_ABILITY[a.longestRide] ?? 0;
   tri.swim.stage = Math.max(0, swim - 1);
   tri.bike.stage = Math.max(0, bike - 1);
   tri.learnToSwim = swim === 0;

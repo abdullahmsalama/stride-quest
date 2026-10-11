@@ -523,3 +523,6 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .lane-chip span { font-size: 16px; }
 .lane-chip.lim { border-color: #e53935; }
 @media (max-width: 999px) { .trimap { position: relative; } .lane-hud { position: absolute; top: 8px; right: 8px; float: none; margin: 0; height: auto; } }
+.play-btn { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6; background: var(--brand); color: #fff; border: 4px solid #fff; border-radius: 999px; padding: 14px 26px; font: 800 20px var(--display); letter-spacing: .03em; box-shadow: 0 8px 26px rgba(0, 0, 0, .3); cursor: pointer; animation: pulse 1.8s infinite; }
+@media (max-width: 999px) { .play-btn { position: fixed; top: auto; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%); } }
+.hero-btn { margin-top: 10px; background: rgba(255, 255, 255, .15); color: #fff; border-color: rgba(255, 255, 255, .35); }
