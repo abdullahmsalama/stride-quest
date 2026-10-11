@@ -144,7 +144,7 @@ let arm = 0;
 const splash = () => {
   arm ^= 1;
   if (clip(arm ? 'stroke' : 'stroke2', { vol: 0.55, rate: 0.92 + Math.random() * 0.16 })) return;
-  burst({ freq: 600, q: 0.4, dur: 0.35, vol: 0.12, type: 'lowpass' });
+  burst({ freq: 800, q: 0.5, dur: 0.3, vol: 0.3, type: 'lowpass' });
 };
 const tick = () => tone(4200, { type: 'square', dur: 0.012, vol: 0.06 });
 const pull = () => burst({ freq: 700, q: 0.6, dur: 0.38, vol: 0.28, type: 'lowpass' });
