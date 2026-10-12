@@ -434,7 +434,7 @@ function renderOnboarding() {
   } else body = st.body;
   $('#app').innerHTML = `
     <main class="onboarding">
-      <div class="ob-top"><div class="brand">🏃 Stride Quest</div><div class="progress"><div style="width:${((i + 1) / steps.length) * 100}%"></div></div></div>
+      <div class="ob-top"><div class="brand">🏃 Stride Quest<small class="dev">Developed by <button type="button" class="linkish" data-act="about-me">Abdullah Salama</button></small></div><div class="progress"><div style="width:${((i + 1) / steps.length) * 100}%"></div></div></div>
       ${returning}
       <form id="ob-form" class="card ob-card" autocomplete="off">
         ${!st.welcome && !st.result ? `<p class="eyebrow">Question ${i} of ${steps.length - 2}</p>` : ''}
@@ -458,7 +458,7 @@ function render() {
   const views = { today: viewToday, map: viewMap, challenge: viewChallenge, events: viewCompetitions, stats: viewStats, coach: viewCoach, me: viewMe };
   $('#app').innerHTML = `
     <header class="top">
-      <div class="brand">🏃 Stride Quest</div>
+      <div class="brand">🏃 Stride Quest<small class="dev">Developed by <button type="button" class="linkish" data-act="about-me">Abdullah Salama</button></small></div>
       <div class="chips"><span class="chip" title="Total XP">⚡ ${S.xp} XP</span><span class="chip" title="Day streak">🔥 ${E.dayStreak(S, t)}</span></div>
     </header>
     <main class="view view-${ui.tab}">${views[ui.tab]()}</main>
