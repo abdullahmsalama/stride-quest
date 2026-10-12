@@ -675,3 +675,4 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .brand-btn { background: none; border: 0; padding: 0; color: inherit; cursor: pointer; text-align: left; }
 .brand-btn:hover { opacity: .8; }
 .about-by { font-size: 16px; margin: 4px 0 6px; }
+.about-bio { font-size: 14px; line-height: 1.5; margin: 10px 0 12px; }

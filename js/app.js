@@ -1122,7 +1122,7 @@ function viewCoach() {
         <button class="btn primary" type="submit" ${ui.thinking ? 'disabled' : ''}>Send</button>
       </form>
       ${canSpeak ? `<label class="choice small"><input type="checkbox" data-act="speak-toggle" ${ui.speakReplies ? 'checked' : ''}><span>Read replies aloud</span></label>` : ''}
-      <p class="hint">⏱️ The coach runs on a free AI model, so replies can take a few seconds when it's busy. It can suggest changes; nothing changes until you tap Apply. Messages go to Google's Gemini AI to write replies. Not medical advice.</p>
+      <p class="hint">⏱️ The coach runs on a shared AI model, so replies can take a few seconds when it's busy. It can suggest changes; nothing changes until you tap Apply. Messages go to Google's Gemini AI to write replies. Not medical advice.</p>
     </section>`;
 }
 
@@ -1336,7 +1336,7 @@ function viewMe() {
     <section class="card"><h3>Your data</h3>
       <p class="hint">Progress is saved in this browser only. Export it to move to another device.</p>
       <label class="switch-row"><input type="checkbox" data-act="counts-toggle" ${countsOn() ? 'checked' : ''}> <span>Send anonymous counts</span></label>
-      <p class="hint">Simple tallies with no ID and no personal data, like "one more athlete is preparing for Alpha X". They show race organisers how many people train for their race, which helps keep the app free.</p>
+      <p class="hint">Simple tallies with no ID and no personal data, like "one more athlete is preparing for Alpha X". They show race organisers how many people train for their race, which helps support the app.</p>
       <div class="row wrap">
         <button class="btn" data-act="export">Export progress</button>
         <label class="btn">Import<input type="file" accept="application/json" data-act="import" hidden></label>
@@ -1383,7 +1383,8 @@ function painButtons() {
 const MODALS = {
   aboutMe() {
     return `<div class="about-me"><h2>🏃 Stride Quest</h2><p class="about-by">Developed by <b>Abdullah Salama</b></p>
-      <p class="hint">Free training for running, hybrid (Alpha X, Hyrox) and triathlon.</p>
+      <p class="hint">Training for running, hybrid (Alpha X, Hyrox) and triathlon.</p>
+      <p class="about-bio">I'm a hybrid athlete who loves pushing my limits, and a Data Scientist / ML Engineer with 13+ years in tech and 8+ in AI. MSc from Hamburg University of Technology, now doing a PhD in AI focused on compact models. Always learning, and trying to help make the world a better place.</p>
       <a class="link-row" href="https://www.linkedin.com/in/abdullah-salama/" target="_blank" rel="noopener"><b>LinkedIn</b><span>Open ↗</span></a>
       <a class="link-row" href="https://www.instagram.com/abdu_salama/" target="_blank" rel="noopener"><b>Instagram</b><span>Open ↗</span></a>
       <a class="link-row" href="${CALENDAR_URL}" target="_blank" rel="noopener"><b>Egypt Fitness Calendar</b><span>Open ↗</span></a>

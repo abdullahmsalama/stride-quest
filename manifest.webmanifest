@@ -1,7 +1,7 @@
 {
   "name": "Stride Quest",
   "short_name": "Stride Quest",
-  "description": "A free, game-style running coach: levels, XP, body prep and safe comebacks.",
+  "description": "A game-style training coach for running, hybrid (Alpha X, Hyrox) and triathlon: levels, XP, body prep and safe comebacks.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
