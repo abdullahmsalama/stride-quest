@@ -127,7 +127,8 @@ function obSteps(a) {
         <ol class="welcome-list"><li><span>🎯</span><div><strong>Your dream</strong><br><span class="hint">What you want to achieve</span></div></li>
           <li><span>📍</span><div><strong>Where you are today</strong><br><span class="hint">So the first level is a win, not a struggle</span></div></li>
           <li><span>📅</span><div><strong>Your week</strong><br><span class="hint">Which days you can train</span></div></li></ol>
-        <p class="hint">About 2 minutes. Your answers stay on this device.</p>` },
+        <p class="hint">About 2 minutes. Your answers stay on this device.</p>
+        <p class="byline">Developed by <button type="button" class="linkish" data-act="about-me">Abdullah Salama</button></p>` },
     { title: 'About you', why: 'So we only show the tracks you care about, and use the right times and weights for you.', body: `
         <label class="field"><span>Your name (optional)</span><input type="text" name="name" value="${h(a.name || '')}" maxlength="40" autocomplete="given-name"></label>
         <p class="q">Which category do you race in? ${tip("Men's and women's race weights, times and standards differ. 'Prefer not to say' uses the more forgiving standards.", 'About categories')}</p>
@@ -638,11 +639,12 @@ function viewToday() {
       ${S.profile.dream ? dreamLine(S.profile.dream, S.run.level, true) : ''}
       ${mode !== 'world' ? `<button class="btn small hero-btn" data-act="goto-${mode}-map">Open my map</button>` : ''}
     </section>`;
+const credit = '<p class="byline credit">Developed by <button type="button" class="linkish" data-act="about-me">Abdullah Salama</button></p>';
   const simple = (S.profile.view || 'full') === 'simple';
   const toggle = `<div class="seg today-seg" role="tablist">${[['simple', '✨ Just next'], ['full', '📋 Full day']].map(([k, l]) =>
     `<button role="tab" class="${(simple ? 'simple' : 'full') === k ? 'on' : ''}" data-act="set-view" data-v="${k}">${l}</button>`).join('')}</div>`;
   if (simple) {
-    return `${toggle}<div class="simple">${banners()}${hero}${p.today}${raceCard()}
+    return `${toggle}<div class="simple">${banners()}${hero}${p.today}${raceCard()}${credit}
       <button class="btn ghost wide" data-act="set-view" data-v="full">See my week and more ▾</button></div>`;
   }
   const boost = `<section class="card boost" ${o(3)}>
@@ -669,7 +671,7 @@ function viewToday() {
   return `${toggle}<div class="cols">
       <div class="col-main"><div ${o(1)}>${banners()}</div>${p.today}${p.week}${p.nextWeek}${levelSteps}</div>
       <div class="col-side">${hero}${raceCard(o(5))}${boost}${install}${p.tracks}${daily}${modes}</div>
-    </div>`;
+    </div>${credit}`;
 }
 
 const CLS_ICON = { long: '🛣️', hard: '⚡', test: '🏁', easy: '🏃', strength: '🧱', impact: '🦘', rest: '😴', done: '✅', swim: '🏊', bike: '🚴', upper: '💪' };
@@ -1003,9 +1005,23 @@ const FIT_TAG = { ready: ['ok', 'Your level'], stretch: ['ok', 'Nice stretch'], 
 const fitTag = f => FIT_TAG[f] ? `<span class="tag-fit ${FIT_TAG[f][0]}">${FIT_TAG[f][1]}</span>` : '';
 
 function viewChallenge() {
-  const seg = `<div class="seg" role="tablist">${[['challenges', '🏆 Challenges'], ['friends', '👥 Friends']].map(([k, l]) =>
+  const seg = `<div class="seg" role="tablist">${[['challenges', '🏆 Challenges'], ['friends', '👥 Friends'], ['events', '🗓️ Competitions']].map(([k, l]) =>
     `<button role="tab" class="${ui.socialTab === k ? 'on' : ''}" data-act="social-tab" data-k="${k}">${l}</button>`).join('')}</div>`;
-  return seg + (ui.socialTab === 'friends' ? viewFriends() : viewChallenges());
+  return seg + (ui.socialTab === 'friends' ? viewFriends() : ui.socialTab === 'events' ? viewCompetitions() : viewChallenges());
+}
+
+// Real competitions to enter: Egypt from the Egypt Fitness Events calendar, worldwide coming later.
+const CALENDAR_URL = 'https://abdullahmsalama.github.io/egypt-fitness-calendar/';
+function viewCompetitions() {
+  const where = ui.compTab || 'egypt';
+  const tabs = `<div class="seg mini" role="tablist">${[['egypt', '🇪🇬 Egypt'], ['world', '🌍 Worldwide']].map(([k, l]) =>
+    `<button role="tab" class="${where === k ? 'on' : ''}" data-act="comp-tab" data-k="${k}">${l}</button>`).join('')}</div>`;
+  const body = where === 'egypt'
+    ? `<p>Every fitness event in Egypt we can verify, ordered by date: running, hybrid (Alpha X, Hyrox), CrossFit, strength, obstacle, cycling, swimming and triathlon.</p>
+       <p class="hint">Open a row for format, cost, and whether it suits a first-timer. Add all events to your calendar in one tap.</p>
+       <a class="btn primary" href="${CALENDAR_URL}" target="_blank" rel="noopener" data-act="race-site" data-k="calendar">🗓️ Open the Egypt Fitness Calendar ↗</a>`
+    : `<p class="coming">🌍 Coming soon</p><p class="hint">Competitions worldwide are on the way. For now, see Egypt, or the official race websites in Race prep.</p>`;
+  return `<section class="card comp-card"><h3>🗓️ Competitions</h3><p class="hint">Looking for a race to enter?</p>${tabs}${body}</section>`;
 }
 
 function viewFriends() {
@@ -1328,7 +1344,7 @@ function viewMe() {
         <button class="btn" data-act="sound">${sfx.soundOn() ? '🔊 Sound on' : '🔇 Sound off'}</button>
         <button class="btn danger" data-act="reset">Reset everything</button>
       </div></section>
-    <p class="hint version">Stride Quest ${APP_VERSION}</p>`;
+    <p class="hint version">Stride Quest ${APP_VERSION} · developed by <button class="linkish" data-act="about-me">Abdullah Salama</button></p>`;
 }
 
 // ---------- modals ----------
@@ -1365,6 +1381,13 @@ function painButtons() {
 }
 
 const MODALS = {
+  aboutMe() {
+    return `<div class="about-me"><h2>Abdullah Salama</h2><p class="hint">Developer of Stride Quest</p>
+      <a class="link-row" href="https://www.linkedin.com/in/abdullah-salama/" target="_blank" rel="noopener"><b>LinkedIn</b><span>Open ↗</span></a>
+      <a class="link-row" href="https://www.instagram.com/abdu_salama/" target="_blank" rel="noopener"><b>Instagram</b><span>Open ↗</span></a>
+      <a class="link-row" href="${CALENDAR_URL}" target="_blank" rel="noopener"><b>Egypt Fitness Calendar</b><span>Open ↗</span></a>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Close</button></div></div>`;
+  },
   race(m) {
     const r = RACES[m.k], cur = S.hybrid?.race;
     return `<div class="race-modal race-${m.k}"><h2>${r.icon} ${m.info ? h(r.name) : `Prepare for ${h(r.name)}`}</h2>
@@ -1775,6 +1798,8 @@ const actions = {
   'race-stop'() { S.hybrid.race = null; commit(S); toast('Race prep stopped. Your Hybrid plan carries on.'); },
   'race-info'(el) { ui.modal = { type: 'race', k: el.dataset.k, info: true }; renderModal(); },
   'race-site'(el) { count(`site:${el.dataset.k}`); },
+  'comp-tab'(el) { ui.compTab = el.dataset.k; render(); },
+  'about-me'() { ui.modal = { type: 'aboutMe' }; renderModal(); },
   'counts-toggle'(el) { try { localStorage.setItem(COUNT_KEY, el.checked ? 'on' : 'off'); } catch { /* ignore */ } toast(el.checked ? 'Anonymous counts on. Thank you!' : 'Anonymous counts off.'); },
   'edit-bests'() { ui.modal = { type: 'bests' }; renderModal(); },
   'edit-numbers'() { ui.modal = { type: 'numbers' }; renderModal(); },
@@ -2245,7 +2270,7 @@ window.addEventListener('hashchange', () => {
   if (!ui.modal) render();
 });
 
-$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
 
 // ---------- installable app ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;

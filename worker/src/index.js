@@ -326,7 +326,7 @@ async function stats(request, env, headers) {
 }
 
 // Anonymous tallies (no ID): "one more athlete is preparing for Alpha X". Only these keys count.
-const COUNT_KEYS = /^(view:race-card|prep:(hyrox|alphax)(:(open|pro|base))?|site:(hyrox|alphax))$/;
+const COUNT_KEYS = /^(view:race-card|prep:(hyrox|alphax)(:(open|pro|base))?|site:(hyrox|alphax|calendar))$/;
 async function tally(request, env, headers) {
   if (!env.DB) return json({ error: 'not set up' }, 503, headers);
   let body;
