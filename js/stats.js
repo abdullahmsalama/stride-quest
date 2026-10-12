@@ -111,18 +111,19 @@ export function statFor(metric, value, sex, age, ctx = {}) {
 }
 
 // Rarity of being good at several sports at once: the best stat of each of the two strongest
-// different sports (5K and 10K are one sport; Hyrox is already a combined test, so it is left out).
+// different sports, whatever the percentile (a mid-pack powerlifter is still a strong person) (5K and 10K are one sport; Hyrox is already a combined test, so it is left out).
 export function hybridRarity(stats) {
   const bySport = new Map();
   for (const st of stats) {
     const sport = NORMS[st.metric]?.sport;
-    if (!st.show || st.median || !sport || sport === 'hyrox') continue;
+    if (st.median || !sport || sport === 'hyrox') continue;
     if (!bySport.has(sport) || bySport.get(sport).p < st.p) bySport.set(sport, st);
   }
   const basis = [...bySport.values()].sort((a, b) => b.p - a.p).slice(0, 2);
   if (basis.length < 2) return null;
   const share = jointTop(basis[0].p / 100, basis[1].p / 100, RHO.value);
-  return { share, oneIn: Math.max(2, Math.round(1 / share)), basis };
+  const oneIn = Math.round(1 / share);
+  return oneIn >= 3 ? { share, oneIn, basis } : null;
 }
 
 // "Training like this puts you ahead of most adults": from the athlete's own last 4 weeks.

@@ -28,11 +28,19 @@ const puffs = (W, y, seed) => {
 };
 
 // The summit: a snowy peak rising out of the clouds, with the athlete's goal planted on top.
-function summit(W, y, goal) {
+// Who decides the label: summitText() below.
+export function summitText(dream, track, goalInClouds) {
+  const t = String(dream?.event || dream?.text || '').trim();
+  const short = t.length > 30 ? `${t.slice(0, 29)}…` : t;
+  if (!t) return '🎯 Set your dream';
+  // The goal is already in sight on this map: the peak is whatever comes after it.
+  if (dream?.target?.track === track && !goalInClouds) return 'Beyond your goal 🚀';
+  return `🎯 Your goal: ${short}`;
+}
+function summit(W, y, label) {
   const cx = W / 2, tip = y + 100, base = tip + 160;
-  const label = goal || 'The summit';
   const w = Math.max(110, label.length * 6.6 + 34);
-  return `<g class="fog-summit">
+  return `<g class="fog-summit" data-act="fog-summit" role="button" tabindex="0">
       <path d="M${cx - 150},${base} L${cx - 62},${tip + 70} L${cx - 40},${tip + 82} L${cx},${tip} L${cx + 52},${tip + 58} L${cx + 74},${tip + 50} L${cx + 160},${base}Z" fill="#8a9bb3"/>
       <path d="M${cx},${tip} L${cx + 52},${tip + 58} L${cx + 74},${tip + 50} L${cx + 160},${base} L${cx + 20},${base}Z" fill="#74869f"/>
       <path d="M${cx - 24},${tip + 34} L${cx},${tip} L${cx + 30},${tip + 34} L${cx + 16},${tip + 28} L${cx + 6},${tip + 40} L${cx - 8},${tip + 30}Z" fill="#fff"/>
@@ -42,7 +50,7 @@ function summit(W, y, goal) {
       <path d="M${cx},${tip - 40} l26,8 l-26,8Z" fill="#e91e63"/>
       <g fill="#f4f6fa">${[-130, -80, -20, 40, 100, 150].map((dx, k) => `<circle cx="${cx + dx}" cy="${base - 8 + (k % 2) * 8}" r="${34 + (k % 3) * 6}"/>`).join('')}</g>
       <rect x="${cx - w / 2}" y="${tip - 84}" width="${w}" height="30" rx="15" fill="#fff" stroke="#e91e63" stroke-width="2.5"/>
-      <text x="${cx}" y="${tip - 64}" text-anchor="middle" font-family="Inter, sans-serif" font-weight="800" font-size="12" fill="#14213d">${goal ? '🎯' : '🏔️'} ${esc(label)}</text>
+      <text x="${cx}" y="${tip - 64}" text-anchor="middle" font-family="Inter, sans-serif" font-weight="800" font-size="12" fill="#14213d">${esc(label)}</text>
     </g>`;
 }
 
@@ -51,9 +59,9 @@ export const CLOUD_VIEW = 620;
 export const cropTop = cloudBottom => (cloudBottom == null ? 0 : Math.max(0, cloudBottom - CLOUD_VIEW));
 
 // dimTop/dimBottom: y range of the dimmed band. cloudBottom: y where the clouds end (everything above
-// is hidden). reveal: { from, to } y range whose clouds roll back now. marks: [{ text }]: the goal, planted on the summit.
+// is hidden). reveal: { from, to } y range whose clouds roll back now. summitLabel: what the peak carries (the athlete's goal, or an invite to set one).
 // top: the first y still shown after cropping (the summit sits just below it).
-export function fogSvg({ W, dimTop, dimBottom, cloudBottom, hint, marks = [], top = 0, reveal = null }) {
+export function fogSvg({ W, dimTop, dimBottom, cloudBottom, hint, summitLabel, top = 0, reveal = null }) {
   let out = '<g class="fog" data-act="fog">';
   if (dimTop != null) out += `<rect class="fog-dim" x="0" y="${dimTop}" width="${W}" height="${dimBottom - dimTop}"/>`;
   if (cloudBottom != null) {
@@ -65,7 +73,7 @@ export function fogSvg({ W, dimTop, dimBottom, cloudBottom, hint, marks = [], to
     const mid = Math.max(top + 440, cloudBottom - 130);
     out += `<text x="${W / 2}" y="${mid}" text-anchor="middle" class="fog-q">? ? ?</text>
       <text x="${W / 2}" y="${mid + 30}" text-anchor="middle" class="fog-hint">${esc(hint)}</text>`;
-    out += summit(W, top + 110, marks[0]?.text);
+    out += summit(W, top + 110, summitLabel);
   }
   out += '</g>';
   // Clouds rolling back over the worlds just revealed (removed by CSS animation end).

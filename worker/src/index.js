@@ -253,6 +253,78 @@ const PROVIDERS = [
   }],
 ];
 
+// ---------- anonymous comparisons (Stats tab, opt-in) ----------
+// Plausible ranges keep typos and junk out. Times in minutes, lifts as 1-rep max ÷ bodyweight, FTP in W/kg.
+const METRICS = {
+  run5k: [12, 120, 'low'], run10k: [26, 240, 'low'], half: [58, 480, 'low'], marathon: [120, 720, 'low'],
+  hyrox_open: [50, 240, 'low'], hyrox_pro: [50, 240, 'low'],
+  squat: [0.2, 5, 'high'], deadlift: [0.3, 5.5, 'high'], ftp: [0.5, 7.5, 'high'], pullups: [0, 80, 'high'],
+};
+const SEXES = ['m', 'f'], AGES = ['18-29', '30-39', '40-49', '50-59', '60+'];
+const MIN_GROUP = 50; // no percentage until a group has this many other athletes
+const WRITES_PER_DAY = 30;
+
+async function hashWho(ip, env) {
+  const data = new TextEncoder().encode(`${ip}|${env.STATS_SALT || 'stride-quest'}|${new Date().toISOString().slice(0, 10)}`);
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', data))].slice(0, 12).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Share of the group that you beat, and how big the group is (yourself excluded).
+async function rank(env, metric, value, id, sex, age) {
+  const dir = METRICS[metric][2];
+  const where = `v.metric = ?1 AND v.id != ?2 AND a.sex = ?3${age ? ' AND a.age = ?4' : ''}`;
+  const row = await env.DB.prepare(`SELECT COUNT(*) AS n, SUM(CASE WHEN ${dir === 'low' ? 'v.value > ?5' : 'v.value < ?5'} THEN 1 ELSE 0 END) AS beat
+    FROM vals v JOIN athletes a ON a.id = v.id WHERE ${where}`).bind(metric, id, sex, age, value).first();
+  const n = row?.n || 0;
+  return n >= MIN_GROUP ? { n, p: Math.round((100 * (row.beat || 0)) / n) } : { n, p: null };
+}
+
+// Of the athletes who have both numbers, the share at least as good as you at both.
+async function bothRank(env, [m1, m2], v1, v2, id, sex) {
+  const c1 = METRICS[m1][2] === 'low' ? 'x.value <= ?4' : 'x.value >= ?4', c2 = METRICS[m2][2] === 'low' ? 'y.value <= ?5' : 'y.value >= ?5';
+  const row = await env.DB.prepare(`SELECT COUNT(*) AS n, SUM(CASE WHEN ${c1} AND ${c2} THEN 1 ELSE 0 END) AS good
+    FROM vals x JOIN vals y ON y.id = x.id AND y.metric = ?2 JOIN athletes a ON a.id = x.id
+    WHERE x.metric = ?1 AND x.id != ?3 AND a.sex = ?6`).bind(m1, m2, id, v1, v2, sex).first();
+  const n = row?.n || 0;
+  return n >= MIN_GROUP ? { n, share: (row.good || 0) / n } : { n, share: null };
+}
+
+async function stats(request, env, headers) {
+  if (!env.DB) return json({ error: 'stats not set up' }, 503, headers);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400, headers); }
+  const id = String(body.id || '');
+  if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'bad id' }, 400, headers);
+  if (body.delete) {
+    await env.DB.batch([env.DB.prepare('DELETE FROM vals WHERE id = ?1').bind(id), env.DB.prepare('DELETE FROM athletes WHERE id = ?1').bind(id)]);
+    return json({ deleted: true }, 200, headers);
+  }
+  const sex = SEXES.includes(body.sex) ? body.sex : null;
+  if (!sex) return json({ error: 'pick men or women to compare' }, 400, headers);
+  const age = AGES.includes(body.age) ? body.age : null;
+  const values = Object.fromEntries(Object.entries(body.values || {})
+    .filter(([k, v]) => METRICS[k] && typeof v === 'number' && v >= METRICS[k][0] && v <= METRICS[k][1]));
+
+  const who = await hashWho(request.headers.get('CF-Connecting-IP') || 'unknown', env), day = new Date().toISOString().slice(0, 10);
+  const w = await env.DB.prepare('SELECT n FROM writes WHERE who = ?1 AND day = ?2').bind(who, day).first();
+  if (!w || w.n < WRITES_PER_DAY) {
+    await env.DB.batch([
+      env.DB.prepare('INSERT INTO writes (who, day, n) VALUES (?1, ?2, 1) ON CONFLICT (who, day) DO UPDATE SET n = n + 1').bind(who, day),
+      env.DB.prepare('DELETE FROM writes WHERE day < ?1').bind(day),
+      env.DB.prepare('INSERT INTO athletes (id, sex, age, updated) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (id) DO UPDATE SET sex = ?2, age = ?3, updated = ?4').bind(id, sex, age, Date.now()),
+      env.DB.prepare('DELETE FROM vals WHERE id = ?1').bind(id),
+      ...Object.entries(values).map(([k, v]) => env.DB.prepare('INSERT INTO vals (id, metric, value) VALUES (?1, ?2, ?3)').bind(id, k, v)),
+    ]);
+  }
+  const out = {};
+  for (const [k, v] of Object.entries(values)) {
+    out[k] = { sex: await rank(env, k, v, id, sex, null), ...(age ? { age: await rank(env, k, v, id, sex, age) } : {}) };
+  }
+  const pair = Array.isArray(body.pair) && body.pair.length === 2 && body.pair.every(k => values[k] != null) ? body.pair : null;
+  const both = pair ? await bothRank(env, pair, values[pair[0]], values[pair[1]], id, sex) : null;
+  return json({ metrics: out, both, min: MIN_GROUP }, 200, headers);
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin');
@@ -265,6 +337,11 @@ export default {
       const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': env.GEMINI_API_KEY } });
       const d = await r.json().catch(() => ({}));
       return json({ models: (d.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace('models/', '')) }, 200, headers);
+    }
+    if (url.pathname === '/stats' && request.method === 'POST') {
+      if (!ok) return json({ error: 'origin not allowed' }, 403, headers);
+      if (limited(`s:${request.headers.get('CF-Connecting-IP') || 'unknown'}`, 20)) return json({ error: 'slow down' }, 429, headers);
+      return stats(request, env, headers);
     }
     if (url.pathname !== '/chat' || request.method !== 'POST') return json({ error: 'not found' }, 404, headers);
     if (!ok) return json({ error: 'origin not allowed' }, 403, headers);

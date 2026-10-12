@@ -619,3 +619,6 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .sources { margin: 8px 0 0; padding-left: 18px; font-size: 13px; }
 .sources a { color: var(--brand); }
 @media (max-width: 420px) { .tabs button { font-size: 11px; } .tabs button span { font-size: 18px; } }
+.community { font-size: 13px !important; color: var(--ink-2); }
+.switch-row { display: flex; align-items: center; gap: 10px; font-weight: 700; margin: 8px 0; cursor: pointer; }
+.switch-row input { width: 20px; height: 20px; accent-color: var(--brand); }

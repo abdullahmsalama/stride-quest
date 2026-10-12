@@ -19,3 +19,10 @@ OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 #   npx wrangler secret put GROQ_API_KEY
 #   npx wrangler secret put OPENROUTER_API_KEY   (optional)
 #   npx wrangler secret put XAI_API_KEY          (optional, xAI/Grok, usually paid)
+
+# Anonymous opt-in comparison data (Stats tab). Schema: migrations/0001_stats.sql
+[[d1_databases]]
+binding = "DB"
+database_name = "stride-quest-stats"
+database_id = "17345772-ffcf-4473-8bc3-480beb43e5fb"
+migrations_dir = "migrations"

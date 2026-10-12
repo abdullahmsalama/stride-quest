@@ -16,13 +16,14 @@ import * as ST from './standards.js';
 import { APP_VERSION } from './config.js';
 import * as BG from './background.js';
 import * as TRI from './tri.js';
-import { renderLaneMap, gateY as laneGateY, TH as LANE_H, TW as LANE_W, MAPS as LANE_MAPS, nodePoint, moveCharacter, celebrate, signature, START_POINT, laneFogParts } from './trimap.js';
+import { renderLaneMap, gateY as laneGateY, TH as LANE_H, TW as LANE_W, MAPS as LANE_MAPS, nodePoint, moveCharacter, celebrate, signature, START_POINT, laneFogParts, bandAtY } from './trimap.js';
 import * as HYB from './hybrid.js';
 import { HYBRID_WORLDS, BLOCK_WEEKS, STRENGTH_STAGES } from './data/hybrid.js';
 import { TRI_WORLDS } from './data/tri.js';
 import { confetti } from './intro.js';
 import * as STATS from './stats.js';
 import { NORMS, RHO } from './data/norms.js';
+import { WORKER_URL } from './config.js';
 
 // ---------- state ----------
 // Theme: light by default (the look the app launched with); dark or follow-the-device on request.
@@ -785,8 +786,10 @@ function playLanes(id, cfg, cur, all, seen, shown, moves, focusLane, focusY) {
     wait(900, () => {
       if (fast()) { step(); return; }
       const stop = sfx.moveLoop(lane);
+      let band = -1;
       moveCharacter(id, lane, shown[lane], cur[lane], {
-        follow: y => triFollow(y),
+        // Lift the clouds the moment the character walks into a new world, not on arrival.
+        follow: y => { triFollow(y); const b = bandAtY(id, y); if (b > band) { band = b; swapFog(laneFogParts(S, ui, id, shown, b)); } },
         skip: fast,
         onDone: pt => {
           stop();
@@ -856,7 +859,7 @@ function afterMapRender() {
     followY(POINTS[0].y);
     setTimeout(() => playPlacementIntro(placed, {
       follow: followY,
-      onLevel: n => swapFog(runFogParts(S, ui, n)),
+      onLevel: n => swapFog(runFogParts(S, ui, Math.min(placed, n + 1))), // the level being run to, so the clouds stay ahead
       onDone: res => {
         ui.mapRunning = false; ui.avatarAt = placed; saveAvatar(placed); ui.mapPopup = placed;
         swapFog(runFogParts(S, ui, placed));
@@ -901,7 +904,7 @@ function playRun() {
   let reached = from;
   setTimeout(() => runAvatar(from, to, {
     follow: followY,
-    onProgress: ({ seg }) => { if (from + seg > reached) { reached = from + seg; swapFog(runFogParts(S, ui, reached)); } },
+    onProgress: ({ seg }) => { if (from + seg + 1 > reached) { reached = Math.min(to, from + seg + 1); swapFog(runFogParts(S, ui, reached)); } },
     onDone: () => { ui.mapRunning = false; ui.avatarAt = to; saveAvatar(to); ui.mapPopup = to; sfx.levelDing(to); render(); },
   }), 300);
 }
@@ -1094,7 +1097,65 @@ const gapText = (st, bwKg = myValues().bwKg) => {
   return `${what} and you pass ${st.nextP === 50 ? 'half' : `${st.nextP}%`} of ${st.group}.`;
 };
 
+// ---------- compare with Stride Quest athletes (opt-in, anonymous) ----------
+const SHARE_KEY = 'stride-quest:share';
+const shareState = () => { try { return JSON.parse(localStorage.getItem(SHARE_KEY)) || {}; } catch { return {}; } };
+const setShare = v => { try { localStorage.setItem(SHARE_KEY, JSON.stringify(v)); } catch { /* ignore */ } };
+// The numbers sent: only the comparable values, in the same units as the tables.
+function sharePayload() {
+  const v = myValues(), sex = S.profile.sex;
+  const values = Object.fromEntries(['run5k', 'run10k', 'half', 'marathon', 'hyrox_open', 'hyrox_pro', 'squat', 'deadlift', 'ftp', 'pullups']
+    .filter(k => v[k] > 0).map(k => [k, Math.round(v[k] * 1000) / 1000]));
+  const rare = STATS.hybridRarity(Object.keys(NORMS).map(k => STATS.statFor(k, v[k], sex, S.profile.ageGroup, { bwKg: v.bwKg })).filter(Boolean));
+  return { sex, age: S.profile.ageGroup || null, values, pair: rare ? rare.basis.map(b => b.metric) : null };
+}
+async function fetchCommunity(force) {
+  const sh = shareState();
+  if (!sh.on || !WORKER_URL || !['m', 'f'].includes(S.profile.sex)) return;
+  const body = sharePayload(), key = JSON.stringify(body);
+  if (!force && ui.community?.key === key) return;
+  ui.community = { key, loading: true };
+  try {
+    const r = await fetch(`${WORKER_URL.replace(/\/$/, '')}/stats`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sh.id, ...body }) });
+    const d = await r.json();
+    ui.community = r.ok ? { key, data: d } : { key, error: d.error || 'Could not compare right now.' };
+  } catch { ui.community = { key, error: 'Offline: comparisons with app athletes need a connection.' }; }
+  if (ui.tab === 'stats') render();
+}
+function communityLine(metric) {
+  const d = ui.community?.data?.metrics?.[metric];
+  if (!shareState().on || !d) return '';
+  const sexW = S.profile.sex === 'm' ? 'men' : 'women', age = S.profile.ageGroup, min = ui.community.data.min;
+  const one = (g, who) => (g.p != null ? `better than <b>${g.p}%</b> of ${g.n} ${who}` : `${who}: ${g.n} of ${min} so far`);
+  if (d.sex.p == null && d.age?.p == null) return '';
+  return `<p class="community">👥 Stride Quest athletes: ${one(d.sex, sexW)}${d.age ? ` · ${one(d.age, `${sexW} aged ${h(age)}`)}` : ''}</p>`;
+}
+function communityBoth() {
+  const b = ui.community?.data?.both;
+  if (!shareState().on || !b) return '';
+  return `<p class="community">👥 ${b.share != null ? `Of ${b.n} Stride Quest athletes with both numbers, only <b>${Math.max(1, Math.round(b.share * 100))}%</b> are at least as good at both.` : `Real rarity among app athletes appears once ${ui.community.data.min} have both numbers (${b.n} so far).`}</p>`;
+}
+function communityCard() {
+  const sh = shareState();
+  if (!WORKER_URL) return '';
+  const c = ui.community;
+  return `<section class="card"><h3>👥 Compare with Stride Quest athletes</h3>
+      <p class="hint">Optional and anonymous. If you switch it on, only your comparable numbers (times, lifts ÷ bodyweight, FTP W/kg), sex and age group are stored, under a random ID. No name, email or location. Each group shows a percentage once it has ${c?.data?.min || 50} athletes. Switch it off any time and your numbers are deleted.</p>
+      <label class="switch-row"><input type="checkbox" data-act="share-toggle" ${sh.on ? 'checked' : ''}> <span>${sh.on ? 'On: comparing with app athletes' : 'Off'}</span></label>
+      ${sh.on && c?.data ? (() => { const ms = Object.values(c.data.metrics || {}); const n = Math.max(0, ...ms.map(m => m.sex.n)), na = Math.max(0, ...ms.map(m => m.age?.n || 0));
+        return ms.length && ms.every(m => m.sex.p == null) ? `<p class="hint">👥 Still filling up: ${n + 1} ${S.profile.sex === 'm' ? 'men' : 'women'} with your numbers so far${S.profile.ageGroup ? `, ${na + 1} aged ${h(S.profile.ageGroup)}` : ''} (you included). Percentages appear at ${c.data.min + 1}.</p>` : ''; })() : ''}
+      ${sh.on && c?.loading ? '<p class="hint">Comparing…</p>' : sh.on && c?.error ? `<p class="hint warn-text">${h(c.error)}</p>` : ''}
+      ${sh.on && !['m', 'f'].includes(S.profile.sex) ? '<p class="hint">Pick men or women under <b>change</b> first.</p>' : ''}
+    </section>`;
+}
+
 function viewStats() {
+  setTimeout(() => fetchCommunity(false), 0);
+  const pend = shareState();
+  if (pend.pendingDelete && !pend.on && WORKER_URL) {
+    fetch(`${WORKER_URL.replace(/\/$/, '')}/stats`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pend.id, delete: true }) })
+      .then(r => { if (r.ok) setShare({ on: false, id: pend.id }); }).catch(() => {});
+  }
   const sex = S.profile.sex, age = S.profile.ageGroup || null;
   const vals = myValues();
   const stats = Object.keys(NORMS).map(k => STATS.statFor(k, vals[k], sex, age, { bwKg: vals.bwKg })).filter(Boolean);
@@ -1107,6 +1168,7 @@ function viewStats() {
       ${st.show && st.median ? `<p>Faster than <b>half</b> of ${h(st.group)}.</p>`
         : st.show ? `<div class="stat-bar"><i style="width:${st.p}%"></i></div><p>Better than <b>${st.p}%</b> of ${h(st.group)}.${st.nextP ? ` <span class="hint">${h(gapText(st))}</span>` : ''}</p>`
         : `<p>🎯 ${h(gapText(st))}</p>`}
+      ${communityLine(st.metric)}
     </div>`;
   const history = S.history.filter(x => x.kind === 'session');
   const runLevels = history.filter(x => x.track === 'run' && x.level).map(x => x.level);
@@ -1123,18 +1185,21 @@ function viewStats() {
       <p class="hint">Compared with: ${sex === 'm' ? 'men' : sex === 'f' ? 'women' : 'no group yet'}${age ? `, aged ${h(age)}` : ''} · <button class="linkish" data-act="edit-bests">change</button></p>
     </section>
     ${act && best ? `<section class="card"><p>💚 ${h(act.text)}</p></section>` : ''}
-    ${rare ? `<section class="card rare"><h3>🧬 Hybrid rarity</h3><p class="big">About <b>1 in ${rare.oneIn}</b> ${sex === 'm' ? 'men' : sex === 'f' ? 'women' : 'people'}</p>
-      <p class="hint">are as good as you at both ${h(rare.basis[0].label)} (top ${100 - rare.basis[0].p}%) and ${h(rare.basis[1].label)} (top ${100 - rare.basis[1].p}%). It's the combination that makes you rare. Estimate: it assumes people good at one tend to be somewhat good at the other (correlation ${RHO.value}).</p></section>` : ''}
+    ${rare ? `<section class="card rare"><h3>🧬 Hybrid rarity</h3><p class="big">At least <b>1 in ${rare.oneIn}</b> ${sex === 'm' ? 'men' : 'women'}</p>
+      <p class="hint">${rare.basis.map(b => `${h(b.label)}: better than ${b.p}% of ${h(b.group)}`).join('; and ')}, both at once. The combination is what makes you rare.
+      <br>Estimate, and a cautious one: each comparison group (race finishers, competitive powerlifters, power-meter riders) is already fitter than most people, so against all adults you are rarer still. It also assumes people good at one tend to be fairly good at the other (correlation ${RHO.value}).</p>
+      ${communityBoth()}</section>` : ''}
     <section class="card"><h3>Your numbers</h3>
       ${stats.length ? `<div class="stat-list">${[...shown, ...stats.filter(x => !x.show)].map(card).join('')}</div>` : '<p class="hint">No numbers yet.</p>'}
       <button class="btn" data-act="edit-bests">Add or update my bests</button>
     </section>
+    ${communityCard()}
     <section class="card"><h3>📈 You vs past you</h3>
       <div class="stats"><div><strong>${history.length}</strong><span>Sessions</span></div><div><strong>${S.xp}</strong><span>XP</span></div><div><strong>${cleared}</strong><span>Levels cleared</span></div></div>
       <p class="hint">${since ? `Since ${h(since)}: ` : ''}Run Level ${startLevel} → ${S.run.level}${HYB.hasHybrid(S) ? ` · Strength: ${h(HYB.strengthStage(S).name)}` : ''}.${bodyTrend().replace('<br>', ' ')}</p>
     </section>
     <details class="card how"><summary>How is this calculated?</summary>
-      <p class="hint">Your numbers are compared with published results, not with other app users, and not by the AI. For each one we use the closest group the source has (your sex and age group when available). Below the middle of a group we show your next milestone instead of a percentage. Lifts are compared as an estimated 1-rep max (5 reps ≈ 86% of a 1-rep max).</p>
+      <p class="hint">Your numbers are compared with published results (and, if you switch it on, with other Stride Quest athletes), never by the AI. For each one we use the closest group the source has (your sex and age group when available). Below the middle of a group we show your next milestone instead of a percentage. Lifts are compared as an estimated 1-rep max (5 reps ≈ 86% of a 1-rep max).</p>
       <ul class="sources">${sources.map(x => `<li><a href="${h(x.url)}" target="_blank" rel="noopener">${h(x.name)}</a>${x.note ? ` · ${h(x.note)}` : ''}</li>`).join('')}${RHO.source ? `<li>Rarity correlation: <a href="${h(RHO.url || '#')}" target="_blank" rel="noopener">${h(RHO.source)}</a></li>` : ''}</ul>
     </details>`;
 }
@@ -1231,6 +1296,15 @@ function painButtons() {
 }
 
 const MODALS = {
+  dream() {
+    const d = S.profile.dream || {};
+    return `<form id="dream-form"><h2>🎯 Your dream</h2>
+      <p class="why">💡 It sits on the summit of your map and the plan works towards it. Dream big, or keep it simple: "run a 10K" is a great dream too.</p>
+      <label class="field"><span>In your own words</span><textarea name="dText" rows="2" maxlength="160" placeholder="e.g. Run a sub-50 10K · Finish my first marathon · Hyrox Pro under 1:15">${h(d.text || '')}</textarea></label>
+      <label class="field"><span>Event (optional)</span><input type="text" name="dEvent" value="${h(d.event || '')}" maxlength="60" placeholder="e.g. Berlin Marathon, Hyrox Dubai"></label>
+      <label class="field"><span>Date (optional)</span><input type="date" name="dDate" value="${h(d.date || '')}"></label>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Save my dream</button></div></form>`;
+  },
   bests() {
     const b = S.bests || {}, a = S.answers || {};
     const t = (name, label, v, ph) => `<label class="field"><span>${label}</span><input type="text" name="${name}" value="${v ? formatTime(v) : ''}" placeholder="${ph}" autocomplete="off" inputmode="text"></label>`;
@@ -1594,6 +1668,18 @@ const actions = {
   'map-me'() { followY(POINTS[ui.avatarAt ?? S.run.level].y); },
   'open-level'() { ui.modal = { type: 'level' }; renderModal(); },
   cleared() { ui.modal = { type: 'painfree', cleared: true }; renderModal(); },
+  async 'share-toggle'(el) {
+    const sh = shareState();
+    if (el.checked) {
+      setShare({ on: true, id: sh.id || crypto.randomUUID() }); ui.community = null; render(); fetchCommunity(true);
+    } else {
+      setShare({ on: false, id: sh.id }); ui.community = null; render();
+      if (sh.id && WORKER_URL) {
+        try { await fetch(`${WORKER_URL.replace(/\/$/, '')}/stats`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sh.id, delete: true }) }); toast('Your shared numbers were deleted.'); }
+        catch { toast('Offline: your numbers will be deleted next time you switch this off online.'); setShare({ on: false, id: sh.id, pendingDelete: true }); }
+      }
+    }
+  },
   'edit-bests'() { ui.modal = { type: 'bests' }; renderModal(); },
   'edit-numbers'() { ui.modal = { type: 'numbers' }; renderModal(); },
   painfree() { ui.modal = { type: 'painfree', cleared: false }; renderModal(); },
@@ -1692,6 +1778,7 @@ const actions = {
   },
   'sugg-skip'(el) { const a = ui.chat[+el.dataset.m]?.actions?.[+el.dataset.a]; if (a) { a.label = ACT.describe(S, a, now())?.label || ''; a.status = 'skipped'; saveChat(); render(); } },
   'lane-node'(el) { if (ui.laneAnimating) return; const p = { map: el.dataset.map, kind: el.dataset.kind, lane: el.dataset.lane, world: el.dataset.world, v: el.dataset.v }; ui.lanePopup = ui.lanePopup && JSON.stringify(ui.lanePopup) === JSON.stringify(p) ? null : p; render(); },
+  'fog-summit'() { ui.modal = { type: 'dream' }; renderModal(); },
   fog() { toast('☁️ Up there is still a mystery. Keep climbing and the clouds clear as you go.'); },
   'fog-peek'(el) {
     const map = el.closest('.worldmap');
@@ -1932,6 +2019,14 @@ document.addEventListener('submit', e => {
     ui.modal = null; ui.tab = 'map'; ui.mapMode = 'hyb'; ui.mapScroll = true; ui.frameTop = null;
     commit(S);
     toast(`Welcome to ${HYB.hybWorld(S).emoji} ${HYB.hybWorld(S).name}!`);
+    return;
+  }
+  if (f.id === 'dream-form') {
+    const text = f.dText.value.trim().slice(0, 160), event = f.dEvent.value.trim().slice(0, 60), date = f.dDate.value || '';
+    if (!text && !event) return toast('Write your dream in a few words first.');
+    S.profile.dream = { ...(S.profile.dream || {}), text, event, date, summary: '', target: dreamTarget(`${text} ${event}`) };
+    S.answers = { ...(S.answers || {}), dream: text, dreamEvent: event, dreamDate: date };
+    ui.modal = null; commit(S); toast('Dream saved: it\'s on your summit now 🎯');
     return;
   }
   if (f.id === 'bests-form') {

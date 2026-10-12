@@ -1,7 +1,7 @@
 // Illustrated world map: a winding running track from Base Camp (bottom) up to Ultra Frontier (top),
 // scenery per world, a flag per level and a runner avatar that jogs between levels.
 import { RUN_LEVELS, WORLDS } from './data/tracks.js';
-import { fogBands, fogSvg, peekButton, seenFog, saveFog, cropTop } from './fog.js';
+import { fogBands, fogSvg, peekButton, seenFog, saveFog, cropTop, summitText } from './fog.js';
 
 export const W = 400;
 const STEP = 195;
@@ -248,14 +248,13 @@ export function runFogParts(s, ui, at) {
   const d = s.profile?.dream;
   const dl = d?.target?.track === 'run' ? d.target.level : null;
   const cloudLevel = f.cloud != null ? Math.min(...RUN_LEVELS.filter(l => l.world === WORLDS[f.cloud].id).map(l => l.n)) : Infinity;
-  const label = String(d?.event || d?.text || '').trim();
-  const marks = dl && dl >= cloudLevel ? [{ y: POINTS[dl].y - 70, text: `Your goal: ${label.length > 30 ? `${label.slice(0, 29)}…` : label || 'Your goal'}` }] : [];
+  const summitLabel = summitText(d, 'run', dl != null && dl >= cloudLevel);
   const was = seenFog('run');
   const reveal = was != null && was < f.clear && was + 2 < WORLDS.length ? { from: cloudBottom ?? 0, to: b[was + 2].bottom } : null; // the clouds that were there roll back once
   if (was !== f.clear) saveFog('run', f.clear);
   if (reveal) ui.fogRevealed = 'run';
   return {
-    svg: fogSvg({ W, dimTop: f.dim != null ? b[f.dim].top : null, dimBottom: f.dim != null ? b[f.dim].bottom : null, cloudBottom, hint: 'Keep climbing to clear the clouds', marks, top: cropTop(cloudBottom), reveal }),
+    svg: fogSvg({ W, dimTop: f.dim != null ? b[f.dim].top : null, dimBottom: f.dim != null ? b[f.dim].bottom : null, cloudBottom, hint: 'Keep climbing to clear the clouds', summitLabel, top: cropTop(cloudBottom), reveal }),
     crop: cropTop(cloudBottom),
     peek: f.dim != null ? peekButton(cloudBottom ?? b[f.dim].bottom, H) : '',
   };

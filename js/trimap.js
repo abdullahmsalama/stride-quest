@@ -9,7 +9,7 @@ import * as T from './tri.js';
 import * as H from './hybrid.js';
 import { sexText } from './standards.js';
 import { WHY } from './engine.js';
-import { fogBands, fogSvg, peekButton, seenFog, saveFog, cropTop } from './fog.js';
+import { fogBands, fogSvg, peekButton, seenFog, saveFog, cropTop, summitText } from './fog.js';
 
 export const TW = 400;
 const BAND = 420;
@@ -287,22 +287,28 @@ function avatar(s, cfg, lane, at) {
 // ---------- fog of war ----------
 const bandTop = (cfg, i) => (i >= cfg.worlds.length - 1 ? 0 : bandBottom(i + 1));
 const bandOf = (cfg, lane, v) => { if (v <= 0) return 0; const i = reqs(cfg, lane).findIndex(x => v <= x); return i < 0 ? cfg.worlds.length - 1 : i; };
-const dreamShort = d => { const t = String(d?.event || d?.text || '').trim(); return t.length > 30 ? `${t.slice(0, 29)}…` : t || 'Your goal'; };
 // `pos`: where each character is shown (during an animation the fog lifts as they climb).
-export function laneFog(s, cfg, pos = {}) {
+export function laneFog(s, cfg, pos = {}, reached = 0) {
   const at = l => pos[l] ?? cfg.value(s, l);
   const pending = cfg.lanes.some(l => at(l) < cfg.value(s, l));
-  const frontier = Math.max(pending ? 0 : cfg.world(s), ...cfg.lanes.map(l => bandOf(cfg, l, at(l))));
+  const frontier = Math.max(pending ? 0 : cfg.world(s), reached, ...cfg.lanes.map(l => bandOf(cfg, l, at(l))));
   return { frontier, ...fogBands(cfg.worlds.length, frontier) };
 }
-export function laneFogParts(s, ui, id, shown = {}) {
+// The world band at map height y (for lifting the fog while a character is still walking).
+export function bandAtY(id, y) {
   const cfg = MAPS[id];
   geo(cfg);
-  const f = laneFog(s, cfg, shown);
+  for (let i = cfg.worlds.length - 1; i >= 0; i--) if (y <= bandBottom(i)) return i;
+  return 0;
+}
+export function laneFogParts(s, ui, id, shown = {}, reached = 0) {
+  const cfg = MAPS[id];
+  geo(cfg);
+  const f = laneFog(s, cfg, shown, reached);
   const cloudBottom = f.cloud != null ? bandBottom(f.cloud) : null;
   const d = s.profile?.dream?.target;
   const dw = d?.track === (cfg.id === 'tri' ? 'tri' : 'hybrid') ? d.world : null;
-  const marks = dw != null && f.cloud != null && dw >= f.cloud ? [{ y: gateY(dw) - 30, text: `Your goal: ${dreamShort(s.profile.dream)}` }] : [];
+  const summitLabel = summitText(s.profile?.dream, cfg.id === 'tri' ? 'tri' : 'hybrid', dw != null && f.cloud != null && dw >= f.cloud);
   // Clouds that were there last time roll back once.
   const was = seenFog(cfg.id);
   let reveal = null;
@@ -313,7 +319,7 @@ export function laneFogParts(s, ui, id, shown = {}) {
   if (was !== f.clear) saveFog(cfg.id, f.clear);
   if (reveal) ui.fogRevealed = cfg.id;
   return {
-    svg: fogSvg({ W: TW, dimTop: f.dim != null ? bandTop(cfg, f.dim) : null, dimBottom: f.dim != null ? bandBottom(f.dim) : null, cloudBottom, hint: 'Keep climbing to clear the clouds', marks, top: cropTop(cloudBottom), reveal }),
+    svg: fogSvg({ W: TW, dimTop: f.dim != null ? bandTop(cfg, f.dim) : null, dimBottom: f.dim != null ? bandBottom(f.dim) : null, cloudBottom, hint: 'Keep climbing to clear the clouds', summitLabel, top: cropTop(cloudBottom), reveal }),
     crop: cropTop(cloudBottom),
     peek: f.dim != null ? peekButton(cloudBottom ?? bandBottom(f.dim), TH) : '',
   };
