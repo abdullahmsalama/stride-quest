@@ -677,3 +677,9 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .about-by { font-size: 16px; margin: 4px 0 6px; }
 .about-bio { font-size: 14px; line-height: 1.5; margin: 10px 0 12px; }
 .about-why { font-size: 15px; font-weight: 600; line-height: 1.45; margin: 12px 0 0; }
+.level-check summary { cursor: pointer; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.level-check summary::-webkit-details-marker { display: none; }
+.level-check summary .lc-title { font: 800 18px var(--display); letter-spacing: .02em; }
+.level-check summary .lc-title::after { content: ' ▾'; color: var(--ink-2); }
+.level-check[open] summary .lc-title::after { content: ' ▴'; }
+.level-check[open] .steps { margin-top: 10px; }

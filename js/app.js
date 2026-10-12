@@ -653,10 +653,13 @@ const credit = '<p class="byline credit">Developed by <button type="button" clas
       ${M.progressLine(S) ? `<p class="hint">${h(M.progressLine(S))}</p>` : ''}
     </section>`;
   const install = S.history.some(x => x.kind === 'session') ? installCard('today').replace('<section class="card install"', `<section class="card install" ${o(4)}`) : '';
-  const levelSteps = `<section class="card" ${o(9)}>
-      <h3>${trackTitle(track)}</h3>
+  // The whole level's sessions, not today's plan: folded into one line ("Level 8 checklist: 2 of 9 done").
+  const doneN = steps.filter(st => st.status === 'done' || st.status === 'provisional').length;
+  const levelName = track === 'run' ? `Level ${S.run.level}` : trackTitle(track).replace(/^\S+\s/, '').split(' · ')[0];
+  const levelSteps = `<details class="card level-check" ${o(9)}>
+      <summary><span class="lc-title">📋 ${h(levelName)} checklist: ${doneN} of ${steps.length} done</span><span class="hint">${trackTitle(track)} · the whole level, spread over your weeks</span></summary>
       <ul class="steps">${steps.map(st => stepRow(track, st)).join('')}</ul>
-    </section>`;
+    </details>`;
   const daily = `<section class="card" ${o(10)}>
       <h3>Daily orders <span class="hint">+${E.XP.daily} XP each</span></h3>
       <ul class="orders">${orders.map(x => `<li><label class="choice"><input type="checkbox" data-act="order" data-i="${x.i}" ${doneOrders.includes(x.i) ? 'checked disabled' : ''}><span>${h(x.title)}</span></label></li>`).join('')}</ul>
