@@ -588,3 +588,17 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 6px 0; font-size: .92rem; }
 .kv span { color: var(--muted, #6b7280); }
 .with-unit { display: flex; align-items: center; gap: 6px; }
+
+/* Fog of war over the worlds further up */
+.fog { transition: opacity .7s ease; cursor: pointer; }
+.fog-dim { fill: #eef2f7; opacity: .66; pointer-events: none; }
+.fog-puffs.back { opacity: .9; }
+.fog-q { font: 800 46px var(--display, sans-serif); fill: #9aa7ba; letter-spacing: .1em; }
+.fog-hint { font: 700 14px Inter, sans-serif; fill: #6b7a90; }
+.fog-glow { animation: fogglow 3s ease-in-out infinite; }
+@keyframes fogglow { 0%, 100% { opacity: .55; } 50% { opacity: .95; } }
+.worldmap.peek .fog { opacity: 0; pointer-events: none; }
+.fog-reveal { pointer-events: none; animation: fogpart 2.2s ease-out .3s forwards; }
+@keyframes fogpart { to { opacity: 0; transform: translateY(-120px); } }
+.fog-peek { position: absolute; left: 50%; transform: translate(-50%, -50%); z-index: 3; background: #fff; color: #14213d; border: 2px solid #c9d3e0; border-radius: 999px; padding: 6px 14px; font: 700 12px var(--body); box-shadow: 0 3px 10px rgba(0, 0, 0, .18); cursor: pointer; white-space: nowrap; }
+.worldmap.peek .map-canvas { margin-top: 0 !important; }

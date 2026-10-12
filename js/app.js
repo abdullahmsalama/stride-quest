@@ -463,6 +463,7 @@ function render() {
   if (ui.tab === 'coach') { const log = $('.chat-log'); if (log) log.scrollTop = log.scrollHeight; }
   if (ui.tab === 'map' && ui.mapMode === 'world') afterMapRender();
   if (ui.tab === 'map' && (ui.mapMode === 'tri' || ui.mapMode === 'hyb')) afterTriRender();
+  if (ui.fogRevealed) { ui.fogRevealed = null; sfx.levelDing(4); setTimeout(() => toast('☁️ The clouds part: a new world is revealed!'), 400); }
 }
 
 function queueModals() {
@@ -667,12 +668,17 @@ function levelGrid() {
 }
 
 // ---------- tri map ----------
+// Scroll offset of map y inside a scrolling map frame (the clouded top may be cropped off).
+function frameY(frame, svg, y, h) {
+  const r = svg.getBoundingClientRect();
+  return r.top - frame.getBoundingClientRect().top + frame.scrollTop + (y / h) * r.height;
+}
 function triFollow(y, smooth = false) {
   const frame = document.querySelector('.worldmap');
   if (!frame) return;
   const svg = frame.querySelector('svg');
   const behavior = smooth ? 'smooth' : 'auto';
-  if (frame.scrollHeight > frame.clientHeight + 4) frame.scrollTo({ top: Math.max(0, (y / LANE_H) * svg.getBoundingClientRect().height - frame.clientHeight * 0.5), behavior });
+  if (frame.scrollHeight > frame.clientHeight + 4) frame.scrollTo({ top: Math.max(0, frameY(frame, svg, y, LANE_H) - frame.clientHeight * 0.5), behavior });
   else { const r = svg.getBoundingClientRect(); window.scrollTo({ top: Math.max(0, r.top + window.scrollY + (y / LANE_H) * r.height - window.innerHeight * 0.5), behavior }); }
 }
 // Where each lane character stood the last time the map was seen, so progress can be animated.
@@ -800,7 +806,7 @@ const followY = y => {
   const frame = document.querySelector('.worldmap');
   if (frame && frame.scrollHeight > frame.clientHeight + 4) {
     const svg = frame.querySelector('svg');
-    frame.scrollTop = Math.max(0, (y / MAP_H) * svg.getBoundingClientRect().height - frame.clientHeight * 0.55);
+    frame.scrollTop = Math.max(0, frameY(frame, svg, y, MAP_H) - frame.clientHeight * 0.55);
   } else window.scrollTo(0, Math.max(0, mapPageY(y) - window.innerHeight * 0.55));
 };
 
@@ -1529,6 +1535,17 @@ const actions = {
   },
   'sugg-skip'(el) { const a = ui.chat[+el.dataset.m]?.actions?.[+el.dataset.a]; if (a) { a.label = ACT.describe(S, a, now())?.label || ''; a.status = 'skipped'; saveChat(); render(); } },
   'lane-node'(el) { if (ui.laneAnimating) return; const p = { map: el.dataset.map, kind: el.dataset.kind, lane: el.dataset.lane, world: el.dataset.world, v: el.dataset.v }; ui.lanePopup = ui.lanePopup && JSON.stringify(ui.lanePopup) === JSON.stringify(p) ? null : p; render(); },
+  fog() { toast('☁️ Up there is still a mystery. Keep climbing and the clouds clear as you go.'); },
+  'fog-peek'(el) {
+    const map = el.closest('.worldmap');
+    if (!map) return;
+    // Keep what's on screen in place while the cropped top grows back (or shrinks away).
+    const canvas = map.querySelector('.map-canvas'), before = canvas.getBoundingClientRect().bottom;
+    const on = map.classList.toggle('peek');
+    el.textContent = on ? '☁️ Hide again' : '👀 Look ahead';
+    const shift = canvas.getBoundingClientRect().bottom - before;
+    if (map.scrollHeight > map.clientHeight + 4) map.scrollTop += shift; else window.scrollBy(0, shift);
+  },
   'lane-bg'() { if (ui.lanePopup) { ui.lanePopup = null; render(); } },
   'block-switch'(el) { S = HYB.switchBlock(S, el.dataset.b, now()); S = HYB.refreshHybrid(S, now(), E.weekKey(now())); store.save(S); toast(el.dataset.b === 'deload' ? 'Deload week: recover and come back stronger 😮‍💨' : `${el.dataset.b === 'engine' ? '⚡ Engine' : '🏋️ Strength'} block started: ${BLOCK_WEEKS} weeks.`); render(); },
   'lane-step'(el) {

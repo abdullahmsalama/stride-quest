@@ -9,6 +9,7 @@ import * as T from './tri.js';
 import * as H from './hybrid.js';
 import { sexText } from './standards.js';
 import { WHY } from './engine.js';
+import { fogBands, fogSvg, peekButton, seenFog, saveFog, cropTop } from './fog.js';
 
 export const TW = 400;
 const BAND = 420;
@@ -283,6 +284,39 @@ function avatar(s, cfg, lane, at) {
     </g>`;
 }
 
+// ---------- fog of war ----------
+const bandTop = (cfg, i) => (i >= cfg.worlds.length - 1 ? 0 : bandBottom(i + 1));
+const bandOf = (cfg, lane, v) => { if (v <= 0) return 0; const i = reqs(cfg, lane).findIndex(x => v <= x); return i < 0 ? cfg.worlds.length - 1 : i; };
+const dreamShort = d => { const t = String(d?.event || d?.text || '').trim(); return t.length > 30 ? `${t.slice(0, 29)}…` : t || 'Your goal'; };
+export function laneFog(s, cfg) {
+  const frontier = Math.max(cfg.world(s), ...cfg.lanes.map(l => bandOf(cfg, l, cfg.value(s, l))));
+  return { frontier, ...fogBands(cfg.worlds.length, frontier) };
+}
+function fogLayer(s, cfg, ui, shown) {
+  geo(cfg);
+  const f = laneFog(s, cfg);
+  if (f.dim == null) return { svg: '', peek: '', crop: 0 };
+  const cloudBottom = f.cloud != null ? bandBottom(f.cloud) : null;
+  const d = s.profile?.dream?.target;
+  const dw = d?.track === (cfg.id === 'tri' ? 'tri' : 'hybrid') ? d.world : null;
+  const marks = dw != null && f.cloud != null && dw >= f.cloud ? [{ y: gateY(dw) - 30, text: `Your goal: ${dreamShort(s.profile.dream)}` }] : [];
+  // Clouds that were there last time roll back once.
+  const was = seenFog(cfg.id);
+  const busy = ui.laneAnimating || cfg.lanes.some(l => shown[l] != null && shown[l] < cfg.value(s, l)); // reveal after the characters have moved
+  let reveal = null;
+  if (was != null && was < f.clear && !busy) {
+    const old = was + 2 < cfg.worlds.length ? bandBottom(was + 2) : null;
+    if (old != null) reveal = { from: cloudBottom ?? 0, to: old };
+  }
+  if (!busy && was !== f.clear) saveFog(cfg.id, f.clear);
+  if (reveal) ui.fogRevealed = cfg.id;
+  return {
+    svg: fogSvg({ W: TW, dimTop: bandTop(cfg, f.dim), dimBottom: bandBottom(f.dim), cloudBottom, hint: 'Keep climbing to clear the clouds', marks, top: cropTop(cloudBottom), reveal }),
+    crop: cropTop(cloudBottom),
+    peek: peekButton(cloudBottom ?? bandBottom(f.dim), TH),
+  };
+}
+
 // `ui.laneShown` lets the app draw avatars at their last-seen spot, then animate to the new one.
 export function renderLaneMap(s, ui, id) {
   const cfg = MAPS[id];
@@ -291,6 +325,7 @@ export function renderLaneMap(s, ui, id) {
   const shown = ui.laneShown?.[id] || {};
   const popup = ui.lanePopup?.map === id ? popupHtml(s, cfg, ui.lanePopup) : '';
   const lim = cfg.limiter(s)?.lane;
+  const fog = fogLayer(s, cfg, ui, shown);
   const hud = `<div class="map-hud lane-hud">${cfg.lanes.map(l => {
     const v = cfg.value(s, l);
     const txt = l === 'run' ? `L${v}` : v >= cfg.max(l) ? 'done' : `Next: ${sexText(short(cfg.stage(s, l).target), s.profile.sex)}`;
@@ -298,7 +333,7 @@ export function renderLaneMap(s, ui, id) {
   }).join('')}</div>`;
   return `<div class="worldmap trimap" style="background:${cfg.bandFill[0]}">
       ${hud}
-      <div class="map-canvas" style="aspect-ratio:${TW}/${TH}">
+      <div class="map-canvas" style="aspect-ratio:${TW}/${TH};margin-top:-${((fog.crop / TW) * 100).toFixed(3)}%">
       <svg viewBox="0 0 ${TW} ${TH}" xmlns="http://www.w3.org/2000/svg" data-act="lane-bg">
         ${bands(cfg)}
         ${scenery(cfg, Object.values(pts))}
@@ -311,8 +346,10 @@ export function renderLaneMap(s, ui, id) {
           <text x="${TW / 2}" y="${FINISH_Y - 37}" text-anchor="middle" font-family="Barlow Condensed, sans-serif" font-weight="800" font-size="21" fill="#fff">🏁 FINISH</text></g>
         ${cfg.worlds.map((_, i) => gateNode(s, cfg, i)).join('')}
         ${cfg.lanes.map(l => nodes(s, cfg, l)).join('')}
+        ${fog.svg}
         ${cfg.lanes.map(l => avatar(s, cfg, l, shown[l] ?? cfg.value(s, l))).join('')}
       </svg>
+      ${fog.peek}
       ${popup}
       </div>
     </div>`;
