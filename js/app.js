@@ -808,9 +808,25 @@ const credit = '<p class="byline credit">Developed by <button type="button" clas
   // The whole level's sessions, not today's plan: folded into one line ("Level 8 checklist: 2 of 9 done").
   const doneN = steps.filter(st => st.status === 'done').length, waitN = steps.filter(st => st.status === 'provisional').length;
   const levelName = track === 'run' ? `Level ${S.run.level}` : trackTitle(track).replace(/^\S+\s/, '').split(' · ')[0];
-  const levelSteps = `<details class="card level-check" ${o(9)}>
-      <summary><span class="lc-title">📋 ${h(levelName)} checklist: ${doneN} of ${steps.length} done${waitN ? ` · ⏳ ${waitN} confirmed tomorrow` : ''}</span><span class="hint">${trackTitle(track)} · the whole level, spread over your weeks</span></summary>
+  // What the next level needs beyond this checklist (today: body prep), with the way there right here.
+  const nextLvl = track === 'run' && S.run.level < RUN_LEVELS.length ? E.runLevel(S.run.level + 1) : null;
+  const prepShort = nextLvl && S.prep.level < nextLvl.needsPrep;
+  const blockedNow = E.prepBlocksRun(S) != null;
+  const prepSteps = prepShort ? E.trackSteps(S, 'prep') : [];
+  const needs = nextLvl ? `<div class="needs"><p class="q">🔑 Needed for Level ${nextLvl.n} · ${h(nextLvl.name)}</p>
+      <ul class="needs-list">
+        <li class="${doneN === steps.length ? 'ok' : ''}"><span>${doneN === steps.length ? '✅' : waitN ? '⏳' : '⬜'}</span><span>Level ${S.run.level} sessions and boss: ${doneN} of ${steps.length}${waitN ? ' (boss confirmed tomorrow morning)' : ''}</span></li>
+        <li class="${prepShort ? '' : 'ok'}"><span>${prepShort ? '🧱' : '✅'}</span><span>Body prep P${nextLvl.needsPrep}${prepShort ? `: you're at P${S.prep.level}${nextLvl.needsPrep - S.prep.level > 1 ? ` (${nextLvl.needsPrep - S.prep.level} stages to go: ${Array.from({ length: nextLvl.needsPrep - S.prep.level }, (_, i) => `P${S.prep.level + i + 1}`).join(' → ')})` : ''}` : ' ✓'}</span></li>
+      </ul>
+      ${prepShort ? `<p class="hint">Your Prep sessions now, P${S.prep.level} · ${h(PREP_STAGES[S.prep.level].name)}:</p><ul class="steps">${prepSteps.map(st => stepRow('prep', st)).join('')}</ul>
+        <p class="hint">💡 Prep builds tendons and landing skills so the bigger running loads of Level ${nextLvl.n} don't get you hurt.</p>` : ''}
+    </div>` : '';
+  const summary = blockedNow ? `📋 Level ${S.run.level} checklist: done ✓ · 🧱 needs Prep P${nextLvl.needsPrep} for Level ${nextLvl.n}`
+    : `📋 ${h(levelName)} checklist: ${doneN} of ${steps.length} done${waitN ? ` · ⏳ ${waitN} confirmed tomorrow` : ''}${prepShort ? ` · 🧱 Level ${nextLvl.n} also needs Prep P${nextLvl.needsPrep}` : ''}`;
+  const levelSteps = `<details class="card level-check" ${o(9)} ${blockedNow ? 'open' : ''}>
+      <summary><span class="lc-title">${summary}</span><span class="hint">${trackTitle(track)} · the whole level, spread over your weeks</span></summary>
       <ul class="steps">${steps.map(st => stepRow(track, st)).join('')}</ul>
+      ${needs}
     </details>`;
   const daily = `<section class="card" ${o(10)}>
       <h3>Daily orders <span class="hint">+${E.XP.daily} XP each</span></h3>
