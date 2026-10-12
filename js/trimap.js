@@ -108,14 +108,14 @@ const CHAR = {
 // above for the swimmer), side-on when the path turns sideways. Standing still, they're side-on as above.
 const HAIR = '#3e2723', SKIN = '#f1c49b';
 const BACK_PONY = sex => (sex === 'f' ? `<path class="pony" d="M0,-36 q3,6 0,11" stroke="${HAIR}" stroke-width="4" fill="none" stroke-linecap="round"/>` : '');
-const walker = (sex, { top, band, wide = 0 }) => `<g class="ch-back"><ellipse rx="${11 + wide}" ry="3.5" fill="rgba(0,0,0,.28)"/><g class="bob">
+const walker = (sex, { top, band, wide = 0, arms = true, extra = '' }) => `<g class="ch-back"><ellipse rx="${11 + wide}" ry="3.5" fill="rgba(0,0,0,.28)"/><g class="bob">
       <path class="lg l1" d="M${-3 - wide / 2},-17 L${-3 - wide / 2},-3" stroke="#1e2b4d" stroke-width="${4.5 + wide / 2}" stroke-linecap="round"/>
       <path class="lg l2" d="M${3 + wide / 2},-17 L${3 + wide / 2},-3" stroke="#1e2b4d" stroke-width="${4.5 + wide / 2}" stroke-linecap="round"/>
-      <path class="lg l2" d="M${-6 - wide},-30 L${-9 - wide},-20" stroke="${SKIN}" stroke-width="3.4" stroke-linecap="round"/>
-      <path class="lg l1" d="M${6 + wide},-30 L${9 + wide},-20" stroke="${SKIN}" stroke-width="3.4" stroke-linecap="round"/>
+      ${arms ? `<path class="lg l2" d="M${-6 - wide},-30 L${-9 - wide},-20" stroke="${SKIN}" stroke-width="3.4" stroke-linecap="round"/>
+      <path class="lg l1" d="M${6 + wide},-30 L${9 + wide},-20" stroke="${SKIN}" stroke-width="3.4" stroke-linecap="round"/>` : ''}
       <rect x="${-6 - wide}" y="-33" width="${12 + wide * 2}" height="17" rx="5" fill="${top}"/>
       <rect x="${-6 - wide}" y="-20" width="${12 + wide * 2}" height="5" rx="2" fill="#1e2b4d"/>
-      <circle cy="-39" r="6.5" fill="${HAIR}"/>${band ? `<rect x="-6.5" y="-42" width="13" height="2.6" rx="1.3" fill="${band}"/>` : ''}${BACK_PONY(sex)}</g></g>`;
+      <circle cy="-39" r="6.5" fill="${HAIR}"/>${band ? `<rect x="-6.5" y="-42" width="13" height="2.6" rx="1.3" fill="${band}"/>` : ''}${BACK_PONY(sex)}${extra}</g></g>`;
 const BACK = {
   swim: sex => `<g class="ch-top" transform="translate(0,-8)"><ellipse class="ripple" rx="12" ry="20" fill="rgba(255,255,255,.55)"/>
       <path d="M-5,14 L0,6 L5,14" stroke="#fff" stroke-width="1.6" fill="none" opacity=".8"/>
@@ -132,7 +132,11 @@ const BACK = {
       <ellipse cy="-25" rx="7" ry="8" fill="${sex === 'f' ? '#ab47bc' : '#29a0e0'}"/>${BACK_PONY(sex).replace('-36', '-31')}
       <circle cy="-33" r="5" fill="#e53935"/><path d="M-3,-35 h6" stroke="#fff" stroke-width="1.2"/></g></g>`,
   run: sex => walker(sex, { top: TOP(sex), band: '#29a0e0' }),
-  strength: sex => walker(sex, { top: TOP(sex), band: null, wide: 1.5 }),
+  // Seen from behind: the bar rides on the shoulders (a walking back squat), hands out wide on it.
+  strength: sex => walker(sex, { top: TOP(sex), band: null, wide: 1.5, arms: false, extra: `
+      <path d="M-7.5,-31 L-13,-33 M7.5,-31 L13,-33" stroke="${SKIN}" stroke-width="3.4" stroke-linecap="round"/>
+      <rect x="-24" y="-35" width="48" height="3" rx="1.5" fill="#546e7a"/>
+      <rect x="-27" y="-40" width="5" height="13" rx="1.5" fill="#263238"/><rect x="22" y="-40" width="5" height="13" rx="1.5" fill="#263238"/>` }),
   engine: (sex, plates = 0) => `<g class="sled-back"><rect x="-12" y="-47" width="24" height="5" rx="2" fill="#37474f"/><path d="M-7,-42 L-7,-31 M7,-42 L7,-31" stroke="#546e7a" stroke-width="2.4"/>
       ${Array.from({ length: Math.min(plates, SLED_MAX) }, (_, i) => `<rect x="-8" y="${-50 - i * 3}" width="16" height="2.8" rx="1.2" fill="${plateColor(i)}"/>`).join('')}</g>${walker(sex, { top: sex === 'f' ? '#ab47bc' : '#29a0e0', band: '#ff6b35' })}`,
 };
