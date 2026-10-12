@@ -63,7 +63,8 @@ function noise() {
 }
 
 // Recorded clips, decoded once after the first tap.
-const CLIP_FILES = { stroke: 'sounds/stroke.mp3', stroke2: 'sounds/stroke2.mp3', splash: 'sounds/splash.mp3', pool: 'sounds/pool.mp3' };
+const CLIP_FILES = { stroke: 'sounds/stroke.mp3', stroke2: 'sounds/stroke2.mp3', splash: 'sounds/splash.mp3', pool: 'sounds/pool.mp3',
+  grunt1: 'sounds/grunt1.mp3', grunt2: 'sounds/grunt2.mp3', grunt3: 'sounds/grunt3.mp3', heave: 'sounds/heave.mp3' };
 const clips = {};
 function loadClips() {
   for (const [k, url] of Object.entries(CLIP_FILES)) {
@@ -156,9 +157,37 @@ export function clank() {
 export function bell() { tone(2093, { type: 'sine', dur: 0.35, vol: 0.18 }); tone(2637, { type: 'sine', dur: 0.35, vol: 0.12, delay: 0.18 }); }
 export function bigSplash() { if (clip('splash', { vol: 0.8 })) return; burst({ freq: 900, q: 0.5, dur: 0.5, vol: 0.4 }); burst({ freq: 2200, q: 0.8, dur: 0.3, vol: 0.2, delay: 0.08 }); }
 
+// Sled push: a gritty scrape of the sled on the ground, pulsing with each drive of the legs.
+function scrape() {
+  const src = noise(), lp = ctx.createBiquadFilter(), bp = ctx.createBiquadFilter(), g = ctx.createGain(), lfo = ctx.createOscillator(), depth = ctx.createGain();
+  lp.type = 'lowpass'; lp.frequency.value = 900; bp.type = 'bandpass'; bp.frequency.value = 380; bp.Q.value = 0.7;
+  g.gain.value = 0.12; lfo.frequency.value = 1.6; depth.gain.value = 0.08; // ~ one surge per step
+  lfo.connect(depth).connect(g.gain);
+  src.connect(lp).connect(bp).connect(g).connect(master);
+  src.start(); lfo.start();
+  return () => { const t = ctx.currentTime; g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(0, t, 0.1); src.stop(t + 0.5); lfo.stop(t + 0.5); };
+}
+// Effort grunts (public-domain recordings); a little higher for women's characters.
+let gi = 0;
+const grunt = (sex, vol = 0.5) => { gi = (gi + 1) % 3; clip(`grunt${gi + 1}`, { vol, rate: (sex === 'f' ? 1.3 : 1) * (0.94 + Math.random() * 0.1) }); };
+// Lifting a plate off the ground and loading the sled: a heave, then the clank.
+export function plateLoad(sex) {
+  if (!ready()) return;
+  if (!clip('heave', { vol: 0.6, rate: sex === 'f' ? 1.3 : 1 })) heavyStep();
+  setTimeout(clank, 520);
+}
+
 // A sound that loops while a character travels; returns a stop() function.
-export function moveLoop(lane) {
+export function moveLoop(lane, { sex } = {}) {
   if (!ready()) return () => {};
+  if (lane === 'engine') {
+    // Sled push: scrape all the way, a grunt on every other drive.
+    const stopScrape = scrape();
+    let n = 0;
+    const id = setInterval(() => { heavyStep(); if (n++ % 2 === 0) grunt(sex); }, 620);
+    grunt(sex);
+    return () => { clearInterval(id); stopScrape(); };
+  }
   const every = { swim: 640, bike: 75, run: 270, strength: 330, engine: 560 }[lane] || 300;
   const play = { swim: splash, bike: tick, run: step, strength: heavyStep, engine: pull }[lane] || step;
   const wind = lane === 'bike' ? whoosh() : null;

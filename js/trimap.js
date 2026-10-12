@@ -62,6 +62,21 @@ const STYLE = {
 // ---------- characters (feet at 0,0) ----------
 const TOP = sex => (sex === 'f' ? '#ec407a' : '#ff6b35');
 const PONY = (sex, x, y, dir = -1) => (sex === 'f' ? `<path class="pony" d="M${x},${y} q${dir * 9},1 ${dir * 10},10" stroke="#3e2723" stroke-width="4" fill="none" stroke-linecap="round"/>` : '');
+// The Engine character's sled: empty at the start, one plate per Engine stage cleared (bumper colours).
+export const PLATE_COLORS = ['#43a047', '#fdd835', '#1e88e5', '#e53935'];
+const plateColor = i => PLATE_COLORS[i % PLATE_COLORS.length];
+const SLED_MAX = 8; // plates shown; more than that adds a "+"
+function sled(plates) {
+  const n = Math.min(plates, SLED_MAX);
+  return `<g class="sled"><path d="M9,-1 L31,-1 Q36,-1 36,-5" stroke="#455a64" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+      <rect x="10" y="-7" width="22" height="4" rx="1.5" fill="#37474f"/><rect x="11" y="-25" width="3" height="19" rx="1.2" fill="#546e7a"/>
+      <rect x="24.5" y="${-10 - n * 3.4}" width="2" height="${4 + n * 3.4}" fill="#78909c"/>
+      <g class="plates">${platesSvg(n)}</g>${plates > SLED_MAX ? `<text x="32" y="${-12 - n * 3.4}" font-size="8" font-weight="800" fill="#fff" stroke="#14213d" stroke-width="2" paint-order="stroke">+</text>` : ''}</g>`;
+}
+const platesSvg = n => Array.from({ length: n }, (_, i) => `<rect x="17" y="${-10.5 - i * 3.4}" width="17" height="3.2" rx="1.4" fill="${plateColor(i)}" stroke="rgba(0,0,0,.25)" stroke-width=".6"/>`).join('');
+// A plate lying on the ground (next to an Engine level, waiting to be picked up).
+const groundPlate = i => `<ellipse rx="8" ry="3.2" fill="${plateColor(i)}" stroke="rgba(0,0,0,.3)" stroke-width="1"/><ellipse rx="2" ry=".9" fill="rgba(0,0,0,.35)"/>`;
+
 const CHAR = {
   swim: sex => `<g class="ch-swim"><ellipse class="ripple" rx="18" ry="5" fill="rgba(255,255,255,.75)"/><g class="bob">
       <ellipse cx="0" cy="-5" rx="14" ry="4.8" fill="${TOP(sex)}"/>${PONY(sex, 9, -9)}<circle cx="13" cy="-8" r="5.2" fill="#f1c49b"/><path d="M8.5,-11 a5.2,5.2 0 0 1 9.2,0" fill="#ffd23f"/>
@@ -80,10 +95,13 @@ const CHAR = {
       <rect x="-6.5" y="-31" width="13" height="18" rx="5" fill="${TOP(sex)}"/>${PONY(sex, -5, -40)}<circle cx="0" cy="-37" r="6.3" fill="#f1c49b"/><path d="M-6,-40 a6.3,6.3 0 0 1 12,0" fill="#3e2723"/>
       <g class="press"><path d="M-6,-29 L-10,-44 M6,-29 L10,-44" stroke="#f1c49b" stroke-width="3.6" stroke-linecap="round"/>
         <rect x="-22" y="-46.5" width="44" height="3" rx="1.5" fill="#546e7a"/><rect x="-24" y="-51" width="5" height="12" rx="1.5" fill="#263238"/><rect x="19" y="-51" width="5" height="12" rx="1.5" fill="#263238"/></g></g></g>`,
-  engine: sex => `<g class="ch-ski"><ellipse rx="14" ry="3.6" fill="rgba(0,0,0,.28)"/><rect x="13" y="-48" width="6" height="48" rx="2" fill="#37474f"/><rect x="10" y="-8" width="12" height="8" rx="2" fill="#263238"/><g class="bob">
-      <path d="M-4,0 L-2,-14 M5,0 L4,-14" stroke="#1e2b4d" stroke-width="4.6" stroke-linecap="round"/>
-      <rect x="-6" y="-31" width="12" height="18" rx="5" fill="${sex === 'f' ? '#ab47bc' : '#29a0e0'}" transform="rotate(10 0 -14)"/>${PONY(sex, -2, -40)}<circle cx="3" cy="-37" r="6" fill="#f1c49b"/><rect x="-3" y="-41" width="12" height="2.6" rx="1.3" fill="#ff6b35"/>
-      <g class="pull"><path d="M2,-28 L12,-40" stroke="#f1c49b" stroke-width="3.6" stroke-linecap="round"/><path d="M12,-40 L16,-46" stroke="#90a4ae" stroke-width="1.2"/></g></g></g>`,
+  engine: (sex, plates = 0) => `<g class="ch-sled"><ellipse cx="6" rx="22" ry="3.6" fill="rgba(0,0,0,.28)"/>
+      ${sled(plates)}<g class="bob">
+      <g class="lg-d d1"><path d="M-6,-15 L-15,-1" stroke="#1e2b4d" stroke-width="4.6" stroke-linecap="round"/></g>
+      <g class="lg-d d2"><path d="M-6,-15 L-1,-1" stroke="#1e2b4d" stroke-width="4.6" stroke-linecap="round"/></g>
+      <path d="M-6,-15 L5,-25" stroke="${sex === 'f' ? '#ab47bc' : '#29a0e0'}" stroke-width="9" stroke-linecap="round"/>
+      <path d="M5,-25 L12,-21" stroke="#f1c49b" stroke-width="3.4" stroke-linecap="round"/>
+      ${PONY(sex, 6, -32)}<circle cx="9.5" cy="-30" r="5.6" fill="#f1c49b"/><rect x="4" y="-34" width="11" height="2.6" rx="1.3" fill="#ff6b35" transform="rotate(20 9.5 -33)"/></g></g>`,
 };
 
 // While travelling, characters face where they're going: seen from behind going up the path (from
@@ -115,7 +133,8 @@ const BACK = {
       <circle cy="-33" r="5" fill="#e53935"/><path d="M-3,-35 h6" stroke="#fff" stroke-width="1.2"/></g></g>`,
   run: sex => walker(sex, { top: TOP(sex), band: '#29a0e0' }),
   strength: sex => walker(sex, { top: TOP(sex), band: null, wide: 1.5 }),
-  engine: sex => walker(sex, { top: sex === 'f' ? '#ab47bc' : '#29a0e0', band: '#ff6b35' }),
+  engine: (sex, plates = 0) => `<g class="sled-back"><rect x="-12" y="-47" width="24" height="5" rx="2" fill="#37474f"/><path d="M-7,-42 L-7,-31 M7,-42 L7,-31" stroke="#546e7a" stroke-width="2.4"/>
+      ${Array.from({ length: Math.min(plates, SLED_MAX) }, (_, i) => `<rect x="-8" y="${-50 - i * 3}" width="16" height="2.8" rx="1.2" fill="${plateColor(i)}"/>`).join('')}</g>${walker(sex, { top: sex === 'f' ? '#ab47bc' : '#29a0e0', band: '#ff6b35' })}`,
 };
 // Heading from the direction of travel (dx, dy in map units): which view, and how to turn it.
 export function facing(lane, dx, dy) {
@@ -298,13 +317,24 @@ function gateNode(s, cfg, i) {
     </g>`;
 }
 
+// Plates waiting on the ground beside each Engine level not reached yet (one per stage).
+function groundPlates(cfg, shownAt) {
+  if (!cfg.lanes.includes('engine')) return '';
+  const out = [];
+  for (let n = shownAt + 1; n <= maxVal(cfg, 'engine'); n++) {
+    const p = nodePoint(cfg, 'engine', n);
+    out.push(`<g id="gp-${cfg.id}-${n}" class="ground-plate" transform="translate(${(p.x + 24).toFixed(1)},${(p.y + 8).toFixed(1)})">${groundPlate(n - 1)}</g>`);
+  }
+  return out.join('');
+}
+
 function avatar(s, cfg, lane, at) {
   const p = nodePoint(cfg, lane, Math.min(at, maxVal(cfg, lane)));
   const lim = cfg.limiter(s)?.lane === lane;
   const rest = cfg.resting(s, lane);
   return `<g id="ln-av-${cfg.id}-${lane}" class="lane-ch ${lim ? 'limiter' : ''} ${rest ? 'resting' : ''}" data-act="lane-node" data-map="${cfg.id}" data-kind="lane" data-lane="${lane}" transform="translate(${p.x.toFixed(1)},${(p.y - 6).toFixed(1)}) scale(1.25)">
       ${lim ? '<circle class="halo lim" cy="-18" r="26" fill="none" stroke="#e53935" stroke-width="2.5"/>' : ''}
-      <g class="face"><g class="v-side">${CHAR[lane](s.profile.sex)}</g><g class="v-back">${BACK[lane](s.profile.sex)}</g></g>
+      <g class="face"><g class="v-side">${CHAR[lane](s.profile.sex, at)}</g><g class="v-back">${BACK[lane](s.profile.sex, at)}</g></g>
       ${rest ? '<g transform="translate(14,-48)"><circle r="8" fill="#fff" stroke="#90a4ae"/><text y="4" text-anchor="middle" font-size="9">🔒</text></g>' : ''}
     </g>`;
 }
@@ -381,6 +411,7 @@ export function renderLaneMap(s, ui, id) {
           <text x="${TW / 2}" y="${FINISH_Y - 37}" text-anchor="middle" font-family="Barlow Condensed, sans-serif" font-weight="800" font-size="21" fill="#fff">🏁 FINISH</text></g>
         ${cfg.worlds.map((_, i) => gateNode(s, cfg, i)).join('')}
         ${cfg.lanes.map(l => nodes(s, cfg, l)).join('')}
+        ${groundPlates(cfg, shown.engine ?? cfg.value(s, 'engine'))}
         ${fog.svg}
         ${cfg.lanes.map(l => avatar(s, cfg, l, shown[l] ?? cfg.value(s, l))).join('')}
       </svg>
@@ -392,7 +423,7 @@ export function renderLaneMap(s, ui, id) {
 
 // Animate one lane's character from value `from` to `to` along its path.
 // gate(y) -> ms: pause there (e.g. at the fog's edge while the clouds clear), 0 to keep going.
-export function moveCharacter(id, lane, from, to, { onDone, follow, skip, gate } = {}) {
+export function moveCharacter(id, lane, from, to, { onDone, follow, skip, gate, onNode } = {}) {
   const el = document.getElementById(`ln-av-${id}-${lane}`);
   if (!el || to <= from) { onDone?.(); return; }
   const segEls = [];
@@ -403,7 +434,9 @@ export function moveCharacter(id, lane, from, to, { onDone, follow, skip, gate }
   el.classList.add('moving');
   const face = el.querySelector('.face');
   let hx = 0, hy = -1; // start heading up the map
-  let t0 = performance.now(), holdUntil = 0;
+  let t0 = performance.now(), holdUntil = 0, lastNode = from, finished = false;
+  // onNode(v) -> ms: something happens at each level passed (the sled picks up a plate); the walk waits.
+  const hold = (t, ms) => { holdUntil = t + ms; t0 += ms; el.classList.remove('moving'); };
   const frame = t => {
     if (t < holdUntil && !skip?.()) { requestAnimationFrame(frame); return; }
     if (holdUntil) { el.classList.add('moving'); holdUntil = 0; }
@@ -422,12 +455,30 @@ export function moveCharacter(id, lane, from, to, { onDone, follow, skip, gate }
       face?.setAttribute('transform', f.face);
     }
     follow?.(pt.y);
-    const hold = k < 1 && !skip?.() ? gate?.(pt.y) || 0 : 0;
-    if (hold) { holdUntil = t + hold; t0 += hold; el.classList.remove('moving'); }
+    if (k < 1 && !skip?.()) {
+      const node = from + i; // levels fully passed so far
+      if (node > lastNode) { lastNode = node; const ms = onNode?.(node, pt) || 0; if (ms) hold(t, ms); }
+      const g = gate?.(pt.y) || 0;
+      if (g) hold(t, g);
+    }
+    if (k >= 1 && !finished && !skip?.()) {
+      finished = true; lastNode = to;
+      const ms = onNode?.(to, pt) || 0;
+      if (ms) { hold(t, ms); requestAnimationFrame(frame); return; }
+    }
     if (k < 1) requestAnimationFrame(frame);
     else { el.classList.remove('moving', 'up'); face?.removeAttribute('transform'); onDone?.(pt); } // side-on again on arrival
   };
   requestAnimationFrame(frame);
+}
+
+// Plate count on the Engine sled (both views), during the climb.
+export function setPlates(id, n, sex) {
+  const el = document.getElementById(`ln-av-${id}-engine`);
+  if (!el) return;
+  const side = el.querySelector('.v-side'), back = el.querySelector('.v-back');
+  if (side) side.innerHTML = CHAR.engine(sex, n);
+  if (back) back.innerHTML = BACK.engine(sex, n);
 }
 
 export const celebrate = (x, y, text) => bubble(x, y, text, { ttl: 2600 });

@@ -16,7 +16,7 @@ import * as ST from './standards.js';
 import { APP_VERSION } from './config.js';
 import * as BG from './background.js';
 import * as TRI from './tri.js';
-import { renderLaneMap, gateY as laneGateY, TH as LANE_H, TW as LANE_W, MAPS as LANE_MAPS, nodePoint, moveCharacter, celebrate, signature, START_POINT, laneFogParts, bandAtY } from './trimap.js';
+import { renderLaneMap, gateY as laneGateY, TH as LANE_H, TW as LANE_W, MAPS as LANE_MAPS, nodePoint, moveCharacter, celebrate, signature, START_POINT, laneFogParts, bandAtY, setPlates } from './trimap.js';
 import * as HYB from './hybrid.js';
 import { HYBRID_WORLDS, BLOCK_WEEKS, STRENGTH_STAGES } from './data/hybrid.js';
 import { TRI_WORLDS } from './data/tri.js';
@@ -478,6 +478,21 @@ function fogRevealedToast() {
   ui.fogToastAt = Date.now();
   setTimeout(() => toast('☁️ The clouds part: a new world is revealed!'), 400);
 }
+// The Engine character reaches a level: bends down, lifts the plate lying there onto the sled, carries on.
+function pickPlate(id, v, pt) {
+  const gp = document.getElementById(`gp-${id}-${v}`), av = document.getElementById(`ln-av-${id}-engine`);
+  if (!gp || !av) return 0;
+  const [gx, gy] = (gp.getAttribute('transform').match(/-?[\d.]+/g) || [0, 0]).map(Number);
+  av.classList.add('pickup');
+  sfx.plateLoad(S.profile.sex);
+  gp.style.transform = `translate(${gx}px, ${gy}px)`;
+  gp.getBoundingClientRect(); // start the move from where it lies
+  gp.style.transition = 'transform .45s cubic-bezier(.3, 1.3, .6, 1)';
+  setTimeout(() => { gp.style.transform = `translate(${pt.x + 14}px, ${pt.y - 26}px) scale(.75)`; }, 300);
+  setTimeout(() => { gp.remove(); setPlates(id, v, S.profile.sex); }, 780);
+  setTimeout(() => av.classList.remove('pickup'), 1150);
+  return 1300;
+}
 // At the fog's edge: lift one world of clouds and hold the character for a moment.
 const FOG_PAUSE = 1500;
 function fogGate(parts, y, next) {
@@ -834,12 +849,13 @@ function playLanes(id, cfg, cur, all, seen, shown, moves, focusLane, focusY) {
     triFollow(nodePoint(cfg, lane, shown[lane]).y, true);
     wait(900, () => {
       if (fast()) { step(); return; }
-      const stop = sfx.moveLoop(lane);
+      const stop = sfx.moveLoop(lane, { sex: S.profile.sex });
       // Walk up to the fog's edge, stop while the clouds clear, then carry on.
       let fogNow = laneFogParts(S, ui, id, shown);
       moveCharacter(id, lane, shown[lane], cur[lane], {
         follow: y => triFollow(y),
         gate: y => fogGate(fogNow, y, () => (fogNow = laneFogParts(S, ui, id, shown, fogNow.clear))),
+        onNode: lane === 'engine' ? (v, pt) => pickPlate(id, v, pt) : null,
         skip: fast,
         onDone: pt => {
           stop();
