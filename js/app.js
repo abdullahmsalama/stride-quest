@@ -644,8 +644,8 @@ const credit = '<p class="byline credit">Developed by <button type="button" clas
   const toggle = `<div class="seg today-seg" role="tablist">${[['simple', '✨ Just next'], ['full', '📋 Full day']].map(([k, l]) =>
     `<button role="tab" class="${(simple ? 'simple' : 'full') === k ? 'on' : ''}" data-act="set-view" data-v="${k}">${l}</button>`).join('')}</div>`;
   if (simple) {
-    return `${toggle}<div class="simple">${banners()}${hero}${p.today}${raceCard()}${credit}
-      <button class="btn ghost wide" data-act="set-view" data-v="full">See my week and more ▾</button></div>`;
+    return `${toggle}<div class="simple">${banners()}${hero}${p.today}${raceCard()}
+      <button class="btn ghost wide" data-act="set-view" data-v="full">See my week and more ▾</button></div>${credit}`;
   }
   const boost = `<section class="card boost" ${o(3)}>
       <p class="eyebrow">Daily boost</p>
