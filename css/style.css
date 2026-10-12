@@ -742,3 +742,6 @@ header.top { gap: 10px; }
 .needs-list { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 6px; }
 .needs-list li { display: flex; gap: 8px; }
 .needs-list li.ok span:last-child { color: var(--ink-2); }
+.msg-tools { display: flex; justify-content: flex-end; gap: 12px; margin: -4px 4px 8px; font-size: 12px; }
+.msg-tools .linkish { color: var(--ink-2); text-decoration: none; }
+.msg-tools .linkish:hover { color: var(--brand); }

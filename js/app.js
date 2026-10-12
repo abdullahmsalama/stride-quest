@@ -468,6 +468,7 @@ function render() {
   queueModals();
   renderModal();
   if (ui.tab === 'coach') { const log = $('.chat-log'); if (log) log.scrollTop = log.scrollHeight; }
+  if (ui.tab === 'coach' && ui.chatDraft != null) { const inp = document.querySelector('#chat-form [name=msg]'); if (inp) { inp.value = ui.chatDraft; inp.focus(); } ui.chatDraft = null; }
   if (ui.tab === 'map' && ui.mapMode === 'world') afterMapRender();
   if (ui.tab === 'map' && (ui.mapMode === 'tri' || ui.mapMode === 'hyb')) afterTriRender();
   fogRevealedToast();
@@ -1285,13 +1286,13 @@ function viewCoach() {
   const modeSeg = `<div class="seg coach-seg">${[[false, '⚡ Quick'], [true, '🧠 Smart · slower']].map(([v, l]) => `<button class="${!!ui.smartCoach === v ? 'on' : ''}" data-act="coach-mode" data-v="${v ? 1 : 0}">${l}</button>`).join('')}</div>
     <p class="hint coach-mode-hint">${ui.smartCoach ? '🧠 Smart coach thinks longer and is better at tricky questions like a wrong placement. Replies take about 5-30 seconds.' : '⚡ Quick coach answers in a couple of seconds. Switch to Smart for tricky questions.'}</p>`;
   return `${modeSeg}<section class="chat">
-      <div class="chat-log">${msgs.map((m, mi) => `<div class="msg ${m.role}">${md(m.content)}${m.provider === 'offline' ? '<span class="tag">offline coach</span>' : ''}</div>${suggestionCards(m, mi)}`).join('')}
+      <div class="chat-log">${msgs.map((m, mi) => `<div class="msg ${m.role}">${md(m.content)}${m.provider === 'offline' ? '<span class="tag">offline coach</span>' : ''}</div>${m.role === 'user' && ui.chat.length && !(ui.thinking && mi === ui.chat.length - 1) ? `<div class="msg-tools"><button class="linkish" data-act="msg-edit" data-m="${mi}">✏️ Edit</button><button class="linkish" data-act="msg-del" data-m="${mi}">🗑 Delete</button></div>` : ''}${suggestionCards(m, mi)}`).join('')}
         ${ui.thinking ? `<div class="msg assistant typing"><span></span><span></span><span></span>${ui.smartCoach ? '<em class="slow-note">🧠 Thinking it through…</em>' : ''}${ui.slow ? `<em class="slow-note">${ui.smartCoach ? 'Still thinking… smart answers take a bit longer' : 'Still thinking… the AI is busy, a few more seconds'}</em>` : ''}</div>` : ''}</div>
       <div class="quick">${['What should I do today?', 'I feel sore', 'Explain my level', 'How fast should easy runs be?'].map(q => `<button class="pill" data-act="quick" data-q="${h(q)}">${h(q)}</button>`).join('')}</div>
       <form id="chat-form" class="chat-input">
         ${canListen ? `<button type="button" class="mic ${ui.listening ? 'on' : ''}" data-act="mic" aria-label="Speak">🎤</button>` : ''}
         <input name="msg" placeholder="${ui.listening ? 'Listening…' : 'Message your coach'}" autocomplete="off" maxlength="1000">
-        <button class="btn primary" type="submit" ${ui.thinking ? 'disabled' : ''}>Send</button>
+        ${ui.thinking ? '<button class="btn" type="button" data-act="chat-stop">⏹ Stop</button>' : '<button class="btn primary" type="submit">Send</button>'}
       </form>
       ${canSpeak ? `<label class="choice small"><input type="checkbox" data-act="speak-toggle" ${ui.speakReplies ? 'checked' : ''}><span>Read replies aloud</span></label>` : ''}
       <p class="hint">⏱️ The coach runs on a shared AI model, so replies can take a few seconds when it's busy. It can suggest changes; nothing changes until you tap Apply. Messages go to Google's Gemini AI to write replies. Not medical advice.</p>
@@ -1987,6 +1988,15 @@ const actions = {
   },
   'race-stop'() { S.hybrid.race = null; commit(S); toast('Race prep stopped. Your Hybrid plan carries on.'); },
   'show-me'(el) { showMe(el.dataset.f); },
+  // Stop a reply on its way: the message comes back into the box, as if never sent.
+  'chat-stop'() {
+    const last = ui.chat.at(-1);
+    if (last?.role === 'user') { ui.chat.pop(); ui.chatDraft = last.content; }
+    ui.chatAbort?.abort();
+  },
+  // Delete one of your messages (and the coach's reply to it): the coach no longer sees either.
+  'msg-del'(el) { chatRemove(+el.dataset.m); toast('Message deleted. The coach won\'t see it.'); },
+  'msg-edit'(el) { const i = +el.dataset.m; ui.chatDraft = ui.chat[i]?.content || ''; chatRemove(i); },
   'prep-stage'(el) { ui.modal = { type: 'prepStage', n: +el.dataset.n }; renderModal(); },
   'tour-start'() { ui.modal = null; renderModal(); startTour(0); },
   'tour-step'(el) { ui.tour.i = Math.max(0, ui.tour.i + +el.dataset.d); tourGo(); },
@@ -2220,6 +2230,12 @@ async function sessionFeedback(st, { when, ts, result, pain, actual, note }) {
   if (ui.tab !== 'coach') toast('💬 Your coach replied about that session: see the Coach tab.');
 }
 
+function chatRemove(i) {
+  if (ui.chat[i]?.role !== 'user') return;
+  const n = ui.chat[i + 1]?.role === 'assistant' ? 2 : 1; // its reply goes too
+  ui.chat.splice(i, n); saveChat(); render();
+}
+
 async function sendChat(text) {
   text = text.trim();
   if (!text || ui.thinking) return;
@@ -2227,7 +2243,11 @@ async function sendChat(text) {
   ui.thinking = true; ui.slow = false; render();
   const slowTimer = setTimeout(() => { if (ui.thinking) { ui.slow = true; if (ui.tab === 'coach') render(); } }, ui.smartCoach ? 9000 : 4000);
   const history = ui.chat.slice(-12).map(({ role, content }) => ({ role, content }));
-  const { reply, provider, actions = [] } = await askCoach(history, `${E.coachContext(S, now())}\n${ACT.weekContext(S, now())}`, S, ui.smartCoach, FEATURE_BRIEF);
+  ui.chatAbort = new AbortController();
+  const res = await askCoach(history, `${E.coachContext(S, now())}\n${ACT.weekContext(S, now())}`, S, ui.smartCoach, FEATURE_BRIEF, ui.chatAbort.signal);
+  ui.chatAbort = null;
+  if (res.aborted) { clearTimeout(slowTimer); ui.thinking = false; ui.slow = false; saveChat(); render(); return; } // stopped: the message is already back in the box
+  const { reply, provider, actions = [] } = res;
   const valid = actions.filter(a => ACT.describe(S, a, now()));
   ui.chat.push({ role: 'assistant', content: reply, provider, actions: valid.map(a => ({ ...a, status: 'pending' })) });
   clearTimeout(slowTimer);

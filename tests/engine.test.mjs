@@ -218,3 +218,20 @@ test('partial, backdated and annotated sessions', () => {
   // Sore the morning after: not counted.
   assert.equal(E.completeStep(state, 'run', idx, { pain: 0, now: y, backdated: true, morningOk: false }).outcome.status, 'repeat');
 });
+
+test('coach context: the dream, race prep, bests, recent load and a Prep block are all sent', async () => {
+  const { placeFromAnswers, newState, coachContext } = await import('../js/engine.js');
+  const T = Date.UTC(2026, 9, 12, 9);
+  let { state } = placeFromAnswers(newState(T), { continuous: '60+', longestKm: 15, best5k: 22, runsLast4w: 12, pain: 'none' }, T);
+  state.profile.dream = { text: 'Ironman 70.3', event: 'IM 70.3 Egypt' };
+  state.hybrid = { race: { event: 'alphax', division: 'open' } };
+  state.bests = { run5k: 21.5 };
+  state.history.push({ ts: T - 864e5, kind: 'session', track: 'run', title: 'Easy', xp: 30 });
+  state.run.gatePassed = true; state.prep.level = 0;
+  const c = coachContext({ ...state, hybrid: null, bests: state.bests, profile: state.profile }, T);
+  assert.match(c, /Dream \/ goal: Ironman 70\.3 · IM 70\.3 Egypt/);
+  assert.match(c, /Personal bests \(athlete-entered\): 5K 21:30/);
+  assert.match(c, /Last 7 days: 1 session \(run 1\)/);
+  assert.match(c, /needs Prep P\d+ \(now P0\)/);
+  assert.doesNotMatch(c, /goal: not set/);
+});

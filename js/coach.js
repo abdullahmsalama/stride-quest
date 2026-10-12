@@ -3,18 +3,20 @@ import { activeTrack, nextStep, runLevel } from './engine.js';
 import { offlineActions } from './actions.js';
 
 // Ask the coach. Uses the Worker when configured, falls back to the offline coach otherwise.
-export async function askCoach(messages, context, state, smart = false, app = '') {
+// `signal` (an AbortController's) lets the athlete stop a reply mid-way: it then resolves to { aborted: true }.
+export async function askCoach(messages, context, state, smart = false, app = '', signal = null) {
   if (WORKER_URL) {
     try {
       const res = await fetch(`${WORKER_URL.replace(/\/$/, '')}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages, context, smart, app }),
+        signal,
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.reply) return { reply: data.reply, actions: Array.isArray(data.actions) ? data.actions : [], provider: data.provider };
       if (res.status === 429) return { reply: data.error || 'Too many messages. Give it a minute.', provider: 'limit' };
-    } catch { /* network error: fall through */ }
+    } catch (e) { if (e?.name === 'AbortError') return { aborted: true }; /* network error: fall through */ }
   }
   const last = messages.at(-1)?.content || '';
   return { reply: offlineReply(last, state), actions: offlineActions(last, state), provider: 'offline' };

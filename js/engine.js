@@ -837,12 +837,21 @@ export function coachContext(s, now) {
   const prep = PREP_STAGES[s.prep.level];
   const pains = s.history.filter(h => h.pain != null).slice(-3).map(h => `${h.pain}/10`).join(', ') || 'none logged';
   const lines = [
-    `Runner: ${s.profile.name || 'unnamed'}; goal: ${s.profile.goal || 'not set'}; trains ${s.profile.daysPerWeek} days/week.`,
+    `Runner: ${s.profile.name || 'unnamed'}; trains ${s.profile.daysPerWeek} days/week.`,
+    `Dream / goal: ${[s.profile.dream?.text, s.profile.dream?.event, s.profile.dream?.date && `by ${s.profile.dream.date}`].filter(Boolean).join(' · ') || s.profile.goal || 'not set'}.`,
     `Run Track: Level ${lvl.n} "${lvl.name}" in ${worldOf(lvl).name}. Level XP ${levelProgress(s).earned}/${levelProgress(s).target}. Total XP ${s.xp}.`,
     `Prep Track: P${s.prep.level} "${prep.name}" (${prep.focus}).`,
+    ...(prepBlocksRun(s) != null ? [`Level ${s.run.level} is CLEARED, but Level ${s.run.level + 1} also needs Prep P${prepBlocksRun(s)} (now P${s.prep.level}): the athlete is waiting on the Prep Track, not on running.`] : []),
+    ...((s.pending || []).length ? ['A gate/boss was logged today and is confirmed by tomorrow morning\'s pain check (2/10 or less); then the next level opens.'] : []),
     `Active track: ${track}.`,
     next ? `Next step: ${next.title}${next.detail ? ' - ' + next.detail : ''}.` : 'No open step right now.',
     `Recent pain ratings: ${pains}.`,
+    // Training load: every session, not just the ones with notes.
+    (() => {
+      const wk = s.history.filter(h => (h.kind === 'session' || h.kind === 'attempt') && h.ts > now - 7 * DAY);
+      const by = wk.reduce((m, h) => ({ ...m, [h.track || 'other']: (m[h.track || 'other'] || 0) + 1 }), {});
+      return `Last 7 days: ${wk.length} session${wk.length === 1 ? '' : 's'}${wk.length ? ` (${Object.entries(by).map(([k, n]) => `${k} ${n}`).join(', ')})` : ''}; last 28 days: ${s.history.filter(h => h.kind === 'session' && h.ts > now - 28 * DAY).length}.`;
+    })(),
     `Day streak: ${dayStreak(s, now)}.`,
   ];
   // The athlete's own words about recent sessions: what they actually did and how it felt.
@@ -869,6 +878,13 @@ export function coachContext(s, now) {
     lines.push(`Hybrid: world "${HYB.hybWorld(s).name}"; strength ${HYB.strengthStage(s).name}, engine ${HYB.engineStage(s).name}, run = Run Track level ${s.run.level}. Current block: ${b.type === 'deload' ? 'deload week' : `${b.type} block (building ${b.type}, maintaining ${b.type === 'engine' ? 'strength' : 'engine'})`}. ${lim ? `Limiter: ${lim.lane}.` : 'All lanes ready: race gate open.'} Gym: ${s.hybrid.gym}.`);
   }
   if (s.answers?.hybridRaces?.length) lines.push(`Hybrid races finished: ${s.answers.hybridRaces.map(r => [r.event, r.division || r.category, r.format].filter(Boolean).join(' ')).join('; ')}.`);
+  if (s.hybrid?.race?.event) lines.push(`Preparing for: ${s.hybrid.race.event === 'alphax' ? 'Alpha X' : 'Hyrox'} ${s.hybrid.race.division} (simulations follow that race's format).`);
+  if (s.bests) {
+    const t = m => (m ? `${Math.floor(m / 60) ? `${Math.floor(m / 60)}:${String(Math.floor(m % 60)).padStart(2, '0')}` : Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, '0')}` : null);
+    const b = s.bests, list = [['5K', b.run5k], ['10K', b.run10k], ['half', b.half], ['marathon', b.marathon], [`Hyrox ${b.hyroxDiv || 'open'}`, b.hyrox]].filter(x => x[1]).map(([k, v]) => `${k} ${t(v)}`);
+    if (b.ftp) list.push(`FTP ${b.ftp} W`);
+    if (list.length) lines.push(`Personal bests (athlete-entered): ${list.join(', ')}.`);
+  }
   if (s.answers && (s.answers.bodyweight || s.answers.squat5 || s.answers.deadlift5)) lines.push(`Lifts on file (${s.answers.liftUnit || 'kg'}, ${s.answers.liftMode === '1' ? '1-rep max' : '5 reps'}): bodyweight ${s.answers.bodyweight || '?'}, squat ${s.answers.squat5 || '?'}, deadlift ${s.answers.deadlift5 || '?'}, pull-ups ${s.answers.pullups || '?'}.`);
   if (s.answers?.bodyFat > 0) lines.push(`Body fat (self-reported, ${s.answers.bodyFatMethod || 'unknown method'}): ${s.answers.bodyFat}%. Use only as context, never to judge.`);
   const bl = s.bodyLog || [];
