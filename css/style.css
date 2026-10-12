@@ -683,3 +683,25 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .level-check summary .lc-title::after { content: ' ▾'; color: var(--ink-2); }
 .level-check[open] summary .lc-title::after { content: ' ▴'; }
 .level-check[open] .steps { margin-top: 10px; }
+
+/* Tutorial */
+.tour-card summary { cursor: pointer; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.tour-card summary::-webkit-details-marker { display: none; }
+.tour-card summary .lc-title { font: 800 18px var(--display); letter-spacing: .02em; }
+.tour-card summary .lc-title::after { content: ' ▾'; color: var(--ink-2); }
+.tour-card[open] summary .lc-title::after { content: ' ▴'; }
+.tour-list { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 8px; }
+.tour-list li { display: flex; align-items: center; gap: 10px; }
+.tour-list li span:nth-child(2) { flex: 1; }
+.tour-list li.done span:nth-child(2) { color: var(--ink-2); text-decoration: line-through; }
+.how-card details { border-top: 1px solid var(--line); padding: 8px 0; }
+.how-card summary { cursor: pointer; font-weight: 700; }
+.how-item { padding: 8px 0 4px 6px; }
+.how-item p { margin: 2px 0 6px; }
+.spotlight { outline: 4px solid var(--brand) !important; outline-offset: 4px; border-radius: 12px; animation: spot 1.2s ease-in-out 2; }
+@keyframes spot { 50% { outline-color: rgba(255, 107, 53, .25); } }
+svg .spotlight, .lane-ch.spotlight { outline: none !important; filter: drop-shadow(0 0 6px #ff6b35) drop-shadow(0 0 12px #ff6b35); }
+.tip-bubble { position: fixed; z-index: 40; left: 50%; transform: translateX(-50%); bottom: calc(86px + env(safe-area-inset-bottom)); width: min(340px, calc(100vw - 32px)); background: var(--ink); color: var(--bg); border-radius: 14px; padding: 12px 14px 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); font-size: 14px; animation: up .25s ease-out; }
+.tip-bubble p { margin: 0 0 8px; }
+.tip-bubble .btn { background: var(--brand); color: #fff; border: 0; }
+@media (min-width: 1000px) { .tip-bubble { bottom: 28px; } }

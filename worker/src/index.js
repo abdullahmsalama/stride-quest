@@ -389,7 +389,9 @@ export default {
       .slice(-MAX_MESSAGES)
       .map(m => ({ role: m.role, content: m.content.slice(0, MAX_CHARS) }));
     if (!messages.length || messages.at(-1).role !== 'user') return json({ error: 'no user message' }, 400, headers);
-    const system = SYSTEM + String(body.context || '').slice(0, 3000);
+    // The app's own feature guide, for "how do I…" / "what is…" questions about the app itself.
+    const app = String(body.app || '').slice(0, 2600);
+    const system = SYSTEM + String(body.context || '').slice(0, 3000) + (app ? `\n\nHOW THE APP WORKS (use this to answer questions about the app itself and say which tab or button to use; never invent features that are not listed):\n${app}` : '');
 
     const errors = [];
     const chain = body.smart ? [['gemini-smart', geminiSmart], ...PROVIDERS] : PROVIDERS;

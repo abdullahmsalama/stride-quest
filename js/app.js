@@ -25,6 +25,7 @@ import * as STATS from './stats.js';
 import { NORMS, RHO } from './data/norms.js';
 import { WORKER_URL } from './config.js';
 import { RACES } from './data/races.js';
+import { FEATURES, GROUPS, FEATURE_BRIEF } from './data/features.js';
 
 // ---------- state ----------
 // Theme: light by default (the look the app launched with); dark or follow-the-device on request.
@@ -470,6 +471,10 @@ function render() {
   if (ui.tab === 'map' && ui.mapMode === 'world') afterMapRender();
   if (ui.tab === 'map' && (ui.mapMode === 'tri' || ui.mapMode === 'hyb')) afterTriRender();
   fogRevealedToast();
+  tourFlag(`tab_${ui.tab}`);
+  rewardQuests();
+  document.querySelector('.tip-bubble')?.remove();
+  setTimeout(maybeTip, 600);
 }
 
 function fogRevealedToast() {
@@ -572,6 +577,89 @@ function trackTitle(track) {
   return S.refresher?.reason === 'illness' ? '💛 Recovery plan' : '🔄 Refresher course';
 }
 
+// ---------- tutorial: getting started, "Show me", how it works, first-time tips ----------
+// Device-level: what this person has seen or done here (tabs opened, tips dismissed).
+const TOUR_KEY = 'stride-quest:tour';
+const tourLocal = () => { try { return JSON.parse(localStorage.getItem(TOUR_KEY)) || {}; } catch { return {}; } };
+const setTourLocal = v => { try { localStorage.setItem(TOUR_KEY, JSON.stringify(v)); } catch { /* ignore */ } };
+function tourFlag(k) { const t = tourLocal(); if (t.flags?.[k]) return; setTourLocal({ ...t, flags: { ...(t.flags || {}), [k]: true } }); }
+const applies = (f, s = S) => !f.when || f.when(s);
+const quests = () => FEATURES.filter(f => f.quest && applies(f) && (!f.quest.when || f.quest.when(S)));
+const questDone = f => !!f.quest.done(S, tourLocal().flags || {});
+const QUEST_XP = 5;
+// New quests done since last time: a little XP each (once, saved with progress).
+function rewardQuests() {
+  const got = quests().filter(f => questDone(f) && !S.tour?.rewarded?.[f.id]);
+  if (!got.length) return;
+  S.tour = { ...(S.tour || {}), rewarded: { ...(S.tour?.rewarded || {}), ...Object.fromEntries(got.map(f => [f.id, true])) } };
+  S.xp += QUEST_XP * got.length;
+  got.forEach(f => S.history.push({ ts: now(), kind: 'bonus', xp: QUEST_XP, title: `Getting started: ${f.quest.label}` }));
+  store.save(S);
+  setTimeout(() => toast(`🧭 +${QUEST_XP * got.length} XP: ${got.map(f => f.quest.label).join(', ')}`), 300);
+}
+function gettingStarted(style = '') {
+  if (S.tour?.hidden) return '';
+  const qs = quests(), done = qs.filter(questDone).length;
+  if (done === qs.length) return '';
+  return `<details class="card tour-card" ${style} ${ui.tourOpen ? 'open' : ''}><summary data-act="tour-open"><span class="lc-title">🧭 Getting started: ${done} of ${qs.length}</span><span class="hint">Optional. Little steps to find your way around, +${QUEST_XP} XP each.</span></summary>
+      <ul class="tour-list">${qs.map(f => { const ok = questDone(f); return `<li class="${ok ? 'done' : ''}"><span>${ok ? '✅' : '⬜'}</span><span>${h(f.quest.label)}</span>${ok ? '' : `<button class="btn small" data-act="show-me" data-f="${f.id}">Show me</button>`}</li>`; }).join('')}</ul>
+      <div class="row end"><button class="btn ghost small" data-act="tour-hide">Hide getting started</button></div>
+    </details>`;
+}
+function howItWorks() {
+  const t = tourLocal();
+  return `<section class="card how-card"><h3>📖 How it works</h3><p class="hint">Everything the app can do, in plain words. "Show me" takes you there.</p>
+      ${GROUPS.map(([g, label]) => { const fs = FEATURES.filter(f => f.group === g && applies(f)); return fs.length ? `<details><summary>${h(label)}</summary>${fs.map(f => `<div class="how-item"><strong>${h(f.title)}</strong><p class="hint">${h(f.text)}</p><button class="btn small" data-act="show-me" data-f="${f.id}">Show me</button></div>`).join('')}</details>` : ''; }).join('')}
+      <div class="row wrap">${S.tour?.hidden ? '<button class="btn small" data-act="tour-unhide">Show getting started again</button>' : ''}
+        <label class="switch-row"><input type="checkbox" data-act="tips-toggle" ${t.tipsOff ? '' : 'checked'}> <span>First-time tips</span></label></div>
+    </section>`;
+}
+// "Show me": go to the place, scroll to it and light it up.
+function showMe(id) {
+  const f = FEATURES.find(x => x.id === id);
+  if (!f) return;
+  const sh = f.show || {};
+  ui.modal = null; ui.tab = sh.tab || 'today'; ui.mapPopup = null; ui.lanePopup = null; ui.frameTop = null;
+  if (sh.mapMode) ui.mapMode = sh.mapMode === 'lanes' ? (HYB.hasHybrid(S) ? 'hyb' : 'tri') : sh.mapMode;
+  if (sh.socialTab) ui.socialTab = sh.socialTab;
+  if (sh.view && S.profile.view !== sh.view) { S.profile.view = sh.view; store.save(S); }
+  render();
+  setTimeout(() => {
+    const el = sh.sel && document.querySelector(sh.sel);
+    if (!el) { toast(`${f.title}: ${f.text}`); return; }
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('spotlight');
+    setTimeout(() => el.classList.remove('spotlight'), 2600);
+  }, 450);
+}
+// One small bubble the first time a feature shows up (never during animations or pop-ups). It sits
+// in a fixed spot above the tab bar, and the thing it talks about glows while it's open.
+const tipVisible = el => { const r = el.getBoundingClientRect(); return el.isConnected && r.width > 0 && r.top >= 70 && r.bottom <= innerHeight - 170; };
+function maybeTip() {
+  const open = document.querySelector('.tip-bubble');
+  if (open) {
+    // The thing it points at scrolled away: put the tip away until it's back in view.
+    const target = document.querySelector('.tip-target');
+    if (target && tipVisible(target)) return;
+    open.remove(); target?.classList.remove('spotlight', 'tip-target');
+  }
+  const t = tourLocal();
+  if (t.tipsOff || ui.modal || ui.laneAnimating || ui.mapRunning || document.querySelector('.play-btn')) return;
+  const visible = tipVisible;
+  const f = FEATURES.find(x => x.tip && applies(x) && !t.seen?.[x.id] && [...document.querySelectorAll(x.tip.sel)].some(visible));
+  if (!f) return;
+  const el = [...document.querySelectorAll(f.tip.sel)].find(visible);
+  el.classList.add('spotlight', 'tip-target');
+  const b = document.createElement('div');
+  b.className = 'tip-bubble';
+  b.innerHTML = `<p>💡 ${h(f.tip.text)}</p><div class="row end"><button class="btn small" data-act="tip-ok" data-f="${f.id}">Got it</button></div>`;
+  document.body.appendChild(b);
+}
+// Tips can also appear once you scroll something into view.
+let tipTimer = null;
+const tipSoon = () => { clearTimeout(tipTimer); tipTimer = setTimeout(maybeTip, 350); };
+if (typeof window !== 'undefined') { window.addEventListener('scroll', tipSoon, { passive: true }); document.addEventListener('scroll', tipSoon, { passive: true, capture: true }); }
+
 // ---------- prepare for a race (Alpha X first and larger, Hyrox close behind) ----------
 // On simulation sessions: do them in the format of the race you're preparing for.
 function raceNote(st) {
@@ -644,7 +732,7 @@ const credit = '<p class="byline credit">Developed by <button type="button" clas
   const toggle = `<div class="seg today-seg" role="tablist">${[['simple', '✨ Just next'], ['full', '📋 Full day']].map(([k, l]) =>
     `<button role="tab" class="${(simple ? 'simple' : 'full') === k ? 'on' : ''}" data-act="set-view" data-v="${k}">${l}</button>`).join('')}</div>`;
   if (simple) {
-    return `${toggle}<div class="simple">${banners()}${hero}${p.today}${raceCard()}
+    return `${toggle}<div class="simple">${banners()}${hero}${p.today}${gettingStarted()}${raceCard()}
       <button class="btn ghost wide" data-act="set-view" data-v="full">See my week and more ▾</button></div>${credit}`;
   }
   const boost = `<section class="card boost" ${o(3)}>
@@ -673,7 +761,7 @@ const credit = '<p class="byline credit">Developed by <button type="button" clas
   // Two columns on wide screens; on phones the wrappers dissolve and `order` restores one column.
   return `${toggle}<div class="cols">
       <div class="col-main"><div ${o(1)}>${banners()}</div>${p.today}${p.week}${p.nextWeek}${levelSteps}</div>
-      <div class="col-side">${hero}${raceCard(o(5))}${boost}${install}${p.tracks}${daily}${modes}</div>
+      <div class="col-side">${hero}${gettingStarted(o(4))}${raceCard(o(5))}${boost}${install}${p.tracks}${daily}${modes}</div>
     </div>${credit}`;
 }
 
@@ -1336,6 +1424,7 @@ function viewMe() {
     <section class="card"><h3>Recent activity</h3>${hist.length ? `<ul class="history">${hist.map(x =>
       `<li><span>${new Date(x.ts).toLocaleDateString()}</span>${h(x.title)}${x.pain != null ? ` <em>pain ${x.pain}/10</em>` : ''}<b>${x.xp ? `+${x.xp}` : ''}</b></li>`).join('')}</ul>` : '<p class="hint">Nothing yet. Your first step is on the Today tab.</p>'}</section>
     ${installCard('me')}
+    ${howItWorks()}
     <section class="card"><h3>Your data</h3>
       <p class="hint">Progress is saved in this browser only. Export it to move to another device.</p>
       <label class="switch-row"><input type="checkbox" data-act="counts-toggle" ${countsOn() ? 'checked' : ''}> <span>Send anonymous counts</span></label>
@@ -1801,7 +1890,17 @@ const actions = {
     toast(`${RACES[k].icon} Preparing for ${RACES[k].name} ${RACES[k].divisions.find(d => d[0] === div)[1]}. Let's go!`);
   },
   'race-stop'() { S.hybrid.race = null; commit(S); toast('Race prep stopped. Your Hybrid plan carries on.'); },
-  'race-info'(el) { ui.modal = { type: 'race', k: el.dataset.k, info: true }; renderModal(); },
+  'show-me'(el) { showMe(el.dataset.f); },
+  'tour-open'(el) { ui.tourOpen = !el.parentElement.open; }, // the browser opens/closes it; remember for redraws
+  'tour-hide'() { S.tour = { ...(S.tour || {}), hidden: true }; commit(S); toast('Getting started hidden. You can bring it back in Me → How it works.'); },
+  'tour-unhide'() { S.tour = { ...(S.tour || {}), hidden: false }; commit(S); toast('Getting started is back on Today.'); },
+  'tips-toggle'(el) { const t = tourLocal(); setTourLocal({ ...t, tipsOff: !el.checked }); toast(el.checked ? 'Tips on.' : 'Tips off.'); },
+  'tip-ok'(el) {
+    const t = tourLocal(); setTourLocal({ ...t, seen: { ...(t.seen || {}), [el.dataset.f]: true } });
+    el.closest('.tip-bubble')?.remove();
+    document.querySelectorAll('.tip-target').forEach(x => x.classList.remove('spotlight', 'tip-target'));
+  },
+  'race-info'(el) { tourFlag('race_info'); ui.modal = { type: 'race', k: el.dataset.k, info: true }; renderModal(); },
   'race-site'(el) { count(`site:${el.dataset.k}`); },
   'comp-tab'(el) { ui.compTab = el.dataset.k; render(); },
   'about-me'() { ui.modal = { type: 'aboutMe' }; renderModal(); },
@@ -1855,6 +1954,7 @@ const actions = {
   // Watch the whole climb again from START, clouds and all.
   'replay-journey'() {
     if (ui.mapRunning || ui.laneAnimating) return;
+    tourFlag('replay');
     ui.mapPopup = null; ui.lanePopup = null; ui.frameTop = null; ui.mapScroll = true;
     if (ui.mapMode === 'hyb' || ui.mapMode === 'tri') {
       const all = readSeen(); delete all[ui.mapMode]; writeSeen(all);
@@ -2020,7 +2120,7 @@ async function sendChat(text) {
   ui.thinking = true; ui.slow = false; render();
   const slowTimer = setTimeout(() => { if (ui.thinking) { ui.slow = true; if (ui.tab === 'coach') render(); } }, ui.smartCoach ? 9000 : 4000);
   const history = ui.chat.slice(-12).map(({ role, content }) => ({ role, content }));
-  const { reply, provider, actions = [] } = await askCoach(history, `${E.coachContext(S, now())}\n${ACT.weekContext(S, now())}`, S, ui.smartCoach);
+  const { reply, provider, actions = [] } = await askCoach(history, `${E.coachContext(S, now())}\n${ACT.weekContext(S, now())}`, S, ui.smartCoach, FEATURE_BRIEF);
   const valid = actions.filter(a => ACT.describe(S, a, now()));
   ui.chat.push({ role: 'assistant', content: reply, provider, actions: valid.map(a => ({ ...a, status: 'pending' })) });
   clearTimeout(slowTimer);
@@ -2036,7 +2136,9 @@ document.addEventListener('click', e => {
   if (e.target === $('#modal')) return;
   const fn = actions[el.dataset.act];
   if (!fn) return;
-  if (!(el.tagName === 'A' && el.href)) e.preventDefault(); // real links still open (new tab); the action only counts the tap
+  // Real links still open, checkboxes still tick and folded sections still open: the action only adds to them.
+  const native = (el.tagName === 'A' && el.href) || el.type === 'checkbox' || el.tagName === 'SUMMARY';
+  if (!native) e.preventDefault();
   fn(el, e);
 });
 
@@ -2215,7 +2317,7 @@ document.addEventListener('submit', e => {
     ui.modal = { type: 'share', kind: 'challenge', payload: c }; renderModal();
     return;
   }
-  if (f.id === 'chat-form') { const v = f.msg.value; f.msg.value = ''; sendChat(v); return; }
+  if (f.id === 'chat-form') { const v = f.msg.value; f.msg.value = ''; if (v.trim()) tourFlag('coach_asked'); sendChat(v); return; }
   if (f.id === 'step-form') {
     const m = ui.modal;
     const tapped = e.submitter?.name === 'painTap' ? +e.submitter.value : null;
