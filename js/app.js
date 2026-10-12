@@ -463,7 +463,7 @@ function render() {
     </header>
     <main class="view view-${ui.tab}">${views[ui.tab]()}</main>
     <nav class="tabs">${[['today', '🏠', 'Today'], ['map', '🗺️', 'Map'], ['challenge', '🏆', 'Challenge'], ['events', '🗓️', '<em class="long">Competitions </em>Calendar'], ['stats', '📊', 'Stats'], ['coach', '💬', 'Coach'], ['me', '👤', 'Me']].map(([k, i, l]) =>
-      `<button class="${ui.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}"${k === 'events' ? ' aria-label="Competitions Calendar"' : ''}><span>${i}</span>${l}</button>`).join('')}</nav>`;
+      `<button class="${ui.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}"${k === 'events' ? ' aria-label="Competitions Calendar"' : ''}><span>${i}</span><b class="lbl">${l}</b></button>`).join('')}</nav>`;
   queueModals();
   renderModal();
   if (ui.tab === 'coach') { const log = $('.chat-log'); if (log) log.scrollTop = log.scrollHeight; }

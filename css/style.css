@@ -671,3 +671,4 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 @media (max-width: 999px) { .tabs button em.long { display: none; } }
 @media (max-width: 400px) { .tabs button { font-size: 10.5px; letter-spacing: -.01em; padding-left: 2px; padding-right: 2px; } }
 @media (max-width: 400px) { .tabs button { font-size: 10.5px; letter-spacing: -.01em; padding-left: 2px; padding-right: 2px; } }
+.tabs button .lbl { font: inherit; text-align: left; } /* one label, so spacing never splits "Competitions Calendar" */
