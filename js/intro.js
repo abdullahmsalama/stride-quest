@@ -37,7 +37,7 @@ const ARRIVE_LINES = [
 
 const pick = (list, i) => list[((i % list.length) + list.length) % list.length];
 
-export function playPlacementIntro(placed, { follow, onDone }) {
+export function playPlacementIntro(placed, { follow, onDone, onLevel }) {
   let skipped = false;
   const levels = placed;
   const seed = Math.floor(Math.random() * 1000);
@@ -95,6 +95,7 @@ export function playPlacementIntro(placed, { follow, onDone }) {
         for (let n = lastSeg + 1; n < seg + 1; n++) {
           if (n < 1 || skipped) continue;
           levelEl.textContent = `Level ${n} / ${placed}`;
+          onLevel?.(n);
           const node = POINTS[n];
           const flag = addToMap(`<g transform="translate(${node.x},${node.y})"><circle class="burst" r="20" fill="none" stroke="#ffd23f" stroke-width="4"/></g>`, 700);
           if (flag) flag.setAttribute('class', 'pass-burst');

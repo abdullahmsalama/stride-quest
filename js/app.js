@@ -5,7 +5,7 @@ import * as store from './store.js';
 import { askCoach, understand, canListen, canSpeak, listen, speak } from './coach.js';
 import * as ACT from './actions.js';
 import * as M from './motivation.js';
-import { renderMap, runAvatar, mapPageY, POINTS, H as MAP_H, W as MAP_W } from './map.js';
+import { renderMap, runAvatar, mapPageY, runFogParts, POINTS, H as MAP_H, W as MAP_W } from './map.js';
 import { playPlacementIntro } from './intro.js';
 import * as sfx from './sound.js';
 import * as CH from './challenges.js';
@@ -16,7 +16,7 @@ import * as ST from './standards.js';
 import { APP_VERSION } from './config.js';
 import * as BG from './background.js';
 import * as TRI from './tri.js';
-import { renderLaneMap, gateY as laneGateY, TH as LANE_H, TW as LANE_W, MAPS as LANE_MAPS, nodePoint, moveCharacter, celebrate, signature, START_POINT } from './trimap.js';
+import { renderLaneMap, gateY as laneGateY, TH as LANE_H, TW as LANE_W, MAPS as LANE_MAPS, nodePoint, moveCharacter, celebrate, signature, START_POINT, laneFogParts } from './trimap.js';
 import * as HYB from './hybrid.js';
 import { HYBRID_WORLDS, BLOCK_WEEKS, STRENGTH_STAGES } from './data/hybrid.js';
 import { TRI_WORLDS } from './data/tri.js';
@@ -436,6 +436,7 @@ function renderOnboarding() {
         <h1>${h(st.title)}</h1>
         ${st.why ? `<p class="why">💡 ${h(st.why)}</p>` : ''}
         ${body}
+        ${st.welcome && ui.retake && S.answers ? `<div class="same-answers"><p class="hint">Nothing changed? Skip the questions and go straight to your result with the answers you gave last time.</p><button type="button" class="btn" data-act="ob-same">↩️ Use my previous answers</button></div>` : ''}
         <div class="row end">${back}${st.result ? '<button type="button" class="btn primary" data-act="ob-finish">Start my journey</button>' : `<button type="submit" class="btn primary">${st.welcome ? "Let's start" : 'Next'}</button>`}</div>
       </form>
     </main>`;
@@ -463,7 +464,29 @@ function render() {
   if (ui.tab === 'coach') { const log = $('.chat-log'); if (log) log.scrollTop = log.scrollHeight; }
   if (ui.tab === 'map' && ui.mapMode === 'world') afterMapRender();
   if (ui.tab === 'map' && (ui.mapMode === 'tri' || ui.mapMode === 'hyb')) afterTriRender();
-  if (ui.fogRevealed) { ui.fogRevealed = null; sfx.levelDing(4); setTimeout(() => toast('☁️ The clouds part: a new world is revealed!'), 400); }
+  fogRevealedToast();
+}
+
+function fogRevealedToast() {
+  if (!ui.fogRevealed) return;
+  ui.fogRevealed = null; sfx.levelDing(4);
+  setTimeout(() => toast('☁️ The clouds part: a new world is revealed!'), 400);
+}
+// Swap just the fog layer while a character climbs, so the clouds lift as they go.
+function swapFog(parts) {
+  const map = document.querySelector('.worldmap'), svg = map?.querySelector('svg');
+  if (!svg) return;
+  svg.querySelectorAll(':scope > .fog, :scope > .fog-reveal').forEach(n => n.remove());
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.innerHTML = parts.svg;
+  const before = svg.querySelector(':scope > .lane-ch, :scope > #avatar');
+  [...g.childNodes].forEach(n => svg.insertBefore(n, before));
+  const canvas = map.querySelector('.map-canvas');
+  canvas.style.marginTop = `-${((parts.crop / MAP_W) * 100).toFixed(3)}%`;
+  map.querySelector('.fog-peek')?.remove();
+  map.classList.remove('peek');
+  if (parts.peek) canvas.insertAdjacentHTML('beforeend', parts.peek);
+  fogRevealedToast();
 }
 
 function queueModals() {
@@ -630,12 +653,13 @@ function viewMap() {
   const modes = [['world', multi ? '🏃 Run' : '🗺️ World map'], ...(HYB.hasHybrid(S) ? [['hyb', '🏋️ Hybrid']] : []), ...(TRI.hasTri(S) ? [['tri', '🏊 Tri']] : []), ['grid', multi ? '▦ Cards' : '▦ Level cards']];
   const toggle = `<div class="seg" role="tablist">${modes.map(([k, l]) =>
     `<button role="tab" class="${ui.mapMode === k ? 'on' : ''}" data-act="map-mode" data-mode="${k}">${l}</button>`).join('')}</div>`;
+  const replayBtn = '<button class="btn ghost small replay-btn" data-act="replay-journey">🔁 Replay my journey</button>';
   const lvl = E.runLevel(S.run.level);
   const sideInfo = `<section class="card map-side-info"><p class="eyebrow">${E.worldOf(lvl).emoji} ${h(E.worldOf(lvl).name)}</p><h3>Level ${lvl.n} · ${h(lvl.name)}</h3>
       ${S.profile.dream ? dreamLine(S.profile.dream, S.run.level, true) : ''}<button class="btn primary small" data-act="open-level">Open level</button></section>`;
   if (ui.mapMode === 'hyb') {
     prepareLaneMap('hyb');
-    return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${renderLaneMap(S, ui, 'hyb')}</div><div class="map-side">${hybridCard(true)}</div></div>`;
+    return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${renderLaneMap(S, ui, 'hyb')}${replayBtn}</div><div class="map-side">${hybridCard(true)}</div></div>`;
   }
   if (ui.mapMode === 'tri') {
     const lim = TRI.limiter(S);
@@ -643,9 +667,9 @@ function viewMap() {
       <p class="hint">${lim ? `${TRI.LANE_ICON[lim.lane]} <strong>${TRI.LANE_LABEL[lim.lane]}</strong> is your limiter.${lim.lane === 'run' ? ' Your running lives on the Run map.' : ''}` : S.rebuild.active ? gateLockedLine() : '🌉 All three lanes are ready: the transition gate is open!'}</p>
       ${lim?.lane === 'run' ? '<button class="btn primary small" data-act="goto-run-map">Go to Run map</button>' : lim ? `<button class="btn primary small" data-act="lane-step" data-lane="${lim.lane}">Next ${lim.lane} session</button>` : '<button class="btn primary small" data-act="open-step" data-track="triGate" data-idx="0">Start the gate</button>'}</section>`;
     prepareLaneMap('tri');
-    return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${renderLaneMap(S, ui, 'tri')}</div><div class="map-side">${triSide}${triCard().replace('style="order:8"', '')}</div></div>`;
+    return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${renderLaneMap(S, ui, 'tri')}${replayBtn}</div><div class="map-side">${triSide}${triCard().replace('style="order:8"', '')}</div></div>`;
   }
-  return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${ui.mapMode === 'grid' ? levelGrid() : renderMap(S, ui)}</div><div class="map-side">${sideInfo}${rebuild}
+  return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${ui.mapMode === 'grid' ? levelGrid() : renderMap(S, ui) + replayBtn}</div><div class="map-side">${sideInfo}${rebuild}
     <section class="card"><h3>🧱 Prep Track</h3><p class="hint">Harder run work unlocks with your Prep stage: strides at P3, hills and intervals at P4.</p><ol class="ladder">${prep}</ol></section></div></div>`;
 }
 
@@ -727,9 +751,12 @@ function playLanes(id, cfg, cur, all, seen, shown, moves, focusLane, focusY) {
   sfx.unlockAudio();
   // Skip: every character jumps straight to where it is now.
   ui.laneSkip = false;
-  const skipBtn = document.createElement('button');
-  skipBtn.type = 'button'; skipBtn.className = 'lane-skip'; skipBtn.textContent = 'Skip ⏩';
-  skipBtn.onclick = () => { ui.laneSkip = true; skipBtn.remove(); };
+  // The same top bar as the Run speedrun: who is moving, sound, Skip.
+  const skipBtn = document.createElement('div');
+  skipBtn.className = 'speedrun lane-skip';
+  skipBtn.innerHTML = `<span class="sr-label">${seen ? '▶ PROGRESS' : '▶ YOUR JOURNEY'}</span><span class="sr-level"></span><button class="sr-mute" type="button" aria-label="Sound">${sfx.soundOn() ? '🔊' : '🔇'}</button><button class="sr-skip" type="button">Skip ⏩</button>`;
+  skipBtn.querySelector('.sr-skip').onclick = () => { ui.laneSkip = true; skipBtn.remove(); };
+  skipBtn.querySelector('.sr-mute').onclick = e => { const on = !sfx.soundOn(); sfx.setSound(on); e.currentTarget.textContent = on ? '🔊' : '🔇'; if (on) sfx.unlockAudio(); };
   document.body.appendChild(skipBtn);
   const fast = () => ui.laneSkip;
   const wait = (ms, fn) => { const t1 = Date.now(); const tick = () => (fast() || Date.now() - t1 >= ms ? fn() : setTimeout(tick, 100)); setTimeout(tick, 100); };
@@ -746,10 +773,12 @@ function playLanes(id, cfg, cur, all, seen, shown, moves, focusLane, focusY) {
       if (!seen) { confetti(); sfx.fanfare(); toast(`You're placed at ${cfg.current(S).emoji} ${cfg.current(S).name}! Let's go 💪`); }
       all[id] = cur; writeSeen(all);
       if (fast()) { render(); triFollow(focusY()); return; }
+      swapFog(laneFogParts(S, ui, id, {}));
       setTimeout(() => triFollow(focusY(), true), 1400);
       return;
     }
     if (fast()) { step(); return; }
+    skipBtn.querySelector('.sr-level').textContent = `${cfg.icon[lane]} ${cfg.label[lane]}`;
     triFollow(nodePoint(cfg, lane, shown[lane]).y, true);
     wait(900, () => {
       if (fast()) { step(); return; }
@@ -760,6 +789,8 @@ function playLanes(id, cfg, cur, all, seen, shown, moves, focusLane, focusY) {
         onDone: pt => {
           stop();
           if (fast()) { step(); return; }
+          shown[lane] = cur[lane];
+          swapFog(laneFogParts(S, ui, id, shown));
           sfx.arrive(lane);
           signature(id, lane);
           if (pt) celebrate(pt.x, pt.y - 72, `${!seen ? (lane === 'strength' ? 'LIGHT WEIGHT! ' : '') : lane === 'strength' ? 'LIGHT WEIGHT! 💪 ' : ''}${arrivalLabel(cfg, lane, cur[lane])}`);
@@ -823,7 +854,13 @@ function afterMapRender() {
     followY(POINTS[0].y);
     setTimeout(() => playPlacementIntro(placed, {
       follow: followY,
-      onDone: res => { ui.mapRunning = false; ui.avatarAt = placed; saveAvatar(placed); ui.mapPopup = placed; ui.modal = { type: 'placed', ...res }; renderModal(); },
+      onLevel: n => swapFog(runFogParts(S, ui, n)),
+      onDone: res => {
+        ui.mapRunning = false; ui.avatarAt = placed; saveAvatar(placed); ui.mapPopup = placed;
+        swapFog(runFogParts(S, ui, placed));
+        if (ui.replay) { ui.replay = false; render(); toast('That\'s your journey so far. Keep climbing! 💪'); return; }
+        ui.modal = { type: 'placed', ...res }; renderModal();
+      },
     }), 700);
     return;
   }
@@ -859,8 +896,10 @@ function playRun() {
   ui.mapRunning = true;
   sfx.unlockAudio();
   followY(POINTS[from].y);
+  let reached = from;
   setTimeout(() => runAvatar(from, to, {
     follow: followY,
+    onProgress: ({ seg }) => { if (from + seg > reached) { reached = from + seg; swapFog(runFogParts(S, ui, reached)); } },
     onDone: () => { ui.mapRunning = false; ui.avatarAt = to; saveAvatar(to); ui.mapPopup = to; sfx.levelDing(to); render(); },
   }), 300);
 }
@@ -1000,6 +1039,17 @@ function viewCoach() {
 }
 
 // What the app has saved for your lifts and how it read them: everything lives on this device only.
+// "Since 3 Aug: bodyweight −2 kg, body fat −3 points" (same unit and method only).
+function bodyTrend() {
+  const log = S.bodyLog || [];
+  if (log.length < 2) return '';
+  const last = log.at(-1), first = log.find(b => b.unit === last.unit) || log[0];
+  if (first === last) return '';
+  const d = (x, y) => { const v = Math.round((x - y) * 10) / 10; return `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v)}`; };
+  const fat = first.bf && last.bf && first.method === last.method ? `, body fat ${d(last.bf, first.bf)} points` : '';
+  return `<br>📈 Since ${new Date(first.ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}: bodyweight ${d(last.bw, first.bw)} ${last.unit}${fat}.`;
+}
+
 function numbersCard() {
   const a = S.answers || {};
   const u = a.liftUnit === 'lb' ? 'lb' : 'kg';
@@ -1011,9 +1061,11 @@ function numbersCard() {
   const has = +a.squat5 > 0 || +a.deadlift5 > 0;
   return `<section class="card"><h3>📏 My numbers</h3>
       <p class="hint">Saved on this device only (no one else, including us, can see them).</p>
-      <div class="kv"><span>Bodyweight</span><b>${val(a.bodyweight)}</b><span>Squat (${mode})</span><b>${val(a.squat5)}</b><span>Deadlift (${mode})</span><b>${val(a.deadlift5)}</b><span>Strict pull-ups</span><b>${a.pullups !== '' && a.pullups != null ? +a.pullups : '—'}</b></div>
+      <div class="kv"><span>Bodyweight</span><b>${val(a.bodyweight)}</b>${+a.bodyFat > 0 ? `<span>Body fat</span><b>${+a.bodyFat}%</b>` : ''}<span>Squat (${mode})</span><b>${val(a.squat5)}</b><span>Deadlift (${mode})</span><b>${val(a.deadlift5)}</b><span>Strict pull-ups</span><b>${a.pullups !== '' && a.pullups != null ? +a.pullups : '—'}</b></div>
       <p class="hint">${has && r.level ? `Read as: ${[r.sqRatio ? `squat ${r.sqRatio.toFixed(2)}× bodyweight` : '', r.dlRatio ? `deadlift ${r.dlRatio.toFixed(2)}×` : ''].filter(Boolean).join(', ')}${a.pullups == null || a.pullups === '' ? ' · no pull-ups given (caps the top stages)' : ''}.` : '⚠️ No lift numbers saved: your Strength lane was placed from experience and races only.'}
-        Strength now: ${cleared ? `cleared ${h(cleared.name)}, ` : ''}working on <strong>${h(working.name)}</strong> (${h(ST.sexText(working.target, S.profile.sex))}).</p>
+        ${has && r.level && +a.bodyFat > 0 ? `<br>Per kg of lean mass (estimate): ${[r.sqRatio ? `squat ${(r.sqRatio / (1 - a.bodyFat / 100)).toFixed(2)}×` : '', r.dlRatio ? `deadlift ${(r.dlRatio / (1 - a.bodyFat / 100)).toFixed(2)}×` : ''].filter(Boolean).join(', ')}${a.bodyFatMethod === 'dexa' ? '' : ' (only as good as your body-fat reading)'}.` : ''}
+        ${bodyTrend()}
+        <br>Strength now: ${cleared ? `cleared ${h(cleared.name)}, ` : ''}working on <strong>${h(working.name)}</strong> (${h(ST.sexText(working.target, S.profile.sex))}).</p>
       <button class="btn" data-act="edit-numbers">Update my numbers</button>
     </section>`;
 }
@@ -1121,6 +1173,11 @@ const MODALS = {
       <p class="q">Your lifts are</p>${radio('nMode', [['5', 'Weight for 5 good reps'], ['1', '1-rep max']], a.liftMode === '1' ? '1' : '5')}
       ${f('nSq', 'Back squat', a.squat5, '')}${f('nDl', 'Deadlift', a.deadlift5, '')}
       <label class="field"><span>Strict pull-ups in a row</span><input type="number" inputmode="numeric" name="nPu" value="${a.pullups !== '' && a.pullups != null ? +a.pullups : ''}" min="0" step="1"></label>
+      <details class="log-more" ${+a.bodyFat > 0 ? 'open' : ''}><summary>Body fat (optional)</summary>
+        <p class="hint">Only for your own trend and the coach. It never changes your level or any ranking. Home scales can be off by 5+ points, so compare readings taken the same way.</p>
+        ${f('nBf', 'Body fat', a.bodyFat, '%')}
+        <label class="field"><span>Measured with</span>${select('nBfM', [['', 'Pick one'], ['scale', 'Smart scale / handheld'], ['calipers', 'Skinfold calipers'], ['dexa', 'DEXA scan'], ['guess', 'My best guess']], a.bodyFatMethod || '')}</label>
+      </details>
       <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Update</button></div></form>`;
   },
   painfree(m) {
@@ -1379,6 +1436,11 @@ function handleOutcome(outcome) {
 
 const actions = {
   tab(el) { if (ui.laneAnimating) ui.laneSkip = true; document.querySelector('.lane-skip')?.remove(); ui.tab = el.dataset.tab; ui.mapPopup = null; ui.frameTop = null; ui.mapScroll = ui.tab === 'map'; render(); if (ui.tab !== 'map') window.scrollTo(0, 0); },
+  // Retake with the same answers: straight to the result screen (still editable with Back).
+  'ob-same'() {
+    ui.ob = { step: obSteps(ui.ob.a).length - 1, a: { ...(S.answers || {}), ...ui.ob.a } };
+    checkAnswers(); renderOnboarding(); window.scrollTo(0, 0);
+  },
   'ob-back'() { collectOb(); ui.ob.step--; renderOnboarding(); },
   'ob-finish'() {
     const fresh = !S.placedAt || ui.retake;
@@ -1493,6 +1555,16 @@ const actions = {
   'shout-clear'() { sfx.clearShout(); toast('Shout removed.'); render(); },
   'set-sex'(el) { S.profile.sex = el.dataset.v; commit(S); toast(`Using ${ST.SEX_LABEL[el.dataset.v].toLowerCase()} standards.`); },
   'play-run'() { playRun(); },
+  // Watch the whole climb again from START, clouds and all.
+  'replay-journey'() {
+    if (ui.mapRunning || ui.laneAnimating) return;
+    ui.mapPopup = null; ui.lanePopup = null; ui.frameTop = null; ui.mapScroll = true;
+    if (ui.mapMode === 'hyb' || ui.mapMode === 'tri') {
+      const all = readSeen(); delete all[ui.mapMode]; writeSeen(all);
+      ui.laneShown = { ...(ui.laneShown || {}), [ui.mapMode]: null };
+    } else { ui.replay = true; setRunIntro(S.run.level); ui.avatarAt = 0; }
+    render();
+  },
   'play-intro'() { document.querySelector('.play-btn')?.remove(); sfx.unlockAudio(); ui.intro = runIntroPending(); setRunIntro(null); ui.avatarAt = 0; afterMapRender(); },
   'play-lanes'() { ui.lanePlay?.(); },
   'lane-focus'(el) {
@@ -1780,10 +1852,14 @@ document.addEventListener('submit', e => {
   if (f.id === 'numbers-form') {
     const unit = f.querySelector('[name=nUnit]:checked')?.value || 'kg', mode = f.querySelector('[name=nMode]:checked')?.value || '5';
     const num = n => (f[n].value.trim() === '' ? null : +f[n].value);
-    const bw = num('nBw'), sq = num('nSq'), dl = num('nDl'), pu = num('nPu');
+    const bw = num('nBw'), sq = num('nSq'), dl = num('nDl'), pu = num('nPu'), bf = num('nBf'), bfm = f.nBfM?.value || '';
     if (!(bw > 0) || !(sq > 0 || dl > 0)) return toast('Add your bodyweight and at least one lift.');
+    if (bf != null && !(bf >= 3 && bf <= 60)) return toast('Body fat should be a percentage between 3 and 60, or leave it empty.');
+    // Body log: one entry per change, for the trend.
+    const last = (S.bodyLog || []).at(-1);
+    if (!last || last.bw !== bw || last.unit !== unit || (last.bf ?? null) !== bf) S.bodyLog = [...(S.bodyLog || []), { ts: t, bw, unit, bf, method: bfm }].slice(-60);
     const before = S.hybrid.strength.stage;
-    const ans = { ...(S.answers || {}), bodyweight: bw, squat5: sq ?? '', deadlift5: dl ?? '', pullups: pu ?? '', liftUnit: unit, liftMode: mode };
+    const ans = { ...(S.answers || {}), bodyweight: bw, squat5: sq ?? '', deadlift5: dl ?? '', pullups: pu ?? '', liftUnit: unit, liftMode: mode, bodyFat: bf ?? '', bodyFatMethod: bf != null ? bfm : '' };
     const fresh = HYB.placeHybrid(S, { ...ans, liftExp: ans.liftExp || 'lt1' }, t);
     S.answers = ans;
     if (fresh.strength.stage !== before) S.hybrid.strength = { stage: fresh.strength.stage, done: {} };

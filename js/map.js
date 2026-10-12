@@ -235,14 +235,14 @@ const RUNNER = `
   </g>`;
 
 // Fog of war over the worlds further up (see fog.js).
-export function runFog(s) {
+// `at`: the level the runner is shown on (during an animation the fog lifts as they climb).
+export function runFog(s, at = s.run.level) {
   const wi = id => WORLDS.findIndex(w => w.id === id);
-  const frontier = wi(RUN_LEVELS[Math.min(s.run.level, RUN_LEVELS.length) - 1].world);
+  const frontier = wi(RUN_LEVELS[Math.max(1, Math.min(at, RUN_LEVELS.length)) - 1].world);
   return { frontier, ...fogBands(WORLDS.length, frontier) };
 }
-function fogLayer(s, ui) {
-  const f = runFog(s);
-  if (f.dim == null) return { svg: '', peek: '', crop: 0 };
+export function runFogParts(s, ui, at) {
+  const f = runFog(s, at);
   const b = bands();
   const cloudBottom = f.cloud != null ? b[f.cloud].bottom : null;
   const d = s.profile?.dream;
@@ -250,15 +250,14 @@ function fogLayer(s, ui) {
   const cloudLevel = f.cloud != null ? Math.min(...RUN_LEVELS.filter(l => l.world === WORLDS[f.cloud].id).map(l => l.n)) : Infinity;
   const label = String(d?.event || d?.text || '').trim();
   const marks = dl && dl >= cloudLevel ? [{ y: POINTS[dl].y - 70, text: `Your goal: ${label.length > 30 ? `${label.slice(0, 29)}…` : label || 'Your goal'}` }] : [];
-  const busy = ui.mapRunning || (ui.avatarAt != null && ui.avatarAt < s.run.level);
   const was = seenFog('run');
-  const reveal = was != null && was < f.clear && !busy && was + 2 < WORLDS.length ? { from: cloudBottom ?? 0, to: b[was + 2].bottom } : null;
-  if (!busy && was !== f.clear) saveFog('run', f.clear);
+  const reveal = was != null && was < f.clear && was + 2 < WORLDS.length ? { from: cloudBottom ?? 0, to: b[was + 2].bottom } : null; // the clouds that were there roll back once
+  if (was !== f.clear) saveFog('run', f.clear);
   if (reveal) ui.fogRevealed = 'run';
   return {
-    svg: fogSvg({ W, dimTop: b[f.dim].top, dimBottom: b[f.dim].bottom, cloudBottom, hint: 'Keep climbing to clear the clouds', marks, top: cropTop(cloudBottom), reveal }),
+    svg: fogSvg({ W, dimTop: f.dim != null ? b[f.dim].top : null, dimBottom: f.dim != null ? b[f.dim].bottom : null, cloudBottom, hint: 'Keep climbing to clear the clouds', marks, top: cropTop(cloudBottom), reveal }),
     crop: cropTop(cloudBottom),
-    peek: peekButton(cloudBottom ?? b[f.dim].bottom, H),
+    peek: f.dim != null ? peekButton(cloudBottom ?? b[f.dim].bottom, H) : '',
   };
 }
 
@@ -268,7 +267,7 @@ export function renderMap(s, ui) {
   const at = ui.avatarAt ?? cur;
   const p = POINTS[at];
   const popup = ui.mapPopup ? popupHtml(s, ui.mapPopup) : '';
-  const fog = fogLayer(s, ui);
+  const fog = runFogParts(s, ui, at);
   return `<div class="worldmap">
       <div class="map-hud"><div class="star-count">⭐ ${totalStars}</div><button class="btn small" data-act="map-me">📍 Me</button></div>
       <div class="map-canvas" style="aspect-ratio:${W}/${H};margin-top:-${((fog.crop / W) * 100).toFixed(3)}%">
@@ -277,8 +276,8 @@ export function renderMap(s, ui) {
         <path d="${pathTo(cur)}" fill="none" stroke="#e2703a" stroke-width="18" stroke-linecap="round"/>
         <path d="${pathTo(cur)}" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="10 9"/>
         ${RUN_LEVELS.map(l => nodeSvg(l, s)).join('')}
-        <g id="avatar" transform="translate(${p.x},${p.y - 16}) scale(1.45)">${s.profile?.sex === 'f' ? RUNNER.replace('fill="#ff6b35"', 'fill="#ec407a"').replace('<circle cx="1" cy="-39"', '<path class="pony" d="M-4,-42 q-9,1 -10,10" stroke="#3e2723" stroke-width="4" fill="none" stroke-linecap="round"/><circle cx="1" cy="-39"') : RUNNER}</g>
         ${fog.svg}
+        <g id="avatar" transform="translate(${p.x},${p.y - 16}) scale(1.45)">${s.profile?.sex === 'f' ? RUNNER.replace('fill="#ff6b35"', 'fill="#ec407a"').replace('<circle cx="1" cy="-39"', '<path class="pony" d="M-4,-42 q-9,1 -10,10" stroke="#3e2723" stroke-width="4" fill="none" stroke-linecap="round"/><circle cx="1" cy="-39"') : RUNNER}</g>
       </svg>
       ${fog.peek}
       ${popup}

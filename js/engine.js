@@ -870,6 +870,9 @@ export function coachContext(s, now) {
   }
   if (s.answers?.hybridRaces?.length) lines.push(`Hybrid races finished: ${s.answers.hybridRaces.map(r => [r.event, r.division || r.category, r.format].filter(Boolean).join(' ')).join('; ')}.`);
   if (s.answers && (s.answers.bodyweight || s.answers.squat5 || s.answers.deadlift5)) lines.push(`Lifts on file (${s.answers.liftUnit || 'kg'}, ${s.answers.liftMode === '1' ? '1-rep max' : '5 reps'}): bodyweight ${s.answers.bodyweight || '?'}, squat ${s.answers.squat5 || '?'}, deadlift ${s.answers.deadlift5 || '?'}, pull-ups ${s.answers.pullups || '?'}.`);
+  if (s.answers?.bodyFat > 0) lines.push(`Body fat (self-reported, ${s.answers.bodyFatMethod || 'unknown method'}): ${s.answers.bodyFat}%. Use only as context, never to judge.`);
+  const bl = s.bodyLog || [];
+  if (bl.length > 1) lines.push(`Body log: ${bl.slice(-4).map(b => `${new Date(b.ts).toISOString().slice(0, 10)} ${b.bw ?? '?'} ${b.unit || 'kg'}${b.bf ? `, ${b.bf}% fat` : ''}`).join(' · ')}.`);
   if (s.answers) lines.push(`Assessment: ~${s.answers.weeklyKm || 0} km/week, longest run ~${s.answers.longestKm || 0} km, best 5K ${s.answers.best5k || 'n/a'} min, best 10K ${s.answers.best10k || 'n/a'} min.`);
   return lines.join('\n');
 }

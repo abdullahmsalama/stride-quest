@@ -288,32 +288,34 @@ function avatar(s, cfg, lane, at) {
 const bandTop = (cfg, i) => (i >= cfg.worlds.length - 1 ? 0 : bandBottom(i + 1));
 const bandOf = (cfg, lane, v) => { if (v <= 0) return 0; const i = reqs(cfg, lane).findIndex(x => v <= x); return i < 0 ? cfg.worlds.length - 1 : i; };
 const dreamShort = d => { const t = String(d?.event || d?.text || '').trim(); return t.length > 30 ? `${t.slice(0, 29)}…` : t || 'Your goal'; };
-export function laneFog(s, cfg) {
-  const frontier = Math.max(cfg.world(s), ...cfg.lanes.map(l => bandOf(cfg, l, cfg.value(s, l))));
+// `pos`: where each character is shown (during an animation the fog lifts as they climb).
+export function laneFog(s, cfg, pos = {}) {
+  const at = l => pos[l] ?? cfg.value(s, l);
+  const pending = cfg.lanes.some(l => at(l) < cfg.value(s, l));
+  const frontier = Math.max(pending ? 0 : cfg.world(s), ...cfg.lanes.map(l => bandOf(cfg, l, at(l))));
   return { frontier, ...fogBands(cfg.worlds.length, frontier) };
 }
-function fogLayer(s, cfg, ui, shown) {
+export function laneFogParts(s, ui, id, shown = {}) {
+  const cfg = MAPS[id];
   geo(cfg);
-  const f = laneFog(s, cfg);
-  if (f.dim == null) return { svg: '', peek: '', crop: 0 };
+  const f = laneFog(s, cfg, shown);
   const cloudBottom = f.cloud != null ? bandBottom(f.cloud) : null;
   const d = s.profile?.dream?.target;
   const dw = d?.track === (cfg.id === 'tri' ? 'tri' : 'hybrid') ? d.world : null;
   const marks = dw != null && f.cloud != null && dw >= f.cloud ? [{ y: gateY(dw) - 30, text: `Your goal: ${dreamShort(s.profile.dream)}` }] : [];
   // Clouds that were there last time roll back once.
   const was = seenFog(cfg.id);
-  const busy = ui.laneAnimating || cfg.lanes.some(l => shown[l] != null && shown[l] < cfg.value(s, l)); // reveal after the characters have moved
   let reveal = null;
-  if (was != null && was < f.clear && !busy) {
+  if (was != null && was < f.clear) {
     const old = was + 2 < cfg.worlds.length ? bandBottom(was + 2) : null;
     if (old != null) reveal = { from: cloudBottom ?? 0, to: old };
   }
-  if (!busy && was !== f.clear) saveFog(cfg.id, f.clear);
+  if (was !== f.clear) saveFog(cfg.id, f.clear);
   if (reveal) ui.fogRevealed = cfg.id;
   return {
-    svg: fogSvg({ W: TW, dimTop: bandTop(cfg, f.dim), dimBottom: bandBottom(f.dim), cloudBottom, hint: 'Keep climbing to clear the clouds', marks, top: cropTop(cloudBottom), reveal }),
+    svg: fogSvg({ W: TW, dimTop: f.dim != null ? bandTop(cfg, f.dim) : null, dimBottom: f.dim != null ? bandBottom(f.dim) : null, cloudBottom, hint: 'Keep climbing to clear the clouds', marks, top: cropTop(cloudBottom), reveal }),
     crop: cropTop(cloudBottom),
-    peek: peekButton(cloudBottom ?? bandBottom(f.dim), TH),
+    peek: f.dim != null ? peekButton(cloudBottom ?? bandBottom(f.dim), TH) : '',
   };
 }
 
@@ -325,7 +327,7 @@ export function renderLaneMap(s, ui, id) {
   const shown = ui.laneShown?.[id] || {};
   const popup = ui.lanePopup?.map === id ? popupHtml(s, cfg, ui.lanePopup) : '';
   const lim = cfg.limiter(s)?.lane;
-  const fog = fogLayer(s, cfg, ui, shown);
+  const fog = laneFogParts(s, ui, id, shown);
   const hud = `<div class="map-hud lane-hud">${cfg.lanes.map(l => {
     const v = cfg.value(s, l);
     const txt = l === 'run' ? `L${v}` : v >= cfg.max(l) ? 'done' : `Next: ${sexText(short(cfg.stage(s, l).target), s.profile.sex)}`;
