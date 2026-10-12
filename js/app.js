@@ -2030,7 +2030,9 @@ document.addEventListener('click', e => {
   if (el.dataset.act === 'import' || el.dataset.act === 'shout-file') return;
   if (e.target === $('#modal')) return;
   const fn = actions[el.dataset.act];
-  if (fn) { e.preventDefault(); fn(el, e); }
+  if (!fn) return;
+  if (!(el.tagName === 'A' && el.href)) e.preventDefault(); // real links still open (new tab); the action only counts the tap
+  fn(el, e);
 });
 
 function readDraft() {
