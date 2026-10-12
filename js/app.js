@@ -702,7 +702,7 @@ function viewMap() {
   const rebuild = S.rebuild.active ? `<section class="card"><h3>🩹 Rebuild Track</h3><ol class="ladder">${REBUILD_STAGES.map((r, i) => `<li class="${i < S.rebuild.stage ? 'done' : i === S.rebuild.stage ? 'current' : ''}"><strong>R${r.n}</strong> ${h(r.name)}<span>${h(r.focus)}</span></li>`).join('')}</ol></section>` : '';
   if ((ui.mapMode === 'tri' && !TRI.hasTri(S)) || (ui.mapMode === 'hyb' && !HYB.hasHybrid(S))) ui.mapMode = 'world';
   const multi = TRI.hasTri(S) || HYB.hasHybrid(S);
-  const modes = [['world', multi ? '🏃 Run' : '🗺️ World map'], ...(HYB.hasHybrid(S) ? [['hyb', '🏋️ Alpha X · Hyrox']] : []), ...(TRI.hasTri(S) ? [['tri', '🏊 Tri']] : []), ['grid', multi ? '▦ Cards' : '▦ Level cards']];
+  const modes = [['world', multi ? '🏃 Run' : '🗺️ World map'], ...(HYB.hasHybrid(S) ? [['hyb', '🏋️ Hybrid']] : []), ...(TRI.hasTri(S) ? [['tri', '🏊 Tri']] : []), ['grid', multi ? '▦ Cards' : '▦ Level cards']];
   const toggle = `<div class="seg" role="tablist">${modes.map(([k, l]) =>
     `<button role="tab" class="${ui.mapMode === k ? 'on' : ''}" data-act="map-mode" data-mode="${k}">${l}</button>`).join('')}</div>`;
   const replayBtn = '<button class="btn ghost small replay-btn" data-act="replay-journey">🔁 Replay my journey</button>';
