@@ -262,12 +262,13 @@ export function myRace(s) {
 function raceBadge(s, w, y) {
   if (!w.races?.length) return '';
   const mine = myRace(s);
-  const list = [...w.races].sort((a, b) => (b[0] === mine) - (a[0] === mine));
+  const lead = mine || 'alphax'; // the athlete's own race first; Alpha X leads otherwise
+  const list = [...w.races].sort((a, b) => (b[0] === lead) - (a[0] === lead));
   const chip = ([k, label]) => ({ k, label, w: label.length * 6.1 + 26 });
   const chips = list.map(chip), total = chips.reduce((a, c) => a + c.w, 0) + (chips.length - 1) * 6;
   let x = TW / 2 - total / 2;
   return `<g class="race-badge">${chips.map(c => {
-    const on = c.k === mine, out = `<g transform="translate(${x.toFixed(1)},${y - 132})">
+    const on = c.k === lead, out = `<g transform="translate(${x.toFixed(1)},${y - 132})">
       <rect width="${c.w.toFixed(1)}" height="24" rx="12" fill="${on ? (c.k === 'alphax' ? '#7b2ff7' : '#ffd23f') : 'rgba(20,33,61,.82)'}" stroke="#fff" stroke-width="2"/>
       <text x="${(c.w / 2).toFixed(1)}" y="16.5" text-anchor="middle" font-family="Inter, sans-serif" font-weight="800" font-size="11" fill="${on && c.k === 'hyrox' ? '#14213d' : '#fff'}">${c.k === 'alphax' ? '⚡' : '🏁'} ${esc(c.label)}</text></g>`;
     x += c.w + 6; return out;

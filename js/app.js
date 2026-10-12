@@ -97,7 +97,7 @@ function toast(messages) {
 
 // ---------- onboarding ----------
 const GOALS = [['fit', 'Get fit and healthy'], ['first5k', 'Run my first 5K'], ['faster', 'Get faster'], ['longer', 'Run longer distances'], ['race', 'Train for a race']];
-const TRACKS = [['run', '🏃 Running'], ['hybrid', '🏋️ Hybrid (Hyrox, Alpha X, Tough Mudder…)'], ['tri', '🏊 Triathlon']];
+const TRACKS = [['run', '🏃 Running'], ['hybrid', '🏋️ Hybrid (Alpha X, Hyrox, Tough Mudder…)'], ['tri', '🏊 Triathlon']];
 const RUNS = [[0, 'None'], [2, '1-3 runs'], [6, '4-8 runs'], [10, '9-12 runs'], [14, '13 or more']];
 const CONTINUOUS = [['none', "I don't run yet"], ['jogwalk20', 'Jog/walk mix for about 20 min'], ['10-15', '10-15 min without stopping'], ['20-30', '20-30 min'], ['30-45', '30-45 min'], ['45-75', '45-75 min'], ['75-120', '75 min - 2 h'], ['120+', 'Over 2 h']];
 const RED_FLAGS = [['sharp', 'Sharp or stabbing pain'], ['swelling', 'Swelling'], ['night', 'Pain at night or at rest'], ['walking', 'Pain while walking'], ['recent', 'Recent fracture or surgery']];
@@ -243,7 +243,7 @@ function hybridCard(onMap = false) {
   const blockLine = b.type === 'deload' ? '😮‍💨 <strong>Deload week</strong>: everything light. Next: ' + (b.next === 'engine' ? '⚡ Engine block' : '🏋️ Strength block')
     : `${b.type === 'engine' ? '⚡ <strong>Engine block</strong>' : '🏋️ <strong>Strength block</strong>'} · week ${b.week} of ${b.weeks}<br><span class="hint">Building ${b.type}, maintaining ${b.type === 'engine' ? 'strength' : 'engine'}. Then a deload week.</span>`;
   const other = b.type === 'engine' ? 'strength' : 'engine';
-  return `<section class="card hyb-card" ${onMap ? '' : 'style="order:8"'}><p class="eyebrow">Hybrid · ${w.emoji} ${h(w.name)}${w.races?.length ? ` · ${h(w.races.map(r => r[1]).join(' / '))}` : ''}</p>
+  return `<section class="card hyb-card" ${onMap ? '' : 'style="order:8"'}><p class="eyebrow">Hybrid · ${w.emoji} ${h(w.name)}${w.races?.length ? ` · ${h([...w.races].sort((a, b) => (b[0] === 'alphax') - (a[0] === 'alphax')).map(r => r[1]).join(' / '))}` : ''}</p>
     <p class="block-line">${blockLine}</p>
     <div class="block-bar">${Array.from({ length: BLOCK_WEEKS }, (_, i) => `<span class="${b.type !== 'deload' && i < b.week ? 'on' : ''}"></span>`).join('')}<span class="deload ${b.type === 'deload' ? 'on' : ''}"></span></div>
     <div class="lane-bars">${st.map(l => `<div class="${l.ok ? 'ok' : lim?.lane === l.lane ? 'lim' : ''}"><span>${HYB.LANE_ICON[l.lane]}</span><b>${h(l.lane === 'run' ? `Level ${S.run.level}` : l.have >= (l.lane === 'strength' ? HYB.STR_MAX : HYB.ENG_MAX) ? 'All done' : `${ST.sexText((l.lane === 'strength' ? HYB.strengthStage(S) : HYB.engineStage(S)).target, S.profile.sex)} next`)}</b><em>${h(w.name)} needs ${h(ST.sexText(HYB.laneTarget(l.lane, l.need), S.profile.sex))} ${l.ok ? '✓' : lim?.lane === l.lane ? '· limiter' : ''}</em></div>`).join('')}</div>
@@ -556,7 +556,7 @@ function trackTitle(track) {
   return S.refresher?.reason === 'illness' ? '💛 Recovery plan' : '🔄 Refresher course';
 }
 
-// ---------- prepare for a race (Hyrox first, Alpha X close behind) ----------
+// ---------- prepare for a race (Alpha X first and larger, Hyrox close behind) ----------
 // On simulation sessions: do them in the format of the race you're preparing for.
 function raceNote(st) {
   const race = S.hybrid?.race, r = race && RACES[race.event];
@@ -569,7 +569,7 @@ function raceCard(style = '') {
   const cur = S.hybrid?.race, has = HYB.hasHybrid(S);
   countOnce('view:race-card');
   const one = (k, big) => {
-    const r = RACES[k], on = cur?.event === k, div = on ? cur.division : r.divisions[0][0];
+    const r = RACES[k], on = cur?.event === k, div = on ? cur.division : 'open'; // both races have Open, the main race
     return `<div class="race-pick race-${k} ${big ? 'big' : ''} ${on ? 'on' : ''}">
         <div class="race-head"><span class="race-icon">${r.icon}</span><div><strong>Prepare for ${h(r.name)}</strong><span class="hint">${h(r.divisions.map(d => d[1]).join(' / '))} · ${h(r.share)}</span></div></div>
         ${big || on ? `<p class="hint">${h(r.format(div))}. ${h(r.firstTime)}</p>` : ''}
@@ -578,7 +578,7 @@ function raceCard(style = '') {
           : `<button class="btn ${big ? 'primary' : ''} small" data-act="race-start" data-k="${k}">${has ? `Prepare for ${h(r.name)}` : `Start ${h(r.name)} prep`}</button><button class="btn ghost small" data-act="race-info" data-k="${k}">What is it?</button>`}</div>
       </div>`;
   };
-  return `<section class="card race-card" ${style}><p class="eyebrow">🎯 Race prep</p>${one('hyrox', !cur || cur.event === 'hyrox')}${one('alphax', cur?.event === 'alphax')}</section>`;
+  return `<section class="card race-card" ${style}><p class="eyebrow">🎯 Race prep</p>${one('alphax', !cur || cur.event === 'alphax')}${one('hyrox', cur?.event === 'hyrox')}</section>`;
 }
 
 // Anonymous counters (no ID, no personal data) that show race organisers how many athletes train
@@ -702,7 +702,7 @@ function viewMap() {
   const rebuild = S.rebuild.active ? `<section class="card"><h3>🩹 Rebuild Track</h3><ol class="ladder">${REBUILD_STAGES.map((r, i) => `<li class="${i < S.rebuild.stage ? 'done' : i === S.rebuild.stage ? 'current' : ''}"><strong>R${r.n}</strong> ${h(r.name)}<span>${h(r.focus)}</span></li>`).join('')}</ol></section>` : '';
   if ((ui.mapMode === 'tri' && !TRI.hasTri(S)) || (ui.mapMode === 'hyb' && !HYB.hasHybrid(S))) ui.mapMode = 'world';
   const multi = TRI.hasTri(S) || HYB.hasHybrid(S);
-  const modes = [['world', multi ? '🏃 Run' : '🗺️ World map'], ...(HYB.hasHybrid(S) ? [['hyb', '🏋️ Hyrox · Alpha X']] : []), ...(TRI.hasTri(S) ? [['tri', '🏊 Tri']] : []), ['grid', multi ? '▦ Cards' : '▦ Level cards']];
+  const modes = [['world', multi ? '🏃 Run' : '🗺️ World map'], ...(HYB.hasHybrid(S) ? [['hyb', '🏋️ Alpha X · Hyrox']] : []), ...(TRI.hasTri(S) ? [['tri', '🏊 Tri']] : []), ['grid', multi ? '▦ Cards' : '▦ Level cards']];
   const toggle = `<div class="seg" role="tablist">${modes.map(([k, l]) =>
     `<button role="tab" class="${ui.mapMode === k ? 'on' : ''}" data-act="map-mode" data-mode="${k}">${l}</button>`).join('')}</div>`;
   const replayBtn = '<button class="btn ghost small replay-btn" data-act="replay-journey">🔁 Replay my journey</button>';
@@ -1553,7 +1553,7 @@ const MODALS = {
         <a href="${videoLink(id)}" target="_blank" rel="noopener">▶ Watch how</a></li>`).join('') + raceNote(st);
     const passQ = st.type === 'proveit' ? `<p class="q">Did you hit it?</p>${radio('passed', [['1', 'Yes, I hit it'], ['0', 'Not quite']], '1')}` : '';
     const raceQ = m.track === 'hyGate' && st.boss ? `<p class="q">Your race</p>
-        <label class="field"><span>Race</span>${select('raceEvent', [['hyrox:open', 'Hyrox Open'], ['hyrox:pro', 'Hyrox Pro'], ['alphax:open', 'Alpha X Open'], ['alphax:base', 'Alpha X Base'], ['sim', 'Simulation (no race)']], S.hybrid?.race ? `${S.hybrid.race.event}:${S.hybrid.race.division}` : 'hyrox:open')}</label>
+        <label class="field"><span>Race</span>${select('raceEvent', [['alphax:open', 'Alpha X Open'], ['alphax:base', 'Alpha X Base'], ['hyrox:open', 'Hyrox Open'], ['hyrox:pro', 'Hyrox Pro'], ['sim', 'Simulation (no race)']], S.hybrid?.race ? `${S.hybrid.race.event}:${S.hybrid.race.division}` : 'alphax:open')}</label>
         <label class="field"><span>Format</span>${select('raceFormat', [['solo', 'Solo'], ['pair', 'Pair / Doubles'], ['relay', 'Relay']], 'solo')}</label>
         ${timeField('raceTime', 'Finish time', '', 'h:mm:ss, e.g. 1:24:30')}<p class="hint">Stars come from your time against ${S.profile.sex ? ST.SEX_LABEL[S.profile.sex].toLowerCase() : 'your category\'s'} standards. Any finish counts.</p>`
       : m.track === 'triGate' && st.boss ? `${timeField('raceTime', 'Finish time', '', 'h:mm:ss, e.g. 5:42:10')}<p class="hint">Stars come from your time; 70.3 and full distance must be inside the official cut-off.</p>` : '';
