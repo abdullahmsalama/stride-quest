@@ -1267,7 +1267,7 @@ function viewStats() {
       ${sex !== 'm' && sex !== 'f' ? '<p class="banner info">The published data is split into men and women only. Pick one under <b>change</b> to see your comparisons (it only affects Stats and race standards).</p>' : ''}
       <p class="hint">Compared with: ${sex === 'm' ? 'men' : sex === 'f' ? 'women' : 'no group yet'}${age ? `, aged ${h(age)}` : ''} · <button class="linkish" data-act="edit-bests">change</button></p>
     </section>
-    ${act && best ? `<section class="card"><p>💚 ${h(act.text)}</p></section>` : ''}
+    ${act && best ? `<section class="card"><p>💙 ${h(act.text)}</p></section>` : ''}
     ${rare ? `<section class="card rare"><h3>🧬 Hybrid rarity</h3><p class="big">At least <b>1 in ${rare.oneIn}</b> ${sex === 'm' ? 'men' : 'women'}</p>
       <p class="hint">${rare.basis.map(b => `${h(b.label)}: better than ${b.p}% of ${h(b.group)}`).join('; and ')}, both at once. The combination is what makes you rare.
       <br>Estimate, and a cautious one: each comparison group (race finishers, competitive powerlifters, power-meter riders) is already fitter than most people, so against all adults you are rarer still. It also assumes people good at one tend to be fairly good at the other (correlation ${RHO.value}).</p>
