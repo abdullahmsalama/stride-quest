@@ -24,6 +24,7 @@ import { confetti } from './intro.js';
 import * as STATS from './stats.js';
 import { NORMS, RHO } from './data/norms.js';
 import { WORKER_URL } from './config.js';
+import { RACES } from './data/races.js';
 
 // ---------- state ----------
 // Theme: light by default (the look the app launched with); dark or follow-the-device on request.
@@ -555,6 +556,45 @@ function trackTitle(track) {
   return S.refresher?.reason === 'illness' ? '💛 Recovery plan' : '🔄 Refresher course';
 }
 
+// ---------- prepare for a race (Hyrox first, Alpha X close behind) ----------
+// On simulation sessions: do them in the format of the race you're preparing for.
+function raceNote(st) {
+  const race = S.hybrid?.race, r = race && RACES[race.event];
+  if (!r || !(st.ex || []).some(x => x === 'race_sim' || x === 'compromised_run')) return '';
+  const div = r.divisions.find(d => d[0] === race.division)?.[1] || '';
+  return `<li class="ex race-note race-${race.event}"><div><strong>${r.icon} Your race: ${h(r.name)} ${h(div)}</strong></div>
+    <p class="hint">Do the race parts in its format: ${h(r.format(race.division))}. Stations: ${h(r.stations.join(', '))}. Half simulation = half the rounds. Use your division's official weights.</p></li>`;
+}
+function raceCard(style = '') {
+  const cur = S.hybrid?.race, has = HYB.hasHybrid(S);
+  countOnce('view:race-card');
+  const one = (k, big) => {
+    const r = RACES[k], on = cur?.event === k, div = on ? cur.division : r.divisions[0][0];
+    return `<div class="race-pick race-${k} ${big ? 'big' : ''} ${on ? 'on' : ''}">
+        <div class="race-head"><span class="race-icon">${r.icon}</span><div><strong>Prepare for ${h(r.name)}</strong><span class="hint">${h(r.divisions.map(d => d[1]).join(' / '))} · ${h(r.share)}</span></div></div>
+        ${big || on ? `<p class="hint">${h(r.format(div))}. ${h(r.firstTime)}</p>` : ''}
+        ${on ? `<p class="race-on">✓ Preparing for ${h(r.name)} ${h(r.divisions.find(d => d[0] === div)?.[1] || '')}: your simulations follow its format.</p>` : ''}
+        <div class="row wrap">${on ? `<button class="btn small" data-act="race-info" data-k="${k}">Race guide</button><button class="btn ghost small" data-act="race-stop">Stop</button>`
+          : `<button class="btn ${big ? 'primary' : ''} small" data-act="race-start" data-k="${k}">${has ? `Prepare for ${h(r.name)}` : `Start ${h(r.name)} prep`}</button><button class="btn ghost small" data-act="race-info" data-k="${k}">What is it?</button>`}</div>
+      </div>`;
+  };
+  return `<section class="card race-card" ${style}><p class="eyebrow">🎯 Race prep</p>${one('hyrox', !cur || cur.event === 'hyrox')}${one('alphax', cur?.event === 'alphax')}</section>`;
+}
+
+// Anonymous counters (no ID, no personal data) that show race organisers how many athletes train
+// for their race. Off with the switch in Me.
+const COUNT_KEY = 'stride-quest:counts';
+const countsOn = () => { try { return localStorage.getItem(COUNT_KEY) !== 'off'; } catch { return false; } };
+function count(key) {
+  if (!countsOn() || !WORKER_URL) return;
+  fetch(`${WORKER_URL.replace(/\/$/, '')}/count`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key }), keepalive: true }).catch(() => {});
+}
+// Once per device (for "how many athletes", not "how many taps").
+function countOnce(key) {
+  try { const seen = JSON.parse(localStorage.getItem(`${COUNT_KEY}:seen`) || '{}'); if (seen[key]) return; seen[key] = 1; localStorage.setItem(`${COUNT_KEY}:seen`, JSON.stringify(seen)); } catch { return; }
+  count(key);
+}
+
 function viewToday() {
   const t = now();
   const track = E.activeTrack(S);
@@ -587,7 +627,7 @@ function viewToday() {
   const toggle = `<div class="seg today-seg" role="tablist">${[['simple', '✨ Just next'], ['full', '📋 Full day']].map(([k, l]) =>
     `<button role="tab" class="${(simple ? 'simple' : 'full') === k ? 'on' : ''}" data-act="set-view" data-v="${k}">${l}</button>`).join('')}</div>`;
   if (simple) {
-    return `${toggle}<div class="simple">${banners()}${hero}${p.today}
+    return `${toggle}<div class="simple">${banners()}${hero}${p.today}${raceCard()}
       <button class="btn ghost wide" data-act="set-view" data-v="full">See my week and more ▾</button></div>`;
   }
   const boost = `<section class="card boost" ${o(3)}>
@@ -613,7 +653,7 @@ function viewToday() {
   // Two columns on wide screens; on phones the wrappers dissolve and `order` restores one column.
   return `${toggle}<div class="cols">
       <div class="col-main"><div ${o(1)}>${banners()}</div>${p.today}${p.week}${p.nextWeek}${levelSteps}</div>
-      <div class="col-side">${hero}${boost}${install}${p.tracks}${daily}${modes}</div>
+      <div class="col-side">${hero}${raceCard(o(5))}${boost}${install}${p.tracks}${daily}${modes}</div>
     </div>`;
 }
 
@@ -671,7 +711,7 @@ function viewMap() {
       ${S.profile.dream ? dreamLine(S.profile.dream, S.run.level, true) : ''}<button class="btn primary small" data-act="open-level">Open level</button></section>`;
   if (ui.mapMode === 'hyb') {
     prepareLaneMap('hyb');
-    return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${renderLaneMap(S, ui, 'hyb')}${replayBtn}</div><div class="map-side">${hybridCard(true)}</div></div>`;
+    return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${renderLaneMap(S, ui, 'hyb')}${replayBtn}</div><div class="map-side">${raceCard()}${hybridCard(true)}</div></div>`;
   }
   if (ui.mapMode === 'tri') {
     const lim = TRI.limiter(S);
@@ -1263,6 +1303,8 @@ function viewMe() {
     ${installCard('me')}
     <section class="card"><h3>Your data</h3>
       <p class="hint">Progress is saved in this browser only. Export it to move to another device.</p>
+      <label class="switch-row"><input type="checkbox" data-act="counts-toggle" ${countsOn() ? 'checked' : ''}> <span>Send anonymous counts</span></label>
+      <p class="hint">Simple tallies with no ID and no personal data, like "one more athlete is preparing for Alpha X". They show race organisers how many people train for their race, which helps keep the app free.</p>
       <div class="row wrap">
         <button class="btn" data-act="export">Export progress</button>
         <label class="btn">Import<input type="file" accept="application/json" data-act="import" hidden></label>
@@ -1307,6 +1349,17 @@ function painButtons() {
 }
 
 const MODALS = {
+  race(m) {
+    const r = RACES[m.k], cur = S.hybrid?.race;
+    return `<div class="race-modal race-${m.k}"><h2>${r.icon} ${m.info ? h(r.name) : `Prepare for ${h(r.name)}`}</h2>
+      <p class="why">💡 ${h(r.name)} is ${h(r.share)}. Your Hybrid plan keeps real strength work on top, so you arrive strong as well as fit.</p>
+      ${r.divisions.map(([d, l]) => `<div class="race-div"><strong>${h(r.name)} ${h(l)}</strong><p class="hint">${h(r.format(d))}</p></div>`).join('')}
+      <p class="q">Stations</p><ul class="race-stations">${r.stations.map(x => `<li>${h(x)}</li>`).join('')}</ul>
+      <p class="hint">${h(r.firstTime)} Use your division's official weights (${S.profile.sex === 'f' ? "women's" : S.profile.sex === 'm' ? "men's" : "men's or women's"}).</p>
+      ${r.site ? `<p><a href="${r.site}" target="_blank" rel="noopener" data-act="race-site" data-k="${m.k}">Find a ${h(r.name)} race ↗</a></p>` : ''}
+      ${m.info && cur?.event === m.k ? '' : `<p class="q">${m.info ? 'Want to prepare for it?' : 'Which division?'}</p><div class="row wrap">${r.divisions.map(([d, l]) => `<button class="btn primary" data-act="${HYB.hasHybrid(S) ? 'race-div' : 'race-start'}" data-k="${m.k}" data-div="${d}">${h(l)}</button>`).join('')}</div>`}
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Close</button></div></div>`;
+  },
   dream() {
     const d = S.profile.dream || {};
     return `<form id="dream-form"><h2>🎯 Your dream</h2>
@@ -1497,10 +1550,10 @@ const MODALS = {
         <div><strong>${h(EXERCISES[id].name)}</strong> <span class="dose">${h(EXERCISES[id].dose)}</span></div>
         <ul>${EXERCISES[id].cues.map(c => `<li>${h(c)}</li>`).join('')}</ul>
         ${EXERCISES[id].alt && S.hybrid && S.hybrid.gym !== 'full' ? `<p class="hint">🔁 ${h(EXERCISES[id].alt)}</p>` : ''}
-        <a href="${videoLink(id)}" target="_blank" rel="noopener">▶ Watch how</a></li>`).join('');
+        <a href="${videoLink(id)}" target="_blank" rel="noopener">▶ Watch how</a></li>`).join('') + raceNote(st);
     const passQ = st.type === 'proveit' ? `<p class="q">Did you hit it?</p>${radio('passed', [['1', 'Yes, I hit it'], ['0', 'Not quite']], '1')}` : '';
     const raceQ = m.track === 'hyGate' && st.boss ? `<p class="q">Your race</p>
-        <label class="field"><span>Race</span>${select('raceEvent', [['hyrox:open', 'Hyrox Open'], ['hyrox:pro', 'Hyrox Pro'], ['alphax:open', 'Alpha X Open'], ['alphax:base', 'Alpha X Base'], ['sim', 'Simulation (no race)']], 'hyrox:open')}</label>
+        <label class="field"><span>Race</span>${select('raceEvent', [['hyrox:open', 'Hyrox Open'], ['hyrox:pro', 'Hyrox Pro'], ['alphax:open', 'Alpha X Open'], ['alphax:base', 'Alpha X Base'], ['sim', 'Simulation (no race)']], S.hybrid?.race ? `${S.hybrid.race.event}:${S.hybrid.race.division}` : 'hyrox:open')}</label>
         <label class="field"><span>Format</span>${select('raceFormat', [['solo', 'Solo'], ['pair', 'Pair / Doubles'], ['relay', 'Relay']], 'solo')}</label>
         ${timeField('raceTime', 'Finish time', '', 'h:mm:ss, e.g. 1:24:30')}<p class="hint">Stars come from your time against ${S.profile.sex ? ST.SEX_LABEL[S.profile.sex].toLowerCase() : 'your category\'s'} standards. Any finish counts.</p>`
       : m.track === 'triGate' && st.boss ? `${timeField('raceTime', 'Finish time', '', 'h:mm:ss, e.g. 5:42:10')}<p class="hint">Stars come from your time; 70.3 and full distance must be inside the official cut-off.</p>` : '';
@@ -1691,6 +1744,21 @@ const actions = {
       }
     }
   },
+  'race-start'(el) {
+    const k = el.dataset.k;
+    if (!HYB.hasHybrid(S)) { ui.pendingRace = k; ui.modal = { type: 'addHyb', a: { ...(S.answers || {}) } }; renderModal(); return; }
+    ui.modal = { type: 'race', k }; renderModal();
+  },
+  'race-div'(el) {
+    const { k } = ui.modal, div = el.dataset.div;
+    S.hybrid.race = { event: k, division: div, since: now() };
+    ui.modal = null; commit(S); countOnce(`prep:${k}`); countOnce(`prep:${k}:${div}`);
+    toast(`${RACES[k].icon} Preparing for ${RACES[k].name} ${RACES[k].divisions.find(d => d[0] === div)[1]}. Let's go!`);
+  },
+  'race-stop'() { S.hybrid.race = null; commit(S); toast('Race prep stopped. Your Hybrid plan carries on.'); },
+  'race-info'(el) { ui.modal = { type: 'race', k: el.dataset.k, info: true }; renderModal(); },
+  'race-site'(el) { count(`site:${el.dataset.k}`); },
+  'counts-toggle'(el) { try { localStorage.setItem(COUNT_KEY, el.checked ? 'on' : 'off'); } catch { /* ignore */ } toast(el.checked ? 'Anonymous counts on. Thank you!' : 'Anonymous counts off.'); },
   'edit-bests'() { ui.modal = { type: 'bests' }; renderModal(); },
   'edit-numbers'() { ui.modal = { type: 'numbers' }; renderModal(); },
   painfree() { ui.modal = { type: 'painfree', cleared: false }; renderModal(); },
@@ -2030,6 +2098,7 @@ document.addEventListener('submit', e => {
     ui.modal = null; ui.tab = 'map'; ui.mapMode = 'hyb'; ui.mapScroll = true; ui.frameTop = null;
     commit(S);
     toast(`Welcome to ${HYB.hybWorld(S).emoji} ${HYB.hybWorld(S).name}!`);
+    if (ui.pendingRace) { ui.modal = { type: 'race', k: ui.pendingRace }; ui.pendingRace = null; renderModal(); }
     return;
   }
   if (f.id === 'dream-form') {

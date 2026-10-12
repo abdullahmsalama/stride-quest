@@ -624,3 +624,24 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .switch-row input { width: 20px; height: 20px; accent-color: var(--brand); }
 .fog-reveal-dim { fill: #eef2f7; opacity: .66; pointer-events: none; animation: fogdimout 1.4s ease-out forwards; }
 @keyframes fogdimout { to { opacity: 0; } }
+
+/* Race prep: Hyrox in the lead, Alpha X close behind */
+.race-card { display: grid; gap: 10px; }
+.race-card .eyebrow { margin: 0; }
+.race-pick { border-radius: 14px; padding: 12px; border: 2px solid var(--line); background: var(--surface-2); }
+.race-pick.big { padding: 16px; }
+.race-pick.race-hyrox { border-color: #f2c200; background: linear-gradient(135deg, rgba(255, 210, 63, .22), transparent 70%), var(--surface-2); }
+.race-pick.race-alphax { border-color: #7b2ff7; background: linear-gradient(135deg, rgba(123, 47, 247, .16), transparent 70%), var(--surface-2); }
+.race-pick.on { box-shadow: 0 0 0 3px rgba(124, 179, 66, .5); }
+.race-head { display: flex; align-items: center; gap: 10px; }
+.race-head strong { display: block; font: 800 17px var(--display); letter-spacing: .02em; }
+.race-pick.big .race-head strong { font-size: 21px; }
+.race-head .hint { display: block; }
+.race-icon { font-size: 22px; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); flex: none; }
+.race-pick.big .race-icon { font-size: 26px; width: 46px; height: 46px; }
+.race-pick p { margin: 8px 0; }
+.race-on { font-weight: 700; color: var(--ink); }
+.race-modal .race-div { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.race-stations { columns: 2; margin: 4px 0 8px; padding-left: 18px; font-size: 14px; }
+.race-note { border-left: 4px solid #f2c200; padding-left: 10px; }
+.race-note.race-alphax { border-left-color: #7b2ff7; }

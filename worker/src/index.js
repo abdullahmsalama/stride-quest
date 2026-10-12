@@ -325,6 +325,19 @@ async function stats(request, env, headers) {
   return json({ metrics: out, both, min: MIN_GROUP }, 200, headers);
 }
 
+// Anonymous tallies (no ID): "one more athlete is preparing for Alpha X". Only these keys count.
+const COUNT_KEYS = /^(view:race-card|prep:(hyrox|alphax)(:(open|pro|base))?|site:(hyrox|alphax))$/;
+async function tally(request, env, headers) {
+  if (!env.DB) return json({ error: 'not set up' }, 503, headers);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400, headers); }
+  const key = String(body.key || '');
+  if (!COUNT_KEYS.test(key)) return json({ error: 'unknown key' }, 400, headers);
+  const day = new Date().toISOString().slice(0, 10);
+  await env.DB.prepare('INSERT INTO counts (key, day, n) VALUES (?1, ?2, 1) ON CONFLICT (key, day) DO UPDATE SET n = n + 1').bind(key, day).run();
+  return json({ ok: true }, 200, headers);
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin');
@@ -337,6 +350,11 @@ export default {
       const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': env.GEMINI_API_KEY } });
       const d = await r.json().catch(() => ({}));
       return json({ models: (d.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace('models/', '')) }, 200, headers);
+    }
+    if (url.pathname === '/count' && request.method === 'POST') {
+      if (!ok) return json({ error: 'origin not allowed' }, 403, headers);
+      if (limited(`c:${request.headers.get('CF-Connecting-IP') || 'unknown'}`, 30)) return json({ error: 'slow down' }, 429, headers);
+      return tally(request, env, headers);
     }
     if (url.pathname === '/stats' && request.method === 'POST') {
       if (!ok) return json({ error: 'origin not allowed' }, 403, headers);

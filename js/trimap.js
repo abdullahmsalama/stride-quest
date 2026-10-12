@@ -254,6 +254,7 @@ function nodes(s, cfg, lane) {
 // The real races behind a Hybrid gate, the athlete's own race first and highlighted.
 export function myRace(s) {
   const a = s.answers || {}, d = `${s.profile?.dream?.text || ''} ${s.profile?.dream?.event || ''}`;
+  if (s.hybrid?.race?.event) return s.hybrid.race.event;
   if (a.hx_alphax || /alpha\s*x/i.test(d)) return 'alphax';
   if (a.hx_hyrox || /hyrox/i.test(d)) return 'hyrox';
   return null;
