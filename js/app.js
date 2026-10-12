@@ -97,7 +97,7 @@ function toast(messages) {
 
 // ---------- onboarding ----------
 const GOALS = [['fit', 'Get fit and healthy'], ['first5k', 'Run my first 5K'], ['faster', 'Get faster'], ['longer', 'Run longer distances'], ['race', 'Train for a race']];
-const TRACKS = [['run', '🏃 Running'], ['hybrid', '🏋️ Hybrid (Alpha X, Hyrox, Tough Mudder…)'], ['tri', '🏊 Triathlon']];
+const TRACKS = [['run', '🏃 Running'], ['hybrid', '🏃🏋️ Hybrid (Alpha X, Hyrox, Tough Mudder…)'], ['tri', '🏊🚴🏃 Triathlon']];
 const RUNS = [[0, 'None'], [2, '1-3 runs'], [6, '4-8 runs'], [10, '9-12 runs'], [14, '13 or more']];
 const CONTINUOUS = [['none', "I don't run yet"], ['jogwalk20', 'Jog/walk mix for about 20 min'], ['10-15', '10-15 min without stopping'], ['20-30', '20-30 min'], ['30-45', '30-45 min'], ['45-75', '45-75 min'], ['75-120', '75 min - 2 h'], ['120+', 'Over 2 h']];
 const RED_FLAGS = [['sharp', 'Sharp or stabbing pain'], ['swelling', 'Swelling'], ['night', 'Pain at night or at rest'], ['walking', 'Pain while walking'], ['recent', 'Recent fracture or surgery']];
@@ -702,7 +702,7 @@ function viewMap() {
   const rebuild = S.rebuild.active ? `<section class="card"><h3>🩹 Rebuild Track</h3><ol class="ladder">${REBUILD_STAGES.map((r, i) => `<li class="${i < S.rebuild.stage ? 'done' : i === S.rebuild.stage ? 'current' : ''}"><strong>R${r.n}</strong> ${h(r.name)}<span>${h(r.focus)}</span></li>`).join('')}</ol></section>` : '';
   if ((ui.mapMode === 'tri' && !TRI.hasTri(S)) || (ui.mapMode === 'hyb' && !HYB.hasHybrid(S))) ui.mapMode = 'world';
   const multi = TRI.hasTri(S) || HYB.hasHybrid(S);
-  const modes = [['world', multi ? '🏃 Run' : '🗺️ World map'], ...(HYB.hasHybrid(S) ? [['hyb', '🏋️ Hybrid']] : []), ...(TRI.hasTri(S) ? [['tri', '🏊 Triathlon']] : []), ['grid', multi ? '▦ Cards' : '▦ Level cards']];
+  const modes = [['world', multi ? '🏃 Run' : '🗺️ World map'], ...(HYB.hasHybrid(S) ? [['hyb', '🏃🏋️ Hybrid']] : []), ...(TRI.hasTri(S) ? [['tri', '🏊🚴🏃 Triathlon']] : []), ['grid', multi ? '▦ Cards' : '▦ Level cards']];
   const toggle = `<div class="seg" role="tablist">${modes.map(([k, l]) =>
     `<button role="tab" class="${ui.mapMode === k ? 'on' : ''}" data-act="map-mode" data-mode="${k}">${l}</button>`).join('')}</div>`;
   const replayBtn = '<button class="btn ghost small replay-btn" data-act="replay-journey">🔁 Replay my journey</button>';
@@ -1289,7 +1289,7 @@ function viewMe() {
       <p class="hint">Auto follows your device's light/dark setting.</p>
     </section>
     <section class="card"><h3>Training</h3>
-      <p>${(S.profile.tracks || ['run']).map(k => ({ run: '🏃 Running', hybrid: '🏋️ Hybrid', tri: '🏊 Triathlon' })[k] + (k === (S.profile.primary || 'run') && (S.profile.tracks || []).length > 1 ? ' (leads your week)' : '')).join(' · ')}</p>
+      <p>${(S.profile.tracks || ['run']).map(k => ({ run: '🏃 Running', hybrid: '🏃🏋️ Hybrid', tri: '🏊🚴🏃 Triathlon' })[k] + (k === (S.profile.primary || 'run') && (S.profile.tracks || []).length > 1 ? ' (leads your week)' : '')).join(' · ')}</p>
       <p class="hint">Days: ${K.schedule(S).days.map(d => K.DAY_NAMES[d]).join(', ')} · long session ${K.DAY_NAMES[K.schedule(S).longDay]}</p>
       <div class="row wrap"><button class="btn" data-act="edit-days">Change training days</button>${['hybrid', 'tri'].filter(k => !(S.profile.tracks || []).includes(k)).map(k => `<button class="btn" data-act="add-track" data-k="${k}">＋ ${k === 'hybrid' ? 'Hybrid' : 'Triathlon'} track</button>`).join('')}</div>
     </section>
