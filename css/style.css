@@ -705,3 +705,22 @@ svg .spotlight, .lane-ch.spotlight { outline: none !important; filter: drop-shad
 .tip-bubble p { margin: 0 0 8px; }
 .tip-bubble .btn { background: var(--brand); color: #fff; border: 0; }
 @media (min-width: 1000px) { .tip-bubble { bottom: 28px; } }
+.help-btn { cursor: pointer; color: var(--ink); font: inherit; font-weight: 700; font-size: 13px; }
+.help-btn:hover { border-color: var(--brand); }
+.help-panel .help-steps { padding: 10px 12px; border-radius: 12px; background: rgba(127, 127, 127, .08); margin: 8px 0 12px; }
+.help-panel .help-steps .q { margin: 0 0 6px; font-weight: 700; }
+.help-group { border-top: 1px solid var(--line); padding: 10px 0; }
+.help-group summary { cursor: pointer; font-weight: 700; font-size: 16px; }
+.tip-bubble.offer .btn.ghost { background: transparent; color: var(--bg); border: 1px solid rgba(255, 255, 255, .4); }
+/* Header stays on one line: name, Help, XP and streak never wrap */
+header.top .brand, .chip { white-space: nowrap; }
+header.top { gap: 10px; }
+@media (max-width: 420px) {
+  header.top .brand { font-size: 21px; }
+  header.top .chips { gap: 6px; }
+  header.top .chip { padding: 4px 8px; font-size: 12px; }
+}
+/* The very smallest phones: the ❓ alone (it still says "Help" to screen readers) */
+@media (max-width: 350px) { .help-word { display: none; } }
+@media (max-width: 400px) { .xp-word { display: none; } }
+@media (max-width: 350px) { header.top .brand { font-size: 19px; } header.top .chip { padding: 4px 7px; } }

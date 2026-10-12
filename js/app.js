@@ -460,7 +460,7 @@ function render() {
   $('#app').innerHTML = `
     <header class="top">
       <button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest">🏃 Stride Quest</button>
-      <div class="chips"><span class="chip" title="Total XP">⚡ ${S.xp} XP</span><span class="chip" title="Day streak">🔥 ${E.dayStreak(S, t)}</span></div>
+      <div class="chips"><button class="chip help-btn" data-act="help" title="How the app works" aria-label="Help">❓<span class="help-word"> Help</span></button><span class="chip" title="Total XP: ${S.xp}">⚡ ${S.xp >= 10000 ? `${(S.xp / 1000).toFixed(1).replace(/\.0$/, '')}k` : S.xp}<span class="xp-word"> XP</span></span><span class="chip" title="Day streak">🔥 ${E.dayStreak(S, t)}</span></div>
     </header>
     <main class="view view-${ui.tab}">${views[ui.tab]()}</main>
     <nav class="tabs">${[['today', '🏠', 'Today'], ['map', '🗺️', 'Map'], ['challenge', '🏆', 'Challenge'], ['events', '🗓️', '<em class="long">Competitions </em>Calendar'], ['stats', '📊', 'Stats'], ['coach', '💬', 'Coach'], ['me', '👤', 'Me']].map(([k, i, l]) =>
@@ -473,7 +473,7 @@ function render() {
   fogRevealedToast();
   tourFlag(`tab_${ui.tab}`);
   rewardQuests();
-  document.querySelector('.tip-bubble')?.remove();
+  document.querySelector('.tip-bubble:not(.offer)')?.remove();
   setTimeout(maybeTip, 600);
 }
 
@@ -606,6 +606,19 @@ function gettingStarted(style = '') {
       <div class="row end"><button class="btn ghost small" data-act="tour-hide">Hide getting started</button></div>
     </details>`;
 }
+// The Help panel (❓ Help in the header): open getting-started steps, then the whole guide.
+function helpPanel() {
+  const qs = quests(), done = qs.filter(questDone).length, t = tourLocal();
+  const steps = S.tour?.hidden ? `<p class="hint">Getting started is hidden. <button class="linkish" data-act="tour-unhide">Show it again</button></p>`
+    : done < qs.length ? `<div class="help-steps"><p class="q">🧭 Getting started: ${done} of ${qs.length}</p><div class="bar"><div style="width:${Math.round((done / qs.length) * 100)}%"></div></div>
+        <ul class="tour-list">${qs.filter(f => !questDone(f)).map(f => `<li><span>⬜</span><span>${h(f.quest.label)}</span><button class="btn small" data-act="show-me" data-f="${f.id}">Show me</button></li>`).join('')}</ul></div>`
+    : '<p class="hint">🧭 Getting started: all done 🎉</p>';
+  return `<div class="help-panel"><h2>❓ Help</h2><p class="why">💡 Everything the app can do, in plain words. "Show me" takes you there.</p>${steps}
+      ${GROUPS.map(([g, label]) => { const fs = FEATURES.filter(f => f.group === g && applies(f)); return fs.length ? `<details class="help-group"><summary>${h(label)}</summary>${fs.map(f => `<div class="how-item"><strong>${h(f.title)}</strong><p class="hint">${h(f.text)}</p><button class="btn small" data-act="show-me" data-f="${f.id}">Show me</button></div>`).join('')}</details>` : ''; }).join('')}
+      <label class="switch-row"><input type="checkbox" data-act="tips-toggle" ${t.tipsOff ? '' : 'checked'}> <span>First-time tips</span></label>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Close</button></div></div>`;
+}
+
 function howItWorks() {
   const t = tourLocal();
   return `<section class="card how-card"><h3>📖 How it works</h3><p class="hint">Everything the app can do, in plain words. "Show me" takes you there.</p>
@@ -639,6 +652,7 @@ function maybeTip() {
   const open = document.querySelector('.tip-bubble');
   if (open) {
     // The thing it points at scrolled away: put the tip away until it's back in view.
+    if (open.classList.contains('offer')) return;
     const target = document.querySelector('.tip-target');
     if (target && tipVisible(target)) return;
     open.remove(); target?.classList.remove('spotlight', 'tip-target');
@@ -646,6 +660,14 @@ function maybeTip() {
   const t = tourLocal();
   if (t.tipsOff || ui.modal || ui.laneAnimating || ui.mapRunning || document.querySelector('.play-btn')) return;
   const visible = tipVisible;
+  // Once, after placement: offer a look around.
+  if (!t.offered && S.placedAt && (ui.tab === 'today' || ui.tab === 'map')) {
+    const b = document.createElement('div');
+    b.className = 'tip-bubble offer';
+    b.innerHTML = '<p>🧭 <strong>New here?</strong> Take a 1-minute look around: what each part does, with "Show me" buttons.</p><div class="row end"><button class="btn ghost small" data-act="tour-offer" data-v="later">Later</button><button class="btn small" data-act="tour-offer" data-v="go">Show me around</button></div>';
+    document.body.appendChild(b);
+    return;
+  }
   const f = FEATURES.find(x => x.tip && applies(x) && !t.seen?.[x.id] && [...document.querySelectorAll(x.tip.sel)].some(visible));
   if (!f) return;
   const el = [...document.querySelectorAll(f.tip.sel)].find(visible);
@@ -1424,7 +1446,7 @@ function viewMe() {
     <section class="card"><h3>Recent activity</h3>${hist.length ? `<ul class="history">${hist.map(x =>
       `<li><span>${new Date(x.ts).toLocaleDateString()}</span>${h(x.title)}${x.pain != null ? ` <em>pain ${x.pain}/10</em>` : ''}<b>${x.xp ? `+${x.xp}` : ''}</b></li>`).join('')}</ul>` : '<p class="hint">Nothing yet. Your first step is on the Today tab.</p>'}</section>
     ${installCard('me')}
-    ${howItWorks()}
+    <section class="card"><h3>❓ Help</h3><p class="hint">How everything in the app works, with "Show me" buttons. Also under ❓ Help at the top of every screen.</p><button class="btn" data-act="help">Open Help</button></section>
     <section class="card"><h3>Your data</h3>
       <p class="hint">Progress is saved in this browser only. Export it to move to another device.</p>
       <label class="switch-row"><input type="checkbox" data-act="counts-toggle" ${countsOn() ? 'checked' : ''}> <span>Send anonymous counts</span></label>
@@ -1473,6 +1495,7 @@ function painButtons() {
 }
 
 const MODALS = {
+  help() { return helpPanel(); },
   aboutMe() {
     return `<div class="about-me"><h2>🏃 Stride Quest</h2><p class="about-by">Developed by <b>Abdullah Salama</b></p>
       <p class="about-why">💙 I built Stride Quest to help people move, stay consistent and reach their goals: to become stronger, healthier and better.</p>
@@ -1891,9 +1914,15 @@ const actions = {
   },
   'race-stop'() { S.hybrid.race = null; commit(S); toast('Race prep stopped. Your Hybrid plan carries on.'); },
   'show-me'(el) { showMe(el.dataset.f); },
+  help() { document.querySelector('.tip-bubble')?.remove(); document.querySelectorAll('.tip-target').forEach(x => x.classList.remove('spotlight', 'tip-target')); ui.modal = { type: 'help' }; renderModal(); },
+  'tour-offer'(el) {
+    const t = tourLocal(); setTourLocal({ ...t, offered: true });
+    el.closest('.tip-bubble')?.remove();
+    if (el.dataset.v === 'go') { ui.modal = { type: 'help' }; renderModal(); } else toast('Any time: tap ❓ Help at the top.');
+  },
   'tour-open'(el) { ui.tourOpen = !el.parentElement.open; }, // the browser opens/closes it; remember for redraws
   'tour-hide'() { S.tour = { ...(S.tour || {}), hidden: true }; commit(S); toast('Getting started hidden. You can bring it back in Me → How it works.'); },
-  'tour-unhide'() { S.tour = { ...(S.tour || {}), hidden: false }; commit(S); toast('Getting started is back on Today.'); },
+  'tour-unhide'() { S.tour = { ...(S.tour || {}), hidden: false }; commit(S); if (ui.modal?.type === 'help') renderModal(); toast('Getting started is back on Today.'); },
   'tips-toggle'(el) { const t = tourLocal(); setTourLocal({ ...t, tipsOff: !el.checked }); toast(el.checked ? 'Tips on.' : 'Tips off.'); },
   'tip-ok'(el) {
     const t = tourLocal(); setTourLocal({ ...t, seen: { ...(t.seen || {}), [el.dataset.f]: true } });
@@ -2379,7 +2408,7 @@ window.addEventListener('hashchange', () => {
   if (!ui.modal) render();
 });
 
-$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
 
 // ---------- installable app ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
