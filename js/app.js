@@ -1369,10 +1369,11 @@ const MODALS = {
     const r = RACES[m.k], cur = S.hybrid?.race;
     return `<div class="race-modal race-${m.k}"><h2>${r.icon} ${m.info ? h(r.name) : `Prepare for ${h(r.name)}`}</h2>
       <p class="why">💡 ${h(r.name)} is ${h(r.share)}. Your Hybrid plan keeps real strength work on top, so you arrive strong as well as fit.</p>
+      ${r.site ? `<p><a class="btn small race-site" href="${r.site}" target="_blank" rel="noopener" data-act="race-site" data-k="${m.k}">🌐 Official ${h(r.name)} website ↗</a></p>` : ''}
       ${r.divisions.map(([d, l]) => `<div class="race-div"><strong>${h(r.name)} ${h(l)}</strong><p class="hint">${h(r.format(d))}</p></div>`).join('')}
       <p class="q">Stations</p><ul class="race-stations">${r.stations.map(x => `<li>${h(x)}</li>`).join('')}</ul>
       <p class="hint">${h(r.firstTime)} Use your division's official weights (${S.profile.sex === 'f' ? "women's" : S.profile.sex === 'm' ? "men's" : "men's or women's"}).</p>
-      ${r.site ? `<p><a href="${r.site}" target="_blank" rel="noopener" data-act="race-site" data-k="${m.k}">Find a ${h(r.name)} race ↗</a></p>` : ''}
+
       ${m.info && cur?.event === m.k ? '' : `<p class="q">${m.info ? 'Want to prepare for it?' : 'Which division?'}</p><div class="row wrap">${r.divisions.map(([d, l]) => `<button class="btn primary" data-act="${HYB.hasHybrid(S) ? 'race-div' : 'race-start'}" data-k="${m.k}" data-div="${d}">${h(l)}</button>`).join('')}</div>`}
       <div class="row end"><button type="button" class="btn ghost" data-act="close">Close</button></div></div>`;
   },
