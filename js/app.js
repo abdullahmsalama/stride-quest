@@ -21,6 +21,8 @@ import * as HYB from './hybrid.js';
 import { HYBRID_WORLDS, BLOCK_WEEKS, STRENGTH_STAGES } from './data/hybrid.js';
 import { TRI_WORLDS } from './data/tri.js';
 import { confetti } from './intro.js';
+import * as STATS from './stats.js';
+import { NORMS, RHO } from './data/norms.js';
 
 // ---------- state ----------
 // Theme: light by default (the look the app launched with); dark or follow-the-device on request.
@@ -450,14 +452,14 @@ function render() {
   const frame = document.querySelector('.worldmap');
   if (frame) ui.frameTop = frame.scrollTop; // keep the framed map's scroll across redraws
   const t = now();
-  const views = { today: viewToday, map: viewMap, challenge: viewChallenge, coach: viewCoach, me: viewMe };
+  const views = { today: viewToday, map: viewMap, challenge: viewChallenge, stats: viewStats, coach: viewCoach, me: viewMe };
   $('#app').innerHTML = `
     <header class="top">
       <div class="brand">🏃 Stride Quest</div>
       <div class="chips"><span class="chip" title="Total XP">⚡ ${S.xp} XP</span><span class="chip" title="Day streak">🔥 ${E.dayStreak(S, t)}</span></div>
     </header>
     <main class="view view-${ui.tab}">${views[ui.tab]()}</main>
-    <nav class="tabs">${[['today', '🏠', 'Today'], ['map', '🗺️', 'Map'], ['challenge', '🏆', 'Challenge'], ['coach', '💬', 'Coach'], ['me', '👤', 'Me']].map(([k, i, l]) =>
+    <nav class="tabs">${[['today', '🏠', 'Today'], ['map', '🗺️', 'Map'], ['challenge', '🏆', 'Challenge'], ['stats', '📊', 'Stats'], ['coach', '💬', 'Coach'], ['me', '👤', 'Me']].map(([k, i, l]) =>
       `<button class="${ui.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}"><span>${i}</span>${l}</button>`).join('')}</nav>`;
   queueModals();
   renderModal();
@@ -1047,7 +1049,8 @@ function bodyTrend() {
   if (first === last) return '';
   const d = (x, y) => { const v = Math.round((x - y) * 10) / 10; return `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v)}`; };
   const fat = first.bf && last.bf && first.method === last.method ? `, body fat ${d(last.bf, first.bf)} points` : '';
-  return `<br>📈 Since ${new Date(first.ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}: bodyweight ${d(last.bw, first.bw)} ${last.unit}${fat}.`;
+  const lift = (k, name) => (first[k] > 0 && last[k] > 0 && first.mode === last.mode && first[k] !== last[k] ? `, ${name} ${d(last[k], first[k])} ${last.unit}` : '');
+  return `<br>📈 Since ${new Date(first.ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}: bodyweight ${d(last.bw, first.bw)} ${last.unit}${fat}${lift('sq', 'squat')}${lift('dl', 'deadlift')}.`;
 }
 
 function numbersCard() {
@@ -1068,6 +1071,72 @@ function numbersCard() {
         <br>Strength now: ${cleared ? `cleared ${h(cleared.name)}, ` : ''}working on <strong>${h(working.name)}</strong> (${h(ST.sexText(working.target, S.profile.sex))}).</p>
       <button class="btn" data-act="edit-numbers">Update my numbers</button>
     </section>`;
+}
+
+// ---------- stats ----------
+// The athlete's own numbers, in the units the norm tables use.
+function myValues() {
+  const a = S.answers || {}, b = S.bests || {};
+  const toKg = a.liftUnit === 'lb' ? 0.4536 : 1, bwKg = +a.bodyweight * toKg;
+  const oneRm = v => (+v > 0 && bwKg > 30 ? (+v * toKg * (a.liftMode === '1' ? 1 : 1 / 0.86)) / bwKg : null); // 5 reps ~ 86% of a 1-rep max
+  const div = b.hyroxDiv === 'pro' ? 'hyrox_pro' : 'hyrox_open';
+  return {
+    run5k: b.run5k || a.best5k || null, run10k: b.run10k || a.best10k || null, half: b.half || null, marathon: b.marathon || null,
+    squat: oneRm(a.squat5), deadlift: oneRm(a.deadlift5), pullups: a.pullups !== '' && a.pullups != null ? +a.pullups || null : null,
+    [div]: b.hyrox || null, ftp: b.ftp && bwKg > 30 ? b.ftp / bwKg : null, bwKg,
+  };
+}
+const fmtStat = (fmt, v) => (fmt === 'time' ? formatTime(v) : fmt === 'ratio' ? `${v.toFixed(2)}× bodyweight` : fmt === 'wkg' ? `${v.toFixed(2)} W/kg` : `${Math.round(v)}`);
+const gapText = (st, bwKg = myValues().bwKg) => {
+  if (st.target == null) return '';
+  const d = st.target - st.value;
+  const what = st.fmt === 'time' ? `${formatTime(Math.abs(d))} faster` : st.fmt === 'ratio' ? `+${Math.ceil(Math.abs(d) * bwKg / 2.5) * 2.5} kg on your 1-rep max` : st.fmt === 'wkg' ? `+${Math.abs(d).toFixed(2)} W/kg` : `+${Math.ceil(Math.abs(d))} rep${Math.ceil(Math.abs(d)) > 1 ? 's' : ''}`;
+  return `${what} and you pass ${st.nextP === 50 ? 'half' : `${st.nextP}%`} of ${st.group}.`;
+};
+
+function viewStats() {
+  const sex = S.profile.sex, age = S.profile.ageGroup || null;
+  const vals = myValues();
+  const stats = Object.keys(NORMS).map(k => STATS.statFor(k, vals[k], sex, age, { bwKg: vals.bwKg })).filter(Boolean);
+  const shown = stats.filter(x => x.show).sort((x, y) => y.p - x.p || (x.median ? 1 : -1));
+  const best = shown[0];
+  const rare = STATS.hybridRarity(stats);
+  const act = STATS.activityLine(S, now());
+  const card = st => `<div class="stat ${st.show ? '' : 'climb'}">
+      <div class="stat-top"><strong>${h(st.label)}</strong><span>${h(fmtStat(st.fmt, st.value))}</span></div>
+      ${st.show && st.median ? `<p>Faster than <b>half</b> of ${h(st.group)}.</p>`
+        : st.show ? `<div class="stat-bar"><i style="width:${st.p}%"></i></div><p>Better than <b>${st.p}%</b> of ${h(st.group)}.${st.nextP ? ` <span class="hint">${h(gapText(st))}</span>` : ''}</p>`
+        : `<p>🎯 ${h(gapText(st))}</p>`}
+    </div>`;
+  const history = S.history.filter(x => x.kind === 'session');
+  const runLevels = history.filter(x => x.track === 'run' && x.level).map(x => x.level);
+  const startLevel = Math.min(S.run.level, ...(runLevels.length ? runLevels : [S.run.level]));
+  const since = S.placedAt ? new Date(S.placedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const cleared = Object.keys(S.run.stars).length;
+  const sources = [...new Map([...stats.map(x => x.source), act?.source].filter(Boolean).map(x => [x.url, x])).values()].filter(x => x?.url);
+  return `
+    <section class="card stats-hero">
+      <p class="eyebrow">📊 Your stats</p>
+      ${best ? `<h2>${best.median ? 'Faster than half' : `Better than ${best.p}%`} of ${h(best.group)}</h2><p class="hint">${h(best.label)}: ${h(fmtStat(best.fmt, best.value))}. Your strongest number right now.</p>`
+        : act ? `<h2>${h(act.text)}</h2>` : '<h2>Every stat starts with the first session 💪</h2><p class="hint">Log a session or add your bests to see how you compare.</p>'}
+      ${sex !== 'm' && sex !== 'f' ? '<p class="banner info">The published data is split into men and women only. Pick one under <b>change</b> to see your comparisons (it only affects Stats and race standards).</p>' : ''}
+      <p class="hint">Compared with: ${sex === 'm' ? 'men' : sex === 'f' ? 'women' : 'no group yet'}${age ? `, aged ${h(age)}` : ''} · <button class="linkish" data-act="edit-bests">change</button></p>
+    </section>
+    ${act && best ? `<section class="card"><p>💚 ${h(act.text)}</p></section>` : ''}
+    ${rare ? `<section class="card rare"><h3>🧬 Hybrid rarity</h3><p class="big">About <b>1 in ${rare.oneIn}</b> ${sex === 'm' ? 'men' : sex === 'f' ? 'women' : 'people'}</p>
+      <p class="hint">are as good as you at both ${h(rare.basis[0].label)} (top ${100 - rare.basis[0].p}%) and ${h(rare.basis[1].label)} (top ${100 - rare.basis[1].p}%). It's the combination that makes you rare. Estimate: it assumes people good at one tend to be somewhat good at the other (correlation ${RHO.value}).</p></section>` : ''}
+    <section class="card"><h3>Your numbers</h3>
+      ${stats.length ? `<div class="stat-list">${[...shown, ...stats.filter(x => !x.show)].map(card).join('')}</div>` : '<p class="hint">No numbers yet.</p>'}
+      <button class="btn" data-act="edit-bests">Add or update my bests</button>
+    </section>
+    <section class="card"><h3>📈 You vs past you</h3>
+      <div class="stats"><div><strong>${history.length}</strong><span>Sessions</span></div><div><strong>${S.xp}</strong><span>XP</span></div><div><strong>${cleared}</strong><span>Levels cleared</span></div></div>
+      <p class="hint">${since ? `Since ${h(since)}: ` : ''}Run Level ${startLevel} → ${S.run.level}${HYB.hasHybrid(S) ? ` · Strength: ${h(HYB.strengthStage(S).name)}` : ''}.${bodyTrend().replace('<br>', ' ')}</p>
+    </section>
+    <details class="card how"><summary>How is this calculated?</summary>
+      <p class="hint">Your numbers are compared with published results, not with other app users, and not by the AI. For each one we use the closest group the source has (your sex and age group when available). Below the middle of a group we show your next milestone instead of a percentage. Lifts are compared as an estimated 1-rep max (5 reps ≈ 86% of a 1-rep max).</p>
+      <ul class="sources">${sources.map(x => `<li><a href="${h(x.url)}" target="_blank" rel="noopener">${h(x.name)}</a>${x.note ? ` · ${h(x.note)}` : ''}</li>`).join('')}${RHO.source ? `<li>Rarity correlation: <a href="${h(RHO.url || '#')}" target="_blank" rel="noopener">${h(RHO.source)}</a></li>` : ''}</ul>
+    </details>`;
 }
 
 function viewMe() {
@@ -1162,6 +1231,21 @@ function painButtons() {
 }
 
 const MODALS = {
+  bests() {
+    const b = S.bests || {}, a = S.answers || {};
+    const t = (name, label, v, ph) => `<label class="field"><span>${label}</span><input type="text" name="${name}" value="${v ? formatTime(v) : ''}" placeholder="${ph}" autocomplete="off" inputmode="text"></label>`;
+    return `<form id="bests-form"><h2>📊 My bests</h2>
+      <p class="why">💡 Recent bests give the fairest comparison. Leave anything blank you haven't done.</p>
+      <p class="q">Compare me with</p>${radio('bSex', [['m', 'Men'], ['f', 'Women'], ['x', 'Everyone']], S.profile.sex || 'x')}
+      <label class="field"><span>Age group (optional)</span>${select('bAge', [['', 'Prefer not to say'], ...STATS.AGE_GROUPS], S.profile.ageGroup || '')}</label>
+      ${t('b5k', '5K time', b.run5k || a.best5k, 'e.g. 24:30')}${t('b10k', '10K time', b.run10k || a.best10k, 'e.g. 52:10')}
+      ${t('bHalf', 'Half marathon', b.half, 'e.g. 1:55:00')}${t('bMar', 'Marathon', b.marathon, 'e.g. 4:10:00')}
+      ${t('bHyrox', 'Hyrox (solo) time', b.hyrox, 'e.g. 1:25:00')}
+      <p class="q">Hyrox division</p>${radio('bHyDiv', [['open', 'Open'], ['pro', 'Pro']], b.hyroxDiv || 'open')}
+      <label class="field"><span>Cycling FTP (watts)</span><span class="with-unit"><input type="number" inputmode="numeric" name="bFtp" value="${b.ftp || ''}" min="0" step="1"><em>W</em></span></label>
+      <p class="hint">Lifts come from 📏 My numbers in the Me tab. Swimming and pull-ups aren't compared yet: we couldn't find reliable published data for them.</p>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`;
+  },
   numbers() {
     const a = S.answers || {};
     const unit = a.liftUnit === 'lb' ? 'lb' : 'kg';
@@ -1510,6 +1594,7 @@ const actions = {
   'map-me'() { followY(POINTS[ui.avatarAt ?? S.run.level].y); },
   'open-level'() { ui.modal = { type: 'level' }; renderModal(); },
   cleared() { ui.modal = { type: 'painfree', cleared: true }; renderModal(); },
+  'edit-bests'() { ui.modal = { type: 'bests' }; renderModal(); },
   'edit-numbers'() { ui.modal = { type: 'numbers' }; renderModal(); },
   painfree() { ui.modal = { type: 'painfree', cleared: false }; renderModal(); },
   'painfree-go'(el) {
@@ -1849,6 +1934,17 @@ document.addEventListener('submit', e => {
     toast(`Welcome to ${HYB.hybWorld(S).emoji} ${HYB.hybWorld(S).name}!`);
     return;
   }
+  if (f.id === 'bests-form') {
+    const tm = n => { const v = f[n].value.trim(); return v ? parseTime(v) : null; };
+    const fields = { run5k: tm('b5k'), run10k: tm('b10k'), half: tm('bHalf'), marathon: tm('bMar'), hyrox: tm('bHyrox') };
+    const bad = Object.entries(fields).find(([k, v]) => v === null && f[{ run5k: 'b5k', run10k: 'b10k', half: 'bHalf', marathon: 'bMar', hyrox: 'bHyrox' }[k]].value.trim());
+    if (bad) return toast('Use mm:ss or h:mm:ss for times, for example 24:30 or 1:55:00.');
+    S.bests = { ...fields, hyroxDiv: f.querySelector('[name=bHyDiv]:checked')?.value || 'open', ftp: +f.bFtp.value || null };
+    S.profile.sex = f.querySelector('[name=bSex]:checked')?.value || S.profile.sex;
+    S.profile.ageGroup = f.bAge.value || null;
+    ui.modal = null; commit(S); toast('Bests saved 📊');
+    return;
+  }
   if (f.id === 'numbers-form') {
     const unit = f.querySelector('[name=nUnit]:checked')?.value || 'kg', mode = f.querySelector('[name=nMode]:checked')?.value || '5';
     const num = n => (f[n].value.trim() === '' ? null : +f[n].value);
@@ -1857,7 +1953,7 @@ document.addEventListener('submit', e => {
     if (bf != null && !(bf >= 3 && bf <= 60)) return toast('Body fat should be a percentage between 3 and 60, or leave it empty.');
     // Body log: one entry per change, for the trend.
     const last = (S.bodyLog || []).at(-1);
-    if (!last || last.bw !== bw || last.unit !== unit || (last.bf ?? null) !== bf) S.bodyLog = [...(S.bodyLog || []), { ts: t, bw, unit, bf, method: bfm }].slice(-60);
+    if (!last || last.bw !== bw || last.unit !== unit || (last.bf ?? null) !== bf || last.sq !== sq || last.dl !== dl) S.bodyLog = [...(S.bodyLog || []), { ts: t, bw, unit, bf, method: bfm, sq, dl, mode }].slice(-60);
     const before = S.hybrid.strength.stage;
     const ans = { ...(S.answers || {}), bodyweight: bw, squat5: sq ?? '', deadlift5: dl ?? '', pullups: pu ?? '', liftUnit: unit, liftMode: mode, bodyFat: bf ?? '', bodyFatMethod: bf != null ? bfm : '' };
     const fresh = HYB.placeHybrid(S, { ...ans, liftExp: ans.liftExp || 'lt1' }, t);

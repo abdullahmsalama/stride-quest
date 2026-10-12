@@ -602,3 +602,20 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .worldmap.peek .map-canvas { margin-top: 0 !important; }
 .replay-btn { display: block; margin: -4px auto 14px; }
 .same-answers { margin: 14px 0 4px; padding: 12px; border-radius: 12px; background: rgba(127, 127, 127, .09); } .same-answers .btn { margin-top: 6px; }
+
+/* Stats tab */
+.stats-hero h2 { margin: 4px 0 6px; font: 800 26px/1.15 var(--display); }
+.stat-list { display: grid; gap: 10px; margin-bottom: 12px; }
+.stat { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.stat-top { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
+.stat-top span { font-weight: 700; }
+.stat p { margin: 6px 0 0; font-size: 14px; }
+.stat-bar { height: 8px; border-radius: 99px; background: var(--line); margin-top: 8px; overflow: hidden; }
+.stat-bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--lime, #a3e635), var(--brand)); }
+.stat.climb { border-style: dashed; }
+.rare .big { font: 800 24px var(--display); margin: 4px 0; }
+.linkish { background: none; border: 0; padding: 0; color: var(--brand); font: inherit; text-decoration: underline; cursor: pointer; }
+.how summary { cursor: pointer; font-weight: 700; }
+.sources { margin: 8px 0 0; padding-left: 18px; font-size: 13px; }
+.sources a { color: var(--brand); }
+@media (max-width: 420px) { .tabs button { font-size: 11px; } .tabs button span { font-size: 18px; } }
