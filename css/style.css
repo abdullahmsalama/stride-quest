@@ -666,3 +666,7 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .comp-card .seg { margin: 10px 0; }
 .comp-card .coming { font: 800 22px var(--display); margin: 10px 0 4px; }
 .byline.credit { text-align: center; margin: 18px 0 8px; }
+/* "Competitions Calendar": the full name where there's room, "Calendar" on phones */
+.tabs button em.long { font-style: normal; }
+@media (max-width: 999px) { .tabs button em.long { display: none; } }
+@media (max-width: 400px) { .tabs button { font-size: 10.5px; letter-spacing: -.01em; padding-left: 2px; padding-right: 2px; } }

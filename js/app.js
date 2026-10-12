@@ -455,15 +455,15 @@ function render() {
   const frame = document.querySelector('.worldmap');
   if (frame) ui.frameTop = frame.scrollTop; // keep the framed map's scroll across redraws
   const t = now();
-  const views = { today: viewToday, map: viewMap, challenge: viewChallenge, stats: viewStats, coach: viewCoach, me: viewMe };
+  const views = { today: viewToday, map: viewMap, challenge: viewChallenge, events: viewCompetitions, stats: viewStats, coach: viewCoach, me: viewMe };
   $('#app').innerHTML = `
     <header class="top">
       <div class="brand">🏃 Stride Quest</div>
       <div class="chips"><span class="chip" title="Total XP">⚡ ${S.xp} XP</span><span class="chip" title="Day streak">🔥 ${E.dayStreak(S, t)}</span></div>
     </header>
     <main class="view view-${ui.tab}">${views[ui.tab]()}</main>
-    <nav class="tabs">${[['today', '🏠', 'Today'], ['map', '🗺️', 'Map'], ['challenge', '🏆', 'Challenge'], ['stats', '📊', 'Stats'], ['coach', '💬', 'Coach'], ['me', '👤', 'Me']].map(([k, i, l]) =>
-      `<button class="${ui.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}"><span>${i}</span>${l}</button>`).join('')}</nav>`;
+    <nav class="tabs">${[['today', '🏠', 'Today'], ['map', '🗺️', 'Map'], ['challenge', '🏆', 'Challenge'], ['events', '🗓️', '<em class="long">Competitions </em>Calendar'], ['stats', '📊', 'Stats'], ['coach', '💬', 'Coach'], ['me', '👤', 'Me']].map(([k, i, l]) =>
+      `<button class="${ui.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}"${k === 'events' ? ' aria-label="Competitions Calendar"' : ''}><span>${i}</span>${l}</button>`).join('')}</nav>`;
   queueModals();
   renderModal();
   if (ui.tab === 'coach') { const log = $('.chat-log'); if (log) log.scrollTop = log.scrollHeight; }
@@ -1005,9 +1005,9 @@ const FIT_TAG = { ready: ['ok', 'Your level'], stretch: ['ok', 'Nice stretch'], 
 const fitTag = f => FIT_TAG[f] ? `<span class="tag-fit ${FIT_TAG[f][0]}">${FIT_TAG[f][1]}</span>` : '';
 
 function viewChallenge() {
-  const seg = `<div class="seg" role="tablist">${[['challenges', '🏆 Challenges'], ['friends', '👥 Friends'], ['events', '🗓️ Competitions']].map(([k, l]) =>
+  const seg = `<div class="seg" role="tablist">${[['challenges', '🏆 Challenges'], ['friends', '👥 Friends']].map(([k, l]) =>
     `<button role="tab" class="${ui.socialTab === k ? 'on' : ''}" data-act="social-tab" data-k="${k}">${l}</button>`).join('')}</div>`;
-  return seg + (ui.socialTab === 'friends' ? viewFriends() : ui.socialTab === 'events' ? viewCompetitions() : viewChallenges());
+  return seg + (ui.socialTab === 'friends' ? viewFriends() : viewChallenges());
 }
 
 // Real competitions to enter: Egypt from the Egypt Fitness Events calendar, worldwide coming later.
@@ -1021,7 +1021,7 @@ function viewCompetitions() {
        <p class="hint">Open a row for format, cost, and whether it suits a first-timer. Add all events to your calendar in one tap.</p>
        <a class="btn primary" href="${CALENDAR_URL}" target="_blank" rel="noopener" data-act="race-site" data-k="calendar">🗓️ Open the Egypt Fitness Calendar ↗</a>`
     : `<p class="coming">🌍 Coming soon</p><p class="hint">Competitions worldwide are on the way. For now, see Egypt, or the official race websites in Race prep.</p>`;
-  return `<section class="card comp-card"><h3>🗓️ Competitions</h3><p class="hint">Looking for a race to enter?</p>${tabs}${body}</section>`;
+  return `<section class="card comp-card"><h3>🗓️ Competitions Calendar</h3><p class="hint">Looking for a race to enter?</p>${tabs}${body}</section>`;
 }
 
 function viewFriends() {
