@@ -1344,7 +1344,7 @@ function viewMe() {
         <button class="btn" data-act="sound">${sfx.soundOn() ? '🔊 Sound on' : '🔇 Sound off'}</button>
         <button class="btn danger" data-act="reset">Reset everything</button>
       </div></section>
-    <p class="hint version">Stride Quest ${APP_VERSION} · developed by <button class="linkish" data-act="about-me">Abdullah Salama</button></p>`;
+    <p class="byline credit">Developed by <button type="button" class="linkish" data-act="about-me">Abdullah Salama</button></p>`;
 }
 
 // ---------- modals ----------
