@@ -1383,8 +1383,7 @@ function painButtons() {
 const MODALS = {
   aboutMe() {
     return `<div class="about-me"><h2>🏃 Stride Quest</h2><p class="about-by">Developed by <b>Abdullah Salama</b></p>
-      <p class="hint">Training for running, hybrid (Alpha X, Hyrox) and triathlon.</p>
-      <p class="about-why">💛 I built Stride Quest to help people move, stay consistent and reach their goals: to become stronger, healthier and better.</p>
+      <p class="about-why">💙 I built Stride Quest to help people move, stay consistent and reach their goals: to become stronger, healthier and better.</p>
       <p class="about-bio">I'm a hybrid athlete who loves pushing my limits, and a Data Scientist / ML Engineer with 13+ years in tech and 8+ in AI. MSc from Hamburg University of Technology, now doing a PhD in AI focused on compact models. Always learning, and trying to help make the world a better place.</p>
       <a class="link-row" href="https://www.linkedin.com/in/abdullah-salama/" target="_blank" rel="noopener"><b>LinkedIn</b><span>Open ↗</span></a>
       <a class="link-row" href="https://www.instagram.com/abdu_salama/" target="_blank" rel="noopener"><b>Instagram</b><span>Open ↗</span></a>
