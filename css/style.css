@@ -733,3 +733,7 @@ header.top { gap: 10px; }
 @media (min-width: 1000px) { .tour-bar { bottom: 28px; } }
 .btn.wide { width: 100%; margin: 4px 0 12px; }
 .wait-card { border-left: 5px solid var(--brand); } .wait-card h3 { margin: 4px 0; }
+.ladder .ladder-btn { all: unset; display: flex; align-items: baseline; gap: 8px; width: 100%; cursor: pointer; }
+.ladder .ladder-btn span { margin-left: auto; }
+.ladder li:hover { filter: brightness(.97); }
+.prep-modal .steps { margin: 6px 0; }

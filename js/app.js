@@ -543,8 +543,9 @@ function banners() {
     ? `<div class="banner info"><strong>💛 Recovery plan.</strong> Easy health checks first, then you're back on your map${S.run.reclaim ? ` to reclaim Level ${S.run.reclaim}` : ''}. Feeling great early? The Prove It run fast-tracks you.</div>`
     : `<div class="banner info"><strong>Refresher course.</strong> Welcome back! Start with the Prove It run: hit it and you skip the rest.</div>`);
   const blockedAt = E.prepBlocksRun(S);
-  if (blockedAt != null) out.push(`<div class="banner info"><strong>Gate passed!</strong> Level ${S.run.level + 1} unlocks at Prep stage P${blockedAt}. Keep going on the Prep Track.</div>`);
-  if (S.run.reclaim) out.push(`<div class="banner reclaim">🔒 <strong>Reclaim:</strong> ${h(E.runLevel(S.run.reclaim).name)} (Level ${S.run.reclaim}) is waiting for you.</div>`);
+  if (blockedAt != null) out.push(`<div class="banner info"><strong>Level ${S.run.level} cleared! 🎉</strong> Level ${S.run.level + 1} also needs body prep <strong>P${blockedAt}</strong>, and you're at P${S.prep.level}${blockedAt - S.prep.level > 1 ? ` (${blockedAt - S.prep.level} stages to go)` : ''}. Your week now brings Prep Track sessions; Level ${S.run.level + 1} opens as soon as you reach P${blockedAt}.
+      <div class="row"><button class="btn small" data-act="prep-stage" data-n="${S.prep.level}">See my Prep steps</button></div></div>`);
+  if (S.run.reclaim && blockedAt == null) out.push(`<div class="banner reclaim">🔒 <strong>Reclaim:</strong> ${h(E.runLevel(S.run.reclaim).name)} (Level ${S.run.reclaim}) is waiting for you.</div>`);
   return out.join('');
 }
 
@@ -869,7 +870,8 @@ function todayParts(t) {
 
 function viewMap() {
   if (runIntroPending() && !ui.mapRunning && ui.intro == null) ui.avatarAt = 0;
-  const prep = PREP_STAGES.map(p => `<li class="${p.n < S.prep.level || (p.n === 7 && S.prep.mastered) ? 'done' : p.n === S.prep.level ? 'current' : ''}"><strong>P${p.n}</strong> ${h(p.name)}<span>${h(p.focus)}</span></li>`).join('');
+  // Each Prep stage opens: the current one with its sessions, the others with what they unlock.
+  const prep = PREP_STAGES.map(p => `<li class="${p.n < S.prep.level || (p.n === 7 && S.prep.mastered) ? 'done' : p.n === S.prep.level ? 'current' : ''}"><button type="button" class="ladder-btn" data-act="prep-stage" data-n="${p.n}"><strong>P${p.n}</strong> ${h(p.name)}<span>${h(p.focus)}</span></button></li>`).join('');
   const rebuild = S.rebuild.active ? `<section class="card"><h3>🩹 Rebuild Track</h3><ol class="ladder">${REBUILD_STAGES.map((r, i) => `<li class="${i < S.rebuild.stage ? 'done' : i === S.rebuild.stage ? 'current' : ''}"><strong>R${r.n}</strong> ${h(r.name)}<span>${h(r.focus)}</span></li>`).join('')}</ol></section>` : '';
   if ((ui.mapMode === 'tri' && !TRI.hasTri(S)) || (ui.mapMode === 'hyb' && !HYB.hasHybrid(S))) ui.mapMode = 'world';
   const multi = TRI.hasTri(S) || HYB.hasHybrid(S);
@@ -1537,6 +1539,19 @@ function painButtons() {
 }
 
 const MODALS = {
+  prepStage(m) {
+    const p = PREP_STAGES[m.n], cur = S.prep.level, done = m.n < cur || (m.n === 7 && S.prep.mastered);
+    const needs = RUN_LEVELS.filter(l => l.needsPrep === m.n);
+    const why = '💡 The Prep Track builds tendons, joints and landing skills, so harder running (strides, hills, intervals, long races) doesn\'t get you hurt.';
+    const body = m.n === cur && !done
+      ? `<p class="q">Your sessions in this stage</p><ul class="steps">${E.trackSteps(S, 'prep').map(st => stepRow('prep', st)).join('')}</ul>
+         <p class="hint">They also come up in your week as "Prep Track step". Clear the last one (the gate) to move to P${m.n + 1}.</p>`
+      : done ? '<p>✅ Cleared.</p>'
+      : `<p>🔒 Opens after you clear P${m.n - 1}'s gate${m.n - cur > 1 ? ` (you're at P${cur}: ${m.n - cur} stages to go)` : ''}.</p>`;
+    return `<div class="prep-modal"><h2>🧱 P${p.n} · ${h(p.name)}</h2><p class="hint">${h(p.focus)}</p><p class="why">${why}</p>${body}
+      ${needs.length ? `<p class="hint">Needed for: ${needs.map(l => `Level ${l.n} · ${h(l.name)}`).join(', ')}.</p>` : ''}
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Close</button></div></div>`;
+  },
   help() { return helpPanel(); },
   aboutMe() {
     return `<div class="about-me"><h2>🏃 Stride Quest</h2><p class="about-by">Developed by <b>Abdullah Salama</b></p>
@@ -1956,6 +1971,7 @@ const actions = {
   },
   'race-stop'() { S.hybrid.race = null; commit(S); toast('Race prep stopped. Your Hybrid plan carries on.'); },
   'show-me'(el) { showMe(el.dataset.f); },
+  'prep-stage'(el) { ui.modal = { type: 'prepStage', n: +el.dataset.n }; renderModal(); },
   'tour-start'() { ui.modal = null; renderModal(); startTour(0); },
   'tour-step'(el) { ui.tour.i = Math.max(0, ui.tour.i + +el.dataset.d); tourGo(); },
   'tour-end'() { endTour(false); },
@@ -2454,7 +2470,7 @@ window.addEventListener('hashchange', () => {
   if (!ui.modal) render();
 });
 
-$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help', 'prepStage'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
 
 // ---------- installable app ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;

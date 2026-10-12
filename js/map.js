@@ -299,7 +299,10 @@ function popupHtml(s, n) {
   } else if (n < cur) {
     body = stars ? `<p class="pop-stars">${'⭐'.repeat(stars) + '☆'.repeat(3 - stars)}</p><p class="hint">Cleared</p>` : '<p class="hint">You were placed past this level.</p>';
   } else {
-    body = `<p class="hint">🔒 ${s.run.reclaim === n ? 'Reclaim this level soon.' : `Unlocks by clearing Level ${n - 1}`}<br>Needs Prep P${l.needsPrep}</p>`;
+    const prepShort = s.prep.level < l.needsPrep;
+    const opens = n === cur + 1 && s.run.gatePassed ? 'Level ' + cur + ' is cleared ✓' : `Opens after you clear Level ${n - 1}`;
+    body = `<p class="hint">🔒 ${opens}.${s.run.reclaim === n ? ` You've reached Level ${n} before, so you'll be back fast.` : ''}</p>
+      ${prepShort ? `<p class="hint">🧱 Also needs body prep <strong>P${l.needsPrep}</strong>: you're at P${s.prep.level}${l.needsPrep - s.prep.level > 1 ? `, ${l.needsPrep - s.prep.level} stages to go` : ''}.</p><button class="btn small" data-act="prep-stage" data-n="${s.prep.level}">See my Prep steps</button>` : `<p class="hint">🧱 Body prep P${l.needsPrep} ✓</p>`}`;
   }
   if (s.profile?.dream?.target?.level === n) {
     body += `<p class="pop-dream">🎯 Your dream lives here: ${(s.profile.dream.text || s.profile.dream.event).replace(/</g, '&lt;')}</p>`;
