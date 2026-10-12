@@ -434,7 +434,7 @@ function renderOnboarding() {
   } else body = st.body;
   $('#app').innerHTML = `
     <main class="onboarding">
-      <div class="ob-top"><div class="brand">🏃 Stride Quest<small class="dev" style="font-family:Inter,system-ui,sans-serif;font-size:13px;font-weight:600;letter-spacing:.02em;margin-left:14px">Developed by <button type="button" class="linkish" data-act="about-me">Abdullah Salama</button></small></div><div class="progress"><div style="width:${((i + 1) / steps.length) * 100}%"></div></div></div>
+      <div class="ob-top"><button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest">🏃 Stride Quest</button><div class="progress"><div style="width:${((i + 1) / steps.length) * 100}%"></div></div></div>
       ${returning}
       <form id="ob-form" class="card ob-card" autocomplete="off">
         ${!st.welcome && !st.result ? `<p class="eyebrow">Question ${i} of ${steps.length - 2}</p>` : ''}
@@ -458,7 +458,7 @@ function render() {
   const views = { today: viewToday, map: viewMap, challenge: viewChallenge, events: viewCompetitions, stats: viewStats, coach: viewCoach, me: viewMe };
   $('#app').innerHTML = `
     <header class="top">
-      <div class="brand">🏃 Stride Quest<small class="dev" style="font-family:Inter,system-ui,sans-serif;font-size:13px;font-weight:600;letter-spacing:.02em;margin-left:14px">Developed by <button type="button" class="linkish" data-act="about-me">Abdullah Salama</button></small></div>
+      <button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest">🏃 Stride Quest</button>
       <div class="chips"><span class="chip" title="Total XP">⚡ ${S.xp} XP</span><span class="chip" title="Day streak">🔥 ${E.dayStreak(S, t)}</span></div>
     </header>
     <main class="view view-${ui.tab}">${views[ui.tab]()}</main>
@@ -1382,7 +1382,8 @@ function painButtons() {
 
 const MODALS = {
   aboutMe() {
-    return `<div class="about-me"><h2>Abdullah Salama</h2><p class="hint">Developer of Stride Quest</p>
+    return `<div class="about-me"><h2>🏃 Stride Quest</h2><p class="about-by">Developed by <b>Abdullah Salama</b></p>
+      <p class="hint">Free training for running, hybrid (Alpha X, Hyrox) and triathlon.</p>
       <a class="link-row" href="https://www.linkedin.com/in/abdullah-salama/" target="_blank" rel="noopener"><b>LinkedIn</b><span>Open ↗</span></a>
       <a class="link-row" href="https://www.instagram.com/abdu_salama/" target="_blank" rel="noopener"><b>Instagram</b><span>Open ↗</span></a>
       <a class="link-row" href="${CALENDAR_URL}" target="_blank" rel="noopener"><b>Egypt Fitness Calendar</b><span>Open ↗</span></a>
