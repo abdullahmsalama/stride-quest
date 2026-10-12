@@ -674,5 +674,5 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .tabs button .lbl { font: inherit; text-align: left; } /* one label, so spacing never splits "Competitions Calendar" */
 .brand .dev { display: inline-block; margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--line); font: 600 13px var(--body); letter-spacing: .02em; color: var(--ink-2); vertical-align: middle; }
 /* Phones: the XP and streak chips need the room on the right, so it sits under the name */
-@media (max-width: 600px) { .brand .dev { display: block; margin: 1px 0 0; padding: 0; border: 0; font-size: 11px; } }
+@media (max-width: 600px) { .brand .dev { display: block; margin: 1px 0 0 !important; padding: 0; border: 0; font-size: 11px !important; } }
 .brand .dev .linkish { font-weight: 700; }
