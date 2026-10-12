@@ -559,7 +559,7 @@ function stepRow(track, st) {
   return `<li class="step ${st.status} t-${st.type}">
       <button ${clickable ? `data-act="open-step" data-track="${track}" data-idx="${st.idx}"` : 'disabled'}>
         <span class="icon">${STATUS_ICON[st.status]}</span>
-        <span class="txt"><span class="type">${TYPE_LABEL[st.type]}${st.boss ? ' · Boss' : ''}</span>${h(st.title)}${st.swapped ? ' <em class="hint">(swapped)</em>' : ''}${st.status === 'provisional' ? '<em class="hint"> waiting for the morning check</em>' : ''}${st.lockReason ? `<em class="lock-why">🔒 ${h(st.lockReason)}</em>` : ''}</span>
+        <span class="txt"><span class="type">${TYPE_LABEL[st.type]}${st.boss ? ' · Boss' : ''}</span>${h(st.title)}${st.swapped ? ' <em class="hint">(swapped)</em>' : ''}${st.status === 'provisional' ? '<em class="hint"> done: counts after tomorrow morning\'s check</em>' : ''}${st.lockReason ? `<em class="lock-why">🔒 ${h(st.lockReason)}</em>` : ''}</span>
         <span class="xp">${st.xp ? `+${st.xp}` : ''}</span>
       </button></li>`;
 }
@@ -784,12 +784,18 @@ function viewToday() {
       ${S.profile.dream ? dreamLine(S.profile.dream, S.run.level, true) : ''}
       ${mode !== 'world' ? `<button class="btn small hero-btn" data-act="goto-${mode}-map">Open my map</button>` : ''}
     </section>`;
+// A gate or boss logged today only counts after tomorrow morning's pain check: say so, and what opens then.
+const waitingFor = steps.find(st => st.status === 'provisional' && (st.type === 'gate' || st.boss));
+const waitCard = waitingFor ? `<section class="card wait-card" style="order:2"><p class="eyebrow">⏳ Almost there</p>
+    <h3>${h(waitingFor.title)}: done!</h3>
+    <p>${track === 'run' && S.run.level < RUN_LEVELS.length ? `<strong>Level ${S.run.level + 1}</strong> and its new sessions open` : 'It counts'} <strong>tomorrow morning</strong>, after a quick check of how you feel.</p>
+    <p class="hint">Pain 2/10 or less clears it. Why wait: some strains only show up the next day, and this keeps you from levelling up on an injury.</p></section>` : '';
 const credit = '<p class="byline credit">Developed by <button type="button" class="linkish" data-act="about-me">Abdullah Salama</button></p>';
   const simple = (S.profile.view || 'full') === 'simple';
   const toggle = `<div class="seg today-seg" role="tablist">${[['simple', '✨ Just next'], ['full', '📋 Full day']].map(([k, l]) =>
     `<button role="tab" class="${(simple ? 'simple' : 'full') === k ? 'on' : ''}" data-act="set-view" data-v="${k}">${l}</button>`).join('')}</div>`;
   if (simple) {
-    return `${toggle}<div class="simple">${banners()}${hero}${p.today}${gettingStarted()}${raceCard()}
+    return `${toggle}<div class="simple">${banners()}${hero}${waitCard}${p.today}${gettingStarted()}${raceCard()}
       <button class="btn ghost wide" data-act="set-view" data-v="full">See my week and more ▾</button></div>${credit}`;
   }
   const boost = `<section class="card boost" ${o(3)}>
@@ -799,10 +805,10 @@ const credit = '<p class="byline credit">Developed by <button type="button" clas
     </section>`;
   const install = S.history.some(x => x.kind === 'session') ? installCard('today').replace('<section class="card install"', `<section class="card install" ${o(4)}`) : '';
   // The whole level's sessions, not today's plan: folded into one line ("Level 8 checklist: 2 of 9 done").
-  const doneN = steps.filter(st => st.status === 'done' || st.status === 'provisional').length;
+  const doneN = steps.filter(st => st.status === 'done').length, waitN = steps.filter(st => st.status === 'provisional').length;
   const levelName = track === 'run' ? `Level ${S.run.level}` : trackTitle(track).replace(/^\S+\s/, '').split(' · ')[0];
   const levelSteps = `<details class="card level-check" ${o(9)}>
-      <summary><span class="lc-title">📋 ${h(levelName)} checklist: ${doneN} of ${steps.length} done</span><span class="hint">${trackTitle(track)} · the whole level, spread over your weeks</span></summary>
+      <summary><span class="lc-title">📋 ${h(levelName)} checklist: ${doneN} of ${steps.length} done${waitN ? ` · ⏳ ${waitN} confirmed tomorrow` : ''}</span><span class="hint">${trackTitle(track)} · the whole level, spread over your weeks</span></summary>
       <ul class="steps">${steps.map(st => stepRow(track, st)).join('')}</ul>
     </details>`;
   const daily = `<section class="card" ${o(10)}>
@@ -817,7 +823,7 @@ const credit = '<p class="byline credit">Developed by <button type="button" clas
 
   // Two columns on wide screens; on phones the wrappers dissolve and `order` restores one column.
   return `${toggle}<div class="cols">
-      <div class="col-main"><div ${o(1)}>${banners()}</div>${p.today}${p.week}${p.nextWeek}${levelSteps}</div>
+      <div class="col-main"><div ${o(1)}>${banners()}</div>${waitCard}${p.today}${p.week}${p.nextWeek}${levelSteps}</div>
       <div class="col-side">${hero}${gettingStarted(o(4))}${raceCard(o(5))}${boost}${install}${p.tracks}${daily}${modes}</div>
     </div>${credit}`;
 }
