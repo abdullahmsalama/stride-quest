@@ -474,7 +474,8 @@ function render() {
   tourFlag(`tab_${ui.tab}`);
   rewardQuests();
   document.querySelector('.tip-bubble:not(.offer)')?.remove();
-  setTimeout(maybeTip, 600);
+  tourBar();
+  if (!ui.tour && !ui.helpReturn) setTimeout(maybeTip, 600);
 }
 
 function fogRevealedToast() {
@@ -606,6 +607,38 @@ function gettingStarted(style = '') {
       <div class="row end"><button class="btn ghost small" data-act="tour-hide">Hide getting started</button></div>
     </details>`;
 }
+// The guided tour: one stop per key feature, a bar at the bottom with Back / Next / End.
+const TOUR = ['today-next', 'views', 'map', 'fog', 'lanes', 'sled', 'race-prep', 'calendar', 'challenge', 'stats', 'coach', 'numbers', 'dream'];
+const tourStops = () => TOUR.map(id => FEATURES.find(f => f.id === id)).filter(f => f && applies(f));
+function startTour(i = 0) { document.querySelector('.tip-bubble')?.remove(); ui.tour = { i }; ui.helpReturn = false; tourGo(); }
+function tourGo() {
+  const stops = tourStops(), f = stops[ui.tour.i];
+  if (!f) return endTour(true);
+  showMe(f.id, { keepBar: true });
+}
+function endTour(finished) {
+  ui.tour = null; ui.helpReturn = false; document.querySelector('.tour-bar')?.remove();
+  if (finished) { tourFlag('tour_done'); toast('🧭 Tour done! Everything is under ❓ Help at the top whenever you need it.'); }
+}
+// Drawn after every render (the bar lives outside the page, so it survives redraws).
+function tourBar() {
+  document.querySelector('.tour-bar')?.remove();
+  if (ui.modal || (!ui.tour && !ui.helpReturn)) return;
+  const b = document.createElement('div');
+  b.className = 'tour-bar';
+  if (ui.tour) {
+    const stops = tourStops(), f = stops[ui.tour.i];
+    if (!f) return;
+    b.innerHTML = `<p><strong>🧭 Tour ${ui.tour.i + 1} of ${stops.length} · ${h(f.title)}</strong><br>${h(f.text)}</p>
+      <div class="row"><button class="btn ghost small" data-act="tour-end">✕ End</button><span class="grow"></span>
+        ${ui.tour.i > 0 ? '<button class="btn ghost small" data-act="tour-step" data-d="-1">◂ Back</button>' : ''}
+        <button class="btn small" data-act="tour-step" data-d="1">${ui.tour.i + 1 < stops.length ? 'Next ▸' : 'Finish ✓'}</button></div>`;
+  } else {
+    b.innerHTML = `<div class="row"><button class="btn small" data-act="help-back">↩ Back to Help</button><span class="grow"></span><button class="btn ghost small" data-act="tour-end">✕</button></div>`;
+  }
+  document.body.appendChild(b);
+}
+
 // The Help panel (❓ Help in the header): open getting-started steps, then the whole guide.
 function helpPanel() {
   const qs = quests(), done = qs.filter(questDone).length, t = tourLocal();
@@ -613,7 +646,8 @@ function helpPanel() {
     : done < qs.length ? `<div class="help-steps"><p class="q">🧭 Getting started: ${done} of ${qs.length}</p><div class="bar"><div style="width:${Math.round((done / qs.length) * 100)}%"></div></div>
         <ul class="tour-list">${qs.filter(f => !questDone(f)).map(f => `<li><span>⬜</span><span>${h(f.quest.label)}</span><button class="btn small" data-act="show-me" data-f="${f.id}">Show me</button></li>`).join('')}</ul></div>`
     : '<p class="hint">🧭 Getting started: all done 🎉</p>';
-  return `<div class="help-panel"><h2>❓ Help</h2><p class="why">💡 Everything the app can do, in plain words. "Show me" takes you there.</p>${steps}
+  return `<div class="help-panel"><h2>❓ Help</h2><p class="why">💡 Everything the app can do, in plain words. "Show me" takes you there.</p>
+      <button class="btn primary wide" data-act="tour-start">▶ Take the tour (about 1 minute)</button>${steps}
       ${GROUPS.map(([g, label]) => { const fs = FEATURES.filter(f => f.group === g && applies(f)); return fs.length ? `<details class="help-group"><summary>${h(label)}</summary>${fs.map(f => `<div class="how-item"><strong>${h(f.title)}</strong><p class="hint">${h(f.text)}</p><button class="btn small" data-act="show-me" data-f="${f.id}">Show me</button></div>`).join('')}</details>` : ''; }).join('')}
       <label class="switch-row"><input type="checkbox" data-act="tips-toggle" ${t.tipsOff ? '' : 'checked'}> <span>First-time tips</span></label>
       <div class="row end"><button type="button" class="btn ghost" data-act="close">Close</button></div></div>`;
@@ -628,10 +662,11 @@ function howItWorks() {
     </section>`;
 }
 // "Show me": go to the place, scroll to it and light it up.
-function showMe(id) {
+function showMe(id, { keepBar = false } = {}) {
   const f = FEATURES.find(x => x.id === id);
   if (!f) return;
   const sh = f.show || {};
+  if (!keepBar) { ui.tour = null; ui.helpReturn = ui.modal?.type === 'help'; }
   ui.modal = null; ui.tab = sh.tab || 'today'; ui.mapPopup = null; ui.lanePopup = null; ui.frameTop = null;
   if (sh.mapMode) ui.mapMode = sh.mapMode === 'lanes' ? (HYB.hasHybrid(S) ? 'hyb' : 'tri') : sh.mapMode;
   if (sh.socialTab) ui.socialTab = sh.socialTab;
@@ -639,7 +674,7 @@ function showMe(id) {
   render();
   setTimeout(() => {
     const el = sh.sel && document.querySelector(sh.sel);
-    if (!el) { toast(`${f.title}: ${f.text}`); return; }
+    if (!el) { if (!ui.tour) toast(`${f.title}: ${f.text}`); return; } // on the tour, the bar already explains it
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     el.classList.add('spotlight');
     setTimeout(() => el.classList.remove('spotlight'), 2600);
@@ -658,7 +693,7 @@ function maybeTip() {
     open.remove(); target?.classList.remove('spotlight', 'tip-target');
   }
   const t = tourLocal();
-  if (t.tipsOff || ui.modal || ui.laneAnimating || ui.mapRunning || document.querySelector('.play-btn')) return;
+  if (t.tipsOff || ui.tour || ui.helpReturn || ui.modal || ui.laneAnimating || ui.mapRunning || document.querySelector('.play-btn')) return;
   const visible = tipVisible;
   // Once, after placement: offer a look around.
   if (!t.offered && S.placedAt && (ui.tab === 'today' || ui.tab === 'map')) {
@@ -1465,9 +1500,10 @@ function viewMe() {
 function renderModal() {
   const root = $('#modal');
   const m = ui.modal;
-  if (!m) { root.innerHTML = ''; root.hidden = true; return; }
+  if (!m) { root.innerHTML = ''; root.hidden = true; if (ui.tour || ui.helpReturn) tourBar(); return; }
   root.hidden = false;
   root.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${MODALS[m.type](m)}</div>`;
+  document.querySelector('.tour-bar')?.remove(); // the tour waits while a pop-up is open
 }
 
 const t0 = () => now();
@@ -1914,11 +1950,15 @@ const actions = {
   },
   'race-stop'() { S.hybrid.race = null; commit(S); toast('Race prep stopped. Your Hybrid plan carries on.'); },
   'show-me'(el) { showMe(el.dataset.f); },
+  'tour-start'() { ui.modal = null; renderModal(); startTour(0); },
+  'tour-step'(el) { ui.tour.i = Math.max(0, ui.tour.i + +el.dataset.d); tourGo(); },
+  'tour-end'() { endTour(false); },
+  'help-back'() { ui.helpReturn = false; document.querySelector('.tour-bar')?.remove(); ui.modal = { type: 'help' }; renderModal(); },
   help() { document.querySelector('.tip-bubble')?.remove(); document.querySelectorAll('.tip-target').forEach(x => x.classList.remove('spotlight', 'tip-target')); ui.modal = { type: 'help' }; renderModal(); },
   'tour-offer'(el) {
     const t = tourLocal(); setTourLocal({ ...t, offered: true });
     el.closest('.tip-bubble')?.remove();
-    if (el.dataset.v === 'go') { ui.modal = { type: 'help' }; renderModal(); } else toast('Any time: tap ❓ Help at the top.');
+    if (el.dataset.v === 'go') startTour(0); else toast('Any time: tap ❓ Help at the top.');
   },
   'tour-open'(el) { ui.tourOpen = !el.parentElement.open; }, // the browser opens/closes it; remember for redraws
   'tour-hide'() { S.tour = { ...(S.tour || {}), hidden: true }; commit(S); toast('Getting started hidden. You can bring it back in Me → How it works.'); },
