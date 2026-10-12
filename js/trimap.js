@@ -251,6 +251,28 @@ function nodes(s, cfg, lane) {
   return out.join('');
 }
 
+// The real races behind a Hybrid gate, the athlete's own race first and highlighted.
+export function myRace(s) {
+  const a = s.answers || {}, d = `${s.profile?.dream?.text || ''} ${s.profile?.dream?.event || ''}`;
+  if (a.hx_alphax || /alpha\s*x/i.test(d)) return 'alphax';
+  if (a.hx_hyrox || /hyrox/i.test(d)) return 'hyrox';
+  return null;
+}
+function raceBadge(s, w, y) {
+  if (!w.races?.length) return '';
+  const mine = myRace(s);
+  const list = [...w.races].sort((a, b) => (b[0] === mine) - (a[0] === mine));
+  const chip = ([k, label]) => ({ k, label, w: label.length * 6.1 + 26 });
+  const chips = list.map(chip), total = chips.reduce((a, c) => a + c.w, 0) + (chips.length - 1) * 6;
+  let x = TW / 2 - total / 2;
+  return `<g class="race-badge">${chips.map(c => {
+    const on = c.k === mine, out = `<g transform="translate(${x.toFixed(1)},${y - 132})">
+      <rect width="${c.w.toFixed(1)}" height="24" rx="12" fill="${on ? (c.k === 'alphax' ? '#7b2ff7' : '#ffd23f') : 'rgba(20,33,61,.82)'}" stroke="#fff" stroke-width="2"/>
+      <text x="${(c.w / 2).toFixed(1)}" y="16.5" text-anchor="middle" font-family="Inter, sans-serif" font-weight="800" font-size="11" fill="${on && c.k === 'hyrox' ? '#14213d' : '#fff'}">${c.k === 'alphax' ? '⚡' : '🏁'} ${esc(c.label)}</text></g>`;
+    x += c.w + 6; return out;
+  }).join('')}</g>`;
+}
+
 function gateNode(s, cfg, i) {
   const w = cfg.worlds[i];
   const passed = i < cfg.world(s) || (cfg.finished(s) && i === cfg.world(s));
@@ -269,6 +291,7 @@ function gateNode(s, cfg, i) {
       ${open ? `<circle class="halo" cx="${TW / 2}" cy="${y}" r="27" fill="none" stroke="#fff" stroke-width="3"/>` : ''}
       <circle cx="${TW / 2}" cy="${y}" r="23" fill="#fff" stroke="${color}" stroke-width="4"/>
       <text x="${TW / 2}" y="${y + 7}" text-anchor="middle" font-size="20">${passed ? '✅' : open ? cfg.openIcon : w.gate.boss ? '🏆' : '🔒'}</text>
+      ${raceBadge(s, w, y)}
       ${dream ? `<g transform="translate(${TW / 2 + 44},${y - 24})"><circle r="15" fill="#fff" stroke="#e91e63" stroke-width="2.5"/><text y="6" text-anchor="middle" font-size="16">🎯</text></g>` : ''}
     </g>`;
 }
@@ -311,16 +334,18 @@ export function laneFogParts(s, ui, id, shown = {}, reached = 0) {
   const summitLabel = summitText(s.profile?.dream, cfg.id === 'tri' ? 'tri' : 'hybrid', dw != null && f.cloud != null && dw >= f.cloud);
   // Clouds that were there last time roll back once.
   const was = seenFog(cfg.id);
-  let reveal = null;
+  let reveal = null, revealDim = null;
   if (was != null && was < f.clear) {
     const old = was + 2 < cfg.worlds.length ? bandBottom(was + 2) : null;
     if (old != null) reveal = { from: cloudBottom ?? 0, to: old };
+    if (was + 1 < cfg.worlds.length) revealDim = { from: bandTop(cfg, was + 1), to: bandBottom(was + 1) };
   }
   if (was !== f.clear) saveFog(cfg.id, f.clear);
   if (reveal) ui.fogRevealed = cfg.id;
   return {
-    svg: fogSvg({ W: TW, dimTop: f.dim != null ? bandTop(cfg, f.dim) : null, dimBottom: f.dim != null ? bandBottom(f.dim) : null, cloudBottom, hint: 'Keep climbing to clear the clouds', summitLabel, top: cropTop(cloudBottom), reveal }),
+    svg: fogSvg({ W: TW, dimTop: f.dim != null ? bandTop(cfg, f.dim) : null, dimBottom: f.dim != null ? bandBottom(f.dim) : null, cloudBottom, hint: 'Keep climbing to clear the clouds', summitLabel, top: cropTop(cloudBottom), reveal, revealDim }),
     crop: cropTop(cloudBottom),
+    clear: f.clear, edgeY: f.dim != null ? bandBottom(f.dim) : null, // where the fog starts
     peek: f.dim != null ? peekButton(cloudBottom ?? bandBottom(f.dim), TH) : '',
   };
 }
@@ -364,7 +389,8 @@ export function renderLaneMap(s, ui, id) {
 }
 
 // Animate one lane's character from value `from` to `to` along its path.
-export function moveCharacter(id, lane, from, to, { onDone, follow, skip } = {}) {
+// gate(y) -> ms: pause there (e.g. at the fog's edge while the clouds clear), 0 to keep going.
+export function moveCharacter(id, lane, from, to, { onDone, follow, skip, gate } = {}) {
   const el = document.getElementById(`ln-av-${id}-${lane}`);
   if (!el || to <= from) { onDone?.(); return; }
   const segEls = [];
@@ -375,8 +401,10 @@ export function moveCharacter(id, lane, from, to, { onDone, follow, skip } = {})
   el.classList.add('moving');
   const face = el.querySelector('.face');
   let hx = 0, hy = -1; // start heading up the map
-  const t0 = performance.now();
+  let t0 = performance.now(), holdUntil = 0;
   const frame = t => {
+    if (t < holdUntil && !skip?.()) { requestAnimationFrame(frame); return; }
+    if (holdUntil) { el.classList.add('moving'); holdUntil = 0; }
     const k = skip?.() ? 1 : Math.min(1, (t - t0) / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
     let d = e * total, i = 0;
     while (i < lens.length - 1 && d > lens[i]) { d -= lens[i]; i++; }
@@ -392,6 +420,8 @@ export function moveCharacter(id, lane, from, to, { onDone, follow, skip } = {})
       face?.setAttribute('transform', f.face);
     }
     follow?.(pt.y);
+    const hold = k < 1 && !skip?.() ? gate?.(pt.y) || 0 : 0;
+    if (hold) { holdUntil = t + hold; t0 += hold; el.classList.remove('moving'); }
     if (k < 1) requestAnimationFrame(frame);
     else { el.classList.remove('moving', 'up'); face?.removeAttribute('transform'); onDone?.(pt); } // side-on again on arrival
   };

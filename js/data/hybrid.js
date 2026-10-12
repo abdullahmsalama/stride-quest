@@ -1,4 +1,4 @@
-// Hybrid track (Hyrox, Alpha X and similar races). Three lanes climb together: Strength and Engine
+// Hybrid track (Hyrox, Alpha X and similar races). `races`: the real races each world's gate stands for. Three lanes climb together: Strength and Engine
 // ladders live here, the Run lane is the Run Track. Training runs in blocks: build one lane while
 // maintaining the other, deload, switch, repeat.
 
@@ -104,19 +104,19 @@ export const ENGINE_STAGES = [
 export const HYBRID_WORLDS = [
   { n: 0, id: 'floor', name: 'Gym Floor', emoji: '🏋️', strength: 1, engine: 1, run: 2, race: 'Mini hybrid',
     gate: { title: 'Gate: mini hybrid, 4 x (500 m run + 10 wall balls or 10 lunges)', detail: 'Any pace, steady breathing.' } },
-  { n: 1, id: 'square', name: 'Station Square', emoji: '🧭', strength: 2, engine: 2, run: 3, race: 'Half simulation',
+  { n: 1, id: 'square', races: [['alphax', 'Alpha X Base']],  name: 'Station Square', emoji: '🧭', strength: 2, engine: 2, run: 3, race: 'Half simulation',
     gate: { title: 'Gate: Alpha X Base, or a half simulation: 4 x (1 km run + a station)', detail: 'Alpha X Base: 10 x (400 m run + station) with lighter weights; first-timers often take 60+ min.' } },
-  { n: 2, id: 'arena', name: 'Doubles Arena', emoji: '🤝', strength: 3, engine: 3, run: 4, race: 'Doubles / Pairs or Relay race',
+  { n: 2, id: 'arena', races: [['hyrox', 'Hyrox Doubles'], ['alphax', 'Alpha X Pairs']],  name: 'Doubles Arena', emoji: '🤝', strength: 3, engine: 3, run: 4, race: 'Doubles / Pairs or Relay race',
     gate: { title: 'Boss: a Doubles / Pairs or Relay race (or full simulation with a partner)', detail: 'Hyrox Doubles or Relay; Alpha X Pairs (run every lap together, split the stations) or Relay (each does a section). Use your category\'s official weights.', boss: true } },
-  { n: 3, id: 'solo', name: 'Solo Stadium', emoji: '🏟️', strength: 4, engine: 4, run: 6, race: 'Solo race (Open)',
+  { n: 3, id: 'solo', races: [['hyrox', 'Hyrox Open'], ['alphax', 'Alpha X Open']],  name: 'Solo Stadium', emoji: '🏟️', strength: 4, engine: 4, run: 6, race: 'Solo race (Open)',
     gate: { title: 'Boss: your first solo race', detail: 'Hyrox Open, or Alpha X Open solo: 10 x (800 m run + station), 8 km running; first-timers often take 90+ min. Use your category\'s official weights.', boss: true } },
-  { n: 4, id: 'strong', name: 'Strong Finish', emoji: '🔥', strength: 5, engine: 5, run: 7, race: 'Solo race at goal time',
+  { n: 4, id: 'strong', races: [['hyrox', 'Hyrox Open'], ['alphax', 'Alpha X Open']],  name: 'Strong Finish', emoji: '🔥', strength: 5, engine: 5, run: 7, race: 'Solo race at goal time',
     gate: { title: 'Boss: a solo race at your goal time', detail: 'Pace the runs, stay smooth on the stations.', boss: true } },
-  { n: 5, id: 'pro', name: 'Pro League', emoji: '👑', strength: 6, engine: 6, run: 8, race: 'Pro division',
+  { n: 5, id: 'pro', races: [['hyrox', 'Hyrox Pro']],  name: 'Pro League', emoji: '👑', strength: 6, engine: 6, run: 8, race: 'Pro division',
     gate: { title: 'Boss: Pro division race', detail: 'Hyrox Pro or the heaviest division of your race. Check its official weights.', boss: true } },
-  { n: 6, id: 'elite', name: 'Elite Series', emoji: '💎', strength: 7, engine: 7, run: 10, race: 'Pro race at a podium time',
+  { n: 6, id: 'elite', races: [['hyrox', 'Hyrox Pro, qualifying time']],  name: 'Elite Series', emoji: '💎', strength: 7, engine: 7, run: 10, race: 'Pro race at a podium time',
     gate: { title: 'Boss: a Pro race at an age-group podium or qualifying time', detail: 'Hyrox Pro (or your race\'s heaviest division) finished in a qualifying time for its championships.', boss: true } },
-  { n: 7, id: 'worlds', name: 'World Championships', emoji: '🌍', strength: 8, engine: 8, run: 11, race: 'Championship / Elite race',
+  { n: 7, id: 'worlds', races: [['hyrox', 'Hyrox World Champs · Elite 15']],  name: 'World Championships', emoji: '🌍', strength: 8, engine: 8, run: 11, race: 'Championship / Elite race',
     gate: { title: 'Boss: race the World Championships or an Elite race', detail: 'The top of the ladder: Hyrox World Championships, Elite 15, or your sport\'s championship.', boss: true } },
 ];
 

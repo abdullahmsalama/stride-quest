@@ -61,7 +61,7 @@ export const cropTop = cloudBottom => (cloudBottom == null ? 0 : Math.max(0, clo
 // dimTop/dimBottom: y range of the dimmed band. cloudBottom: y where the clouds end (everything above
 // is hidden). reveal: { from, to } y range whose clouds roll back now. summitLabel: what the peak carries (the athlete's goal, or an invite to set one).
 // top: the first y still shown after cropping (the summit sits just below it).
-export function fogSvg({ W, dimTop, dimBottom, cloudBottom, hint, summitLabel, top = 0, reveal = null }) {
+export function fogSvg({ W, dimTop, dimBottom, cloudBottom, hint, summitLabel, top = 0, reveal = null, revealDim = null }) {
   let out = '<g class="fog" data-act="fog">';
   if (dimTop != null) out += `<rect class="fog-dim" x="0" y="${dimTop}" width="${W}" height="${dimBottom - dimTop}"/>`;
   if (cloudBottom != null) {
@@ -76,7 +76,8 @@ export function fogSvg({ W, dimTop, dimBottom, cloudBottom, hint, summitLabel, t
     out += summit(W, top + 110, summitLabel);
   }
   out += '</g>';
-  // Clouds rolling back over the worlds just revealed (removed by CSS animation end).
+  // The dimmed world that just came clear fades in, and clouds roll back over the newly revealed part.
+  if (revealDim) out += `<rect class="fog-reveal-dim" x="0" y="${revealDim.from}" width="${W}" height="${revealDim.to - revealDim.from}"/>`;
   if (reveal) out += `<g class="fog-reveal"><rect x="0" y="${reveal.from}" width="${W}" height="${reveal.to - reveal.from}" fill="#eef2f7"/>
       <g fill="#f4f6fa">${puffs(W, reveal.to, 2)}</g></g>`;
   return out;

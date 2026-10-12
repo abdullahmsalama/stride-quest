@@ -37,7 +37,7 @@ const ARRIVE_LINES = [
 
 const pick = (list, i) => list[((i % list.length) + list.length) % list.length];
 
-export function playPlacementIntro(placed, { follow, onDone, onLevel }) {
+export function playPlacementIntro(placed, { follow, onDone, onLevel, gate }) {
   let skipped = false;
   const levels = placed;
   const seed = Math.floor(Math.random() * 1000);
@@ -86,6 +86,7 @@ export function playPlacementIntro(placed, { follow, onDone, onLevel }) {
     ease: 'blitz',
     follow,
     skip: () => skipped,
+    gate,
     rate,
     onProgress: ({ seg, frac, pt, dir }) => {
       const now = performance.now();

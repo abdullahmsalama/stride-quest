@@ -242,7 +242,7 @@ function hybridCard(onMap = false) {
   const blockLine = b.type === 'deload' ? '😮‍💨 <strong>Deload week</strong>: everything light. Next: ' + (b.next === 'engine' ? '⚡ Engine block' : '🏋️ Strength block')
     : `${b.type === 'engine' ? '⚡ <strong>Engine block</strong>' : '🏋️ <strong>Strength block</strong>'} · week ${b.week} of ${b.weeks}<br><span class="hint">Building ${b.type}, maintaining ${b.type === 'engine' ? 'strength' : 'engine'}. Then a deload week.</span>`;
   const other = b.type === 'engine' ? 'strength' : 'engine';
-  return `<section class="card hyb-card" ${onMap ? '' : 'style="order:8"'}><p class="eyebrow">Hybrid · ${w.emoji} ${h(w.name)}</p>
+  return `<section class="card hyb-card" ${onMap ? '' : 'style="order:8"'}><p class="eyebrow">Hybrid · ${w.emoji} ${h(w.name)}${w.races?.length ? ` · ${h(w.races.map(r => r[1]).join(' / '))}` : ''}</p>
     <p class="block-line">${blockLine}</p>
     <div class="block-bar">${Array.from({ length: BLOCK_WEEKS }, (_, i) => `<span class="${b.type !== 'deload' && i < b.week ? 'on' : ''}"></span>`).join('')}<span class="deload ${b.type === 'deload' ? 'on' : ''}"></span></div>
     <div class="lane-bars">${st.map(l => `<div class="${l.ok ? 'ok' : lim?.lane === l.lane ? 'lim' : ''}"><span>${HYB.LANE_ICON[l.lane]}</span><b>${h(l.lane === 'run' ? `Level ${S.run.level}` : l.have >= (l.lane === 'strength' ? HYB.STR_MAX : HYB.ENG_MAX) ? 'All done' : `${ST.sexText((l.lane === 'strength' ? HYB.strengthStage(S) : HYB.engineStage(S)).target, S.profile.sex)} next`)}</b><em>${h(w.name)} needs ${h(ST.sexText(HYB.laneTarget(l.lane, l.need), S.profile.sex))} ${l.ok ? '✓' : lim?.lane === l.lane ? '· limiter' : ''}</em></div>`).join('')}</div>
@@ -473,7 +473,16 @@ function render() {
 function fogRevealedToast() {
   if (!ui.fogRevealed) return;
   ui.fogRevealed = null; sfx.levelDing(4);
+  if (Date.now() - (ui.fogToastAt || 0) < 30000) return; // one toast per climb, the chime every time
+  ui.fogToastAt = Date.now();
   setTimeout(() => toast('☁️ The clouds part: a new world is revealed!'), 400);
+}
+// At the fog's edge: lift one world of clouds and hold the character for a moment.
+const FOG_PAUSE = 1500;
+function fogGate(parts, y, next) {
+  if (parts.edgeY == null || y > parts.edgeY + 30) return 0;
+  swapFog(next());
+  return FOG_PAUSE;
 }
 // Swap just the fog layer while a character climbs, so the clouds lift as they go.
 function swapFog(parts) {
@@ -653,7 +662,7 @@ function viewMap() {
   const rebuild = S.rebuild.active ? `<section class="card"><h3>🩹 Rebuild Track</h3><ol class="ladder">${REBUILD_STAGES.map((r, i) => `<li class="${i < S.rebuild.stage ? 'done' : i === S.rebuild.stage ? 'current' : ''}"><strong>R${r.n}</strong> ${h(r.name)}<span>${h(r.focus)}</span></li>`).join('')}</ol></section>` : '';
   if ((ui.mapMode === 'tri' && !TRI.hasTri(S)) || (ui.mapMode === 'hyb' && !HYB.hasHybrid(S))) ui.mapMode = 'world';
   const multi = TRI.hasTri(S) || HYB.hasHybrid(S);
-  const modes = [['world', multi ? '🏃 Run' : '🗺️ World map'], ...(HYB.hasHybrid(S) ? [['hyb', '🏋️ Hybrid']] : []), ...(TRI.hasTri(S) ? [['tri', '🏊 Tri']] : []), ['grid', multi ? '▦ Cards' : '▦ Level cards']];
+  const modes = [['world', multi ? '🏃 Run' : '🗺️ World map'], ...(HYB.hasHybrid(S) ? [['hyb', '🏋️ Hyrox · Alpha X']] : []), ...(TRI.hasTri(S) ? [['tri', '🏊 Tri']] : []), ['grid', multi ? '▦ Cards' : '▦ Level cards']];
   const toggle = `<div class="seg" role="tablist">${modes.map(([k, l]) =>
     `<button role="tab" class="${ui.mapMode === k ? 'on' : ''}" data-act="map-mode" data-mode="${k}">${l}</button>`).join('')}</div>`;
   const replayBtn = '<button class="btn ghost small replay-btn" data-act="replay-journey">🔁 Replay my journey</button>';
@@ -786,10 +795,11 @@ function playLanes(id, cfg, cur, all, seen, shown, moves, focusLane, focusY) {
     wait(900, () => {
       if (fast()) { step(); return; }
       const stop = sfx.moveLoop(lane);
-      let band = -1;
+      // Walk up to the fog's edge, stop while the clouds clear, then carry on.
+      let fogNow = laneFogParts(S, ui, id, shown);
       moveCharacter(id, lane, shown[lane], cur[lane], {
-        // Lift the clouds the moment the character walks into a new world, not on arrival.
-        follow: y => { triFollow(y); const b = bandAtY(id, y); if (b > band) { band = b; swapFog(laneFogParts(S, ui, id, shown, b)); } },
+        follow: y => triFollow(y),
+        gate: y => fogGate(fogNow, y, () => (fogNow = laneFogParts(S, ui, id, shown, fogNow.clear))),
         skip: fast,
         onDone: pt => {
           stop();
@@ -857,9 +867,10 @@ function afterMapRender() {
     const placed = ui.intro;
     ui.intro = null; ui.mapRunning = true;
     followY(POINTS[0].y);
+    let fogNow = runFogParts(S, ui, 0);
     setTimeout(() => playPlacementIntro(placed, {
       follow: followY,
-      onLevel: n => swapFog(runFogParts(S, ui, Math.min(placed, n + 1))), // the level being run to, so the clouds stay ahead
+      gate: y => fogGate(fogNow, y, () => (fogNow = runFogParts(S, ui, 0, fogNow.clear))),
       onDone: res => {
         ui.mapRunning = false; ui.avatarAt = placed; saveAvatar(placed); ui.mapPopup = placed;
         swapFog(runFogParts(S, ui, placed));
@@ -901,10 +912,10 @@ function playRun() {
   ui.mapRunning = true;
   sfx.unlockAudio();
   followY(POINTS[from].y);
-  let reached = from;
+  let fogNow = runFogParts(S, ui, from);
   setTimeout(() => runAvatar(from, to, {
     follow: followY,
-    onProgress: ({ seg }) => { if (from + seg + 1 > reached) { reached = Math.min(to, from + seg + 1); swapFog(runFogParts(S, ui, reached)); } },
+    gate: y => fogGate(fogNow, y, () => (fogNow = runFogParts(S, ui, from, fogNow.clear))),
     onDone: () => { ui.mapRunning = false; ui.avatarAt = to; saveAvatar(to); ui.mapPopup = to; sfx.levelDing(to); render(); },
   }), 300);
 }

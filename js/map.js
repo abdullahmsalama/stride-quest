@@ -236,13 +236,13 @@ const RUNNER = `
 
 // Fog of war over the worlds further up (see fog.js).
 // `at`: the level the runner is shown on (during an animation the fog lifts as they climb).
-export function runFog(s, at = s.run.level) {
+export function runFog(s, at = s.run.level, reached = 0) {
   const wi = id => WORLDS.findIndex(w => w.id === id);
-  const frontier = wi(RUN_LEVELS[Math.max(1, Math.min(at, RUN_LEVELS.length)) - 1].world);
+  const frontier = Math.max(reached, wi(RUN_LEVELS[Math.max(1, Math.min(at, RUN_LEVELS.length)) - 1].world));
   return { frontier, ...fogBands(WORLDS.length, frontier) };
 }
-export function runFogParts(s, ui, at) {
-  const f = runFog(s, at);
+export function runFogParts(s, ui, at, reached = 0) {
+  const f = runFog(s, at, reached);
   const b = bands();
   const cloudBottom = f.cloud != null ? b[f.cloud].bottom : null;
   const d = s.profile?.dream;
@@ -251,11 +251,13 @@ export function runFogParts(s, ui, at) {
   const summitLabel = summitText(d, 'run', dl != null && dl >= cloudLevel);
   const was = seenFog('run');
   const reveal = was != null && was < f.clear && was + 2 < WORLDS.length ? { from: cloudBottom ?? 0, to: b[was + 2].bottom } : null; // the clouds that were there roll back once
+  const revealDim = was != null && was < f.clear && was + 1 < WORLDS.length ? { from: b[was + 1].top, to: b[was + 1].bottom } : null;
   if (was !== f.clear) saveFog('run', f.clear);
   if (reveal) ui.fogRevealed = 'run';
   return {
-    svg: fogSvg({ W, dimTop: f.dim != null ? b[f.dim].top : null, dimBottom: f.dim != null ? b[f.dim].bottom : null, cloudBottom, hint: 'Keep climbing to clear the clouds', summitLabel, top: cropTop(cloudBottom), reveal }),
+    svg: fogSvg({ W, dimTop: f.dim != null ? b[f.dim].top : null, dimBottom: f.dim != null ? b[f.dim].bottom : null, cloudBottom, hint: 'Keep climbing to clear the clouds', summitLabel, top: cropTop(cloudBottom), reveal, revealDim }),
     crop: cropTop(cloudBottom),
+    clear: f.clear, edgeY: f.dim != null ? b[f.dim].bottom : null, // where the fog starts
     peek: f.dim != null ? peekButton(cloudBottom ?? b[f.dim].bottom, H) : '',
   };
 }
@@ -310,7 +312,8 @@ function popupHtml(s, n) {
 // ---------- avatar movement ----------
 let anim = null;
 // opts: onDone, follow(y), duration (ms at normal speed), ease ('inOut' | 'blitz'),
-//       rate() -> speed multiplier (1 = normal, <1 = slow-mo), onProgress({ seg, frac, pt, dir, k }), skip() -> bool
+//       rate() -> speed multiplier (1 = normal, <1 = slow-mo), onProgress({ seg, frac, pt, dir, k }), skip() -> bool,
+//       gate(y) -> ms to pause there (the fog's edge while the clouds clear), 0 to keep going
 export function runAvatar(from, to, opts = {}) {
   const { onDone, follow, onProgress, skip } = opts;
   if (anim) cancelAnimationFrame(anim.raf);
@@ -330,11 +333,13 @@ export function runAvatar(from, to, opts = {}) {
   const inner = avatar.querySelector('.runner-inner');
   avatar.classList.add('running');
   if (opts.ease === 'blitz') avatar.classList.add('blitz');
-  let lastT = performance.now(), k = 0;
+  let lastT = performance.now(), k = 0, holdUntil = 0;
   let lastX = null;
   const frame = t => {
     const dt = Math.min(64, t - lastT);
     lastT = t;
+    if (t < holdUntil && !skip?.()) { anim = { raf: requestAnimationFrame(frame) }; return; }
+    if (holdUntil) { avatar.classList.add('running'); holdUntil = 0; }
     k = skip?.() ? 1 : Math.min(1, k + (dt / duration) * (opts.rate ? opts.rate() : 1));
     let d = ease(k) * total, i = 0;
     while (i < lens.length - 1 && d > lens[i]) { d -= lens[i]; i++; }
@@ -345,6 +350,8 @@ export function runAvatar(from, to, opts = {}) {
     avatar.setAttribute('transform', `translate(${pt.x},${pt.y - 16}) scale(1.45)`);
     follow?.(pt.y);
     onProgress?.({ seg: i, frac: d / lens[i], pt, dir, k });
+    const hold = k < 1 && !skip?.() ? opts.gate?.(pt.y) || 0 : 0;
+    if (hold) { holdUntil = t + hold; avatar.classList.remove('running'); }
     if (k < 1) anim = { raf: requestAnimationFrame(frame) };
     else { anim = null; avatar.classList.remove('running', 'blitz'); onDone?.(); }
   };
