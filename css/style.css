@@ -659,7 +659,7 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .lane-ch.celebrate .ch-sled .sled { animation: shove 1.6s ease-out; } @keyframes shove { 30% { transform: translateX(6px); } 60% { transform: translateX(2px); } }
 
 /* Credit and competitions */
-.byline { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); margin-top: 14px; }
+.byline { text-align: center; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); margin-top: 14px; }
 .byline .linkish { text-transform: none; letter-spacing: 0; font-weight: 700; font-size: 14px; }
 .about-me .link-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; margin: 8px 0; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); text-decoration: none; }
 .about-me .link-row span { color: var(--brand); font-weight: 700; }
