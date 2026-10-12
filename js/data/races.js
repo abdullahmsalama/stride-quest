@@ -9,7 +9,7 @@ export const RACES = {
     firstTime: 'First-timers often finish in 1:30 or more.',
   },
   alphax: {
-    name: 'Alpha X', icon: '⚡', site: null, share: 'about 75% endurance',
+    name: 'Alpha X', icon: '⚡', site: 'https://alphaxrace.com/', share: 'about 75% endurance',
     divisions: [['base', 'Base'], ['open', 'Open']],
     format: div => (div === 'base' ? '10 × (400 m run + station), shorter and lighter: 4 km of running' : '10 × (800 m run + station): 8 km of running'),
     stations: ['Row', 'SkiErg', 'Sled push', 'Sled pull', 'Burpee broad jumps', 'Box jump overs', 'Farmers carry', 'Bear hug walk', 'Sandbag lunges', 'Wall balls'],
