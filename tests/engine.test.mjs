@@ -26,9 +26,10 @@ test('placement: barely running recently drops 3 levels before the -1', () => {
   assert.equal(qualifying, 7);
 });
 
-test('placement: prep self-test is capped at P3', () => {
-  const { state } = place({ continuous: '45-75', longestKm: 12, runsLast4w: 12, selfTest: { t0: true, t1: true, t2: true, t3: true } });
-  assert.equal(state.prep.level, 3);
+test('placement: prep is credited from the running level (the self-test alone tops out at P3)', () => {
+  const { state, qualifying } = place({ continuous: '45-75', longestKm: 12, runsLast4w: 12, selfTest: { t0: true, t1: true, t2: true, t3: true } });
+  assert.equal(state.prep.level, Math.max(3, E.runLevel(qualifying).needsPrep));
+  assert.equal(E.prepFromSelfTest({ t0: true, t1: true, t2: true, t3: true }), 3);
 });
 
 test('placement: pain sends advanced runner to Rebuild, level saved', () => {
@@ -101,8 +102,10 @@ test('morning pain above 2 fails a provisional gate', () => {
 });
 
 test('run level waits for required Prep stage', () => {
-  let { state } = place({ continuous: '20-30', longestKm: 5, runsLast4w: 12 });
+  // A weakness in the body check (knee-to-wall not yet) keeps Prep at P0, so Level 4 (P2) waits.
+  let { state } = place({ continuous: '20-30', longestKm: 5, runsLast4w: 12, selfTest: { t0: false } });
   assert.equal(state.run.level, 3);
+  assert.equal(state.prep.level, 0);
   state.run.done = Object.fromEntries(E.runLevel(3).steps.map((s, i) => [i, { ts: T0 }]).filter(([i]) => E.runLevel(3).steps[i].type !== 'gate'));
   const gateIdx = E.runLevel(3).steps.findIndex(s => s.type === 'gate');
   state = E.completeStep(state, 'run', gateIdx, { pain: 0, now: T0 }).state;
@@ -234,4 +237,26 @@ test('coach context: the dream, race prep, bests, recent load and a Prep block a
   assert.match(c, /Last 7 days: 1 session \(run 1\)/);
   assert.match(c, /needs Prep P\d+ \(now P0\)/);
   assert.doesNotMatch(c, /goal: not set/);
+});
+
+test('prep: credited from running level, unless the body check or pain says otherwise', async () => {
+  const { prepCredit } = await import('../js/engine.js');
+  assert.equal(prepCredit({ pain: 'none' }, 9), 5);             // qualifies for Level 9 (half) -> P5
+  assert.equal(prepCredit({ pain: 'none' }, 7), 4);
+  assert.equal(prepCredit({ pain: 'none' }, 2), 0);
+  assert.equal(prepCredit({ pain: 'none', selfTest: { t0: true, t1: false } }, 9), 1); // can't balance on one leg -> P1
+  assert.equal(prepCredit({ pain: 'mild' }, 10), 2);             // pain: careful
+  assert.equal(prepCredit({ pain: 'none', selfTest: { t0: true, t1: true, t2: true, t3: true } }, 4), 3);
+});
+
+test('prep: someone held at Level 8 for P5 is credited once and moves up', async () => {
+  const { placeFromAnswers, newState, creditPrep } = await import('../js/engine.js');
+  const T = Date.UTC(2026, 9, 13, 9);
+  let { state } = placeFromAnswers(newState(T), { continuous: '60+', longestKm: 15, best5k: 22, runsLast4w: 12, pain: 'none' }, T);
+  state = { ...state, prep: { level: 3, done: {}, startedAt: T }, run: { ...state.run, level: 8, gatePassed: true, reclaim: 9 } };
+  const { state: s2, msgs } = creditPrep(state, T);
+  assert.equal(s2.prep.level, 5);
+  assert.equal(s2.run.level, 9);
+  assert.ok(msgs.some(m => /Level up/.test(m)));
+  assert.equal(creditPrep(s2, T).msgs.length, 0); // only once
 });

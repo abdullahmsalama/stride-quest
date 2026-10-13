@@ -62,6 +62,7 @@ What each answer means (read carefully, do not guess other meanings):
 - bodyweight, squat5, deadlift5: in liftUnit (kg or lb); liftMode "5" = weight for 5 reps, "1" = 1-rep max. pullups: strict reps.
 - swimDist / swimM: longest continuous swim. longestRide / rideKm: longest ride, km. row1000Text: 1000 m row time.
 - sex, dream, dreamEvent, dreamDate: who they are and what they want.
+- tracks: the sports they train for (run, hybrid = lifting + race stations, tri = swim + bike + run). They do ONLY these: never assume other activities.
 
 Flag ONLY clear mistakes: unit mix-ups (kg/lb, km/miles, minutes/hours, m/km), impossible numbers, or answers that truly contradict each other. Use the DERIVED figures. Hard limits, do not flag inside them:
 - kmPerRun between 1 and 35 is normal (50 km over 3 runs = ~17 km per run is a normal experienced runner).
@@ -402,15 +403,17 @@ export default {
       const text = String(body.text || '').slice(0, check ? 3000 : 700).trim();
       if (!text && !convo?.length) return json({ error: 'no text' }, 400, headers);
       const sys = check ? CHECK : lifts ? UNDERSTAND_LIFTS : UNDERSTAND.replace('TODAY', new Date().toISOString().slice(0, 10));
-      const chain = check ? [['gemini-smart', geminiSmart], ...PROVIDERS] : PROVIDERS; // the check needs the careful model
+      const chain = check ? [['gemini-smart', geminiSmart], ...PROVIDERS] : PROVIDERS; // the check: careful model first (~10 s), fast ones as backup
+      const tried = [];
       for (const [name, call] of chain) {
         try {
           const raw = await call(env, sys, convo?.length ? convo : [{ role: 'user', content: text }], check ? CHECK_SCHEMA : lifts ? LIFTS_SCHEMA : UNDERSTAND_SCHEMA);
           const result = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, ''));
           return json({ result, provider: name }, 200, headers);
-        } catch { /* try the next provider */ }
+        } catch (e) { tried.push(`${name}: ${String(e.message).slice(0, 160)}`); /* try the next provider */ }
       }
-      return json({ error: 'Could not read that right now.' }, 503, headers);
+      console.log('understand failed', tried.join(' | '));
+      return json({ error: 'Could not read that right now.', ...(body.debug ? { tried } : {}) }, 503, headers);
     }
     const messages = (Array.isArray(body.messages) ? body.messages : [])
       .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')

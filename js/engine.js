@@ -86,6 +86,19 @@ export function prepFromSelfTest(selfTest = {}) {
   return Math.min(p, 3);
 }
 
+// Prep stage to start at. Running at a level already shows the body prep that level needs, so
+// experienced runners are credited with it, unless they told us otherwise:
+// - a body-check test left unticked is a weakness: start just before it;
+// - pain or warning signs: stay careful (no higher than P2; the Rebuild Track takes over anyway).
+export function prepCredit(a, q = qualifyingLevel(a)) {
+  const byLevel = runLevel(Math.min(Math.max(q, 1), RUN_LEVELS.length)).needsPrep;
+  const st = a.selfTest || {};
+  const failed = ['t0', 't1', 't2', 't3'].findIndex(k => st[k] === false);
+  let p = failed >= 0 ? Math.min(byLevel, failed) : Math.max(byLevel, prepFromSelfTest(st));
+  if (a.pain === 'mild' || a.pain === 'more' || (a.redFlags || []).length) p = Math.min(p, 2);
+  return Math.max(0, Math.min(p, PREP_STAGES.length - 1));
+}
+
 export function placeFromAnswers(state, a, now) {
   const s = clone(state);
   const q = qualifyingLevel(a);
@@ -97,7 +110,7 @@ export function placeFromAnswers(state, a, now) {
   s.answers = a;
   s.profile = { ...s.profile, sex: a.sex || s.profile.sex, name: a.name || s.profile.name, goal: a.goal || '', daysPerWeek: clampInt(a.daysPerWeek, 2, 6, 3) };
   s.run = { ...s.run, level: placed, done: {}, startedAt: now, gatePassed: false };
-  s.prep = { ...s.prep, level: q >= 3 ? prepFromSelfTest(a.selfTest) : 0, done: {}, startedAt: now };
+  s.prep = { ...s.prep, level: prepCredit(a, q), done: {}, startedAt: now, credited: 1 };
   const redFlag = (a.redFlags || []).length > 0;
   if (a.pain === 'mild' || a.pain === 'more' || redFlag) {
     s.rebuild = { active: true, stage: 0, done: {}, savedRunLevel: placed, redFlag, seeProfessional: a.pain === 'more' || redFlag };
@@ -513,6 +526,23 @@ function tryAdvanceRun(s, now, msgs) {
   s.run = { ...s.run, level: next.n, done: {}, startedAt: now, gatePassed: false };
   if (s.run.reclaim && next.n >= s.run.reclaim) s.run.reclaim = null;
   msgs.push(`Level up! Welcome to ${next.name} (${worldOf(next).emoji} ${worldOf(next).name})`);
+}
+
+// Someone placed before Prep was credited from their running: give it once now, and move them up
+// if that was all that held them back. Returns { state, msgs } (msgs empty when nothing changed).
+export function creditPrep(state, now) {
+  if (state.prep?.credited || !state.answers || state.rebuild?.active) return { state, msgs: [] };
+  const s = clone(state);
+  s.prep = { ...s.prep, credited: 1 };
+  const reached = Math.max(qualifyingLevel(s.answers), s.run.level, s.run.reclaim || 0);
+  const p = prepCredit(s.answers, reached);
+  const msgs = [];
+  if (p > s.prep.level) {
+    s.prep = { ...s.prep, level: p, done: {} };
+    msgs.push(`Prep Track set to P${p} to match your running level. No need to redo the basics.`);
+    tryAdvanceRun(s, now, msgs);
+  }
+  return { state: s, msgs };
 }
 
 export function prepBlocksRun(s) {

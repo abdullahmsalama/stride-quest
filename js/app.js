@@ -165,7 +165,7 @@ function obSteps(a) {
         <label class="field"><span>Best day for your longest session</span><select name="longDay">${K.DAY_NAMES.map((d, i) => `<option value="${i}" ${(a.longDay ?? 5) === i ? 'selected' : ''}>${d}</option>`).join('')}</select></label>` },
   ];
   if (E.qualifyingLevel(normalize(a)) >= 3) {
-    steps.push({ title: 'Quick body check', why: 'Strong landings and ankles come before speed work.', body: `<p class="hint">Tick what you can do today. Not sure? Try it now. Each has a demo link.</p>
+    steps.push({ title: 'Quick body check', why: 'Strong landings and ankles come before speed work.', body: `<p class="hint">Tick what you can do today. Not sure? Try it now: each has a demo link. Leave one unticked only if you can't do it: we'll start your Prep just before it.</p>
       <div class="choices">${SELF_TEST.map(([k, l, ex]) => `${check(k, `${h(l)} <a href="${videoLink(ex)}" target="_blank" rel="noopener">demo</a>`, a.selfTest?.[k])}`).join('')}</div>` });
   }
   steps.push({ title: 'How much do you want to see?', why: 'Some people like every detail, some just want to know what to do next.', body:
@@ -331,7 +331,15 @@ function derivedFacts(a) {
   if (x.longestKm && x.weeklyKm) d.longestShareOfWeek = `${Math.round((x.longestKm / x.weeklyKm) * 100)}%`;
   return d;
 }
-const checkKey = a => JSON.stringify(Object.fromEntries(CHECK_FIELDS.filter(k => a[k] !== undefined && a[k] !== '').map(k => [k, a[k]])));
+// Only the answers that belong to the sports picked (old Triathlon or lifting answers left over from an
+// earlier run of the questionnaire on this device must not reach the AI), plus which sports those are.
+const TRI_ONLY = new Set(['swimDist', 'swimM', 'longestRide', 'rideKm']);
+const LIFT_ONLY = new Set(['bodyweight', 'squat5', 'deadlift5', 'pullups', 'liftUnit', 'liftMode', 'liftExp', 'row1000Text']);
+const checkKey = a => {
+  const tracks = a.tracks?.length ? a.tracks : ['run'];
+  const keep = k => !(TRI_ONLY.has(k) && !tracks.includes('tri')) && !(LIFT_ONLY.has(k) && !tracks.includes('hybrid'));
+  return JSON.stringify({ tracks, ...Object.fromEntries(CHECK_FIELDS.filter(k => keep(k) && a[k] !== undefined && a[k] !== '').map(k => [k, a[k]])) });
+};
 // The answer check is a conversation: first the answers, then the athlete and the AI take turns.
 async function checkAnswers(note = '') {
   const a = ui.ob.a, key = checkKey(a);
@@ -487,7 +495,7 @@ function renderOnboarding() {
         <h1>${h(st.title)}</h1>
         ${st.why ? `<p class="why">💡 ${h(st.why)}</p>` : ''}
         ${body}
-        ${st.welcome && ui.retake && S.answers ? `<div class="same-answers"><p class="hint">Nothing changed? Skip the questions and go straight to your result with the answers you gave last time.</p><button type="button" class="btn" data-act="ob-same">↩️ Use my previous answers</button></div>` : ''}
+        ${st.welcome && ui.retake && S.answers ? `<div class="same-answers"><p class="hint">This is a fresh questionnaire: new answers, new result. Nothing changed? Skip the questions and go straight to your result with the answers you gave last time.</p><button type="button" class="btn" data-act="ob-same">↩️ Use my previous answers</button></div>` : ''}
         <div class="row end">${back}${st.result ? '<button type="button" class="btn primary" data-act="ob-finish">Start my journey</button>' : `<button type="submit" class="btn primary">${st.welcome ? "Let's start" : 'Next'}</button>`}</div>
       </form>
     </main>`;
@@ -498,6 +506,7 @@ function render() {
   if (!S.placedAt || S.needsReassessment || ui.retake) { $('#app').className = ''; renderOnboarding(); renderModal(); return; }
   $('#app').className = 'shell';
   if (HYB.hasHybrid(S)) { const next = HYB.refreshHybrid(S, now(), E.weekKey(now())); if (next !== S) { S = next; store.save(S); } }
+  if (S.placedAt && !S.prep?.credited) { const r = E.creditPrep(S, now()); S = r.state; store.save(S); if (r.msgs.length) setTimeout(() => toast(r.msgs.join(' ')), 600); }
   const frame = document.querySelector('.worldmap');
   if (frame) ui.frameTop = frame.scrollTop; // keep the framed map's scroll across redraws
   const t = now();
@@ -1936,7 +1945,7 @@ const actions = {
   tab(el) { if (ui.laneAnimating) ui.laneSkip = true; document.querySelector('.lane-skip')?.remove(); ui.tab = el.dataset.tab; ui.mapPopup = null; ui.frameTop = null; ui.mapScroll = ui.tab === 'map'; render(); if (ui.tab !== 'map') window.scrollTo(0, 0); },
   // Retake with the same answers: straight to the result screen (still editable with Back).
   'ob-same'() {
-    ui.ob = { step: obSteps(ui.ob.a).length - 1, a: { ...(S.answers || {}), ...ui.ob.a } };
+    ui.ob = { step: obSteps(S.answers || {}).length - 1, a: { ...(S.answers || {}) } };
     checkAnswers(); renderOnboarding(); window.scrollTo(0, 0);
   },
   'ob-back'() { collectOb(); ui.ob.step--; renderOnboarding(); },
@@ -2082,7 +2091,7 @@ const actions = {
   },
   'report-pain'() { ui.modal = { type: 'rebuildPrompt' }; renderModal(); },
   export() { store.exportFile(S); },
-  retake() { if (confirm('Retake the assessment? Your XP and badges stay; your level is set again.')) { ui.retake = true; ui.ob = { step: 0, a: { ...(S.answers || {}) } }; render(); } },
+  retake() { if (confirm('Retake the assessment? Your XP and badges stay; your level is set again from your new answers.')) { ui.retake = true; ui.ob = { step: 0, a: {} }; render(); } }, // a fresh questionnaire: new answers, new result
   reset() { if (confirm('Delete all progress in this browser?')) { store.clear(); localStorage.removeItem(CHAT_KEY); localStorage.removeItem(AVATAR_KEY); ui.avatarAt = null; ui.chat = []; S = E.newState(now()); render(); } },
   sound() { sfx.setSound(!sfx.soundOn()); if (sfx.soundOn()) { sfx.unlockAudio(); sfx.pop(); } render(); },
   quick(el) { sendChat(el.dataset.q); },
