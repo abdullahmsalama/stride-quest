@@ -9,10 +9,17 @@ export function setSound(on) {
   if (master) master.gain.value = on ? 1 : 0;
 }
 
-// Must run inside a user gesture (a click) the first time, or browsers keep audio blocked.
+// Must run inside a user gesture (a tap) the first time, or browsers keep audio blocked.
+// Phones are stricter than laptops:
+// - iOS only accepts some gestures (touchend / click, not the first touch-down), and fully unlocks
+//   Web Audio only once something is actually played inside that gesture: a silent blip below.
+// - iPhones mute Web Audio with the ring/silent switch unless the page says it plays media
+//   (navigator.audioSession, Safari 17+).
+let unlocked = false;
 export function unlockAudio() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* older browsers */ }
   if (!ctx) {
     ctx = new AC();
     master = ctx.createGain();
@@ -20,18 +27,33 @@ export function unlockAudio() {
     master.connect(ctx.destination);
     loadClips();
   }
-  if (ctx.state === 'suspended') ctx.resume();
+  if (ctx.state !== 'running') ctx.resume().catch(() => {});
+  if (!unlocked) {
+    const b = ctx.createBuffer(1, 1, 22050), src = ctx.createBufferSource();
+    src.buffer = b; src.connect(ctx.destination); src.start(0);
+    unlocked = ctx.state === 'running';
+  }
 }
 
-const ready = () => { if (ctx?.state === 'suspended') ctx.resume(); return ctx && master && soundOn(); };
+const ready = () => { if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {}); return ctx && master && soundOn(); }; // 'interrupted' on iOS after a call
 
 export const audioState = () => (ctx ? ctx.state : 'none');
 
-// Unlock on the first tap anywhere, so sound works however the intro is reached.
+// Unlock on taps anywhere (kept listening until audio is really running: phones may refuse the
+// first try), and wake it again when coming back to the app (phones suspend it in the background).
 if (typeof document !== 'undefined') {
-  const first = () => { unlockAudio(); document.removeEventListener('pointerdown', first, true); document.removeEventListener('keydown', first, true); };
-  document.addEventListener('pointerdown', first, true);
-  document.addEventListener('keydown', first, true);
+  const EVENTS = ['touchend', 'click', 'keydown', 'pointerup'];
+  const tryUnlock = () => {
+    unlockAudio();
+    if (ctx && ctx.state === 'running' && unlocked) EVENTS.forEach(e => document.removeEventListener(e, tryUnlock, true));
+  };
+  EVENTS.forEach(e => document.addEventListener(e, tryUnlock, true));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && ctx && ctx.state !== 'running') {
+      ctx.resume().catch(() => {});
+      unlocked = false; EVENTS.forEach(e => document.addEventListener(e, tryUnlock, true)); // re-arm in case it needs a tap
+    }
+  });
 }
 
 function tone(freq, { type = 'sine', dur = 0.12, vol = 0.2, slideTo = null, delay = 0 } = {}) {
