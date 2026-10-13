@@ -229,6 +229,13 @@ async function openaiStyle(url, key, model, system, messages, extraHeaders = {},
 }
 
 let lastModel = null;
+// Which model answered, for the "via … · free tier" label in the app (Gemini sets lastModel itself).
+const modelFor = (name, env) => (name.startsWith('gemini') ? lastModel
+  : name === 'groq' ? env.GROQ_MODEL || 'llama-3.3-70b-versatile' : name === 'xai' ? env.XAI_MODEL || 'grok-3-mini' : name === 'openrouter' ? env.OPENROUTER_MODEL || 'openrouter' : name);
+const tierFor = name => (name === 'xai' ? 'paid' : 'free');
+// A plain reason when every provider failed, so the app can say something friendly instead of a code.
+const failReason = errs => (errs.length && errs.every(e => /429|quota|RESOURCE_EXHAUSTED|no key/i.test(e)) && errs.some(e => /429|quota|RESOURCE/i.test(e)) ? 'busy'
+  : errs.some(e => /abort|timeout/i.test(e)) ? 'slow' : 'down');
 // Extra thinking for the smart coach (Gemini 3.x uses thinkingLevel).
 const THINK = { 'gemini-3.8-flash': { thinkingLevel: 'high' }, 'gemini-3-flash-preview': { thinkingLevel: 'high' } };
 
@@ -409,11 +416,11 @@ export default {
         try {
           const raw = await call(env, sys, convo?.length ? convo : [{ role: 'user', content: text }], check ? CHECK_SCHEMA : lifts ? LIFTS_SCHEMA : UNDERSTAND_SCHEMA);
           const result = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, ''));
-          return json({ result, provider: name }, 200, headers);
+          return json({ result, provider: name, model: modelFor(name, env), tier: tierFor(name) }, 200, headers);
         } catch (e) { tried.push(`${name}: ${String(e.message).slice(0, 160)}`); /* try the next provider */ }
       }
       console.log('understand failed', tried.join(' | '));
-      return json({ error: 'Could not read that right now.', ...(body.debug ? { tried } : {}) }, 503, headers);
+      return json({ error: 'Could not read that right now.', reason: failReason(tried), ...(body.debug ? { tried } : {}) }, 503, headers);
     }
     const messages = (Array.isArray(body.messages) ? body.messages : [])
       .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
@@ -430,12 +437,12 @@ export default {
       try {
         const raw = await call(env, system, messages, CHAT_SCHEMA);
         const { reply, actions } = parseChat(raw);
-        return json({ reply, actions, provider: name, model: lastModel, ...(body.debug ? { tried: errors } : {}) }, 200, headers);
+        return json({ reply, actions, provider: name, model: modelFor(name, env), tier: tierFor(name), ...(body.debug ? { tried: errors } : {}) }, 200, headers);
       } catch (e) {
         errors.push(`${name}: ${e.message}`);
       }
     }
     console.log('all providers failed', errors.join('; '));
-    return json({ error: 'All coach providers are busy right now.' }, 503, headers);
+    return json({ error: 'All coach providers are busy right now.', reason: failReason(errors) }, 503, headers);
   },
 };

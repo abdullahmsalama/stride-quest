@@ -751,3 +751,5 @@ header.top { gap: 10px; }
 .cc-msg.user { background: var(--brand); color: #fff; justify-self: end; }
 .cc-change { display: block; margin-top: 8px; }
 .cc-change.done { opacity: .7; }
+.tag.warn { display: block; margin-top: 8px; padding: 6px 8px; border-radius: 8px; background: var(--warn-soft, #fff3cd); color: var(--ink); font-size: 12px; white-space: normal; }
+.cc-msg.trouble { background: var(--warn-soft, #fff3cd); border-color: transparent; }

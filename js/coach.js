@@ -3,49 +3,72 @@ import { activeTrack, nextStep, runLevel } from './engine.js';
 import { offlineActions } from './actions.js';
 
 // Ask the coach. Uses the Worker when configured, falls back to the offline coach otherwise.
-// `signal` (an AbortController's) lets the athlete stop a reply mid-way: it then resolves to { aborted: true }.
+// Friendly words for why the AI couldn't answer (never a raw 403 / 429 / 503).
+export const AI_TROUBLE = {
+  busy: 'The free AI is busy right now (it has a limit on how much it can answer). Try again in a minute.',
+  slow: 'The AI took too long to answer. Try again in a moment.',
+  down: "The AI can't be reached right now. Check your connection, or try again in a minute.",
+};
+// "gemini-3.8-flash" -> "Gemini 3.8 Flash", for the "via … · free tier" label.
+export const prettyModel = m => String(m || 'AI').split('/').pop().replace(/-latest$/, '').replace(/-versatile$|-instruct(:free)?$/, '').split(/[-/]/)
+  .map(w => (/^\d/.test(w) ? w.toUpperCase() : w[0]?.toUpperCase() + w.slice(1))).join(' ').replace(/\bGpt\b/, 'GPT');
+
+// fetch with a time limit, joined to an optional outside signal (the Stop button).
+async function timedFetch(url, init, ms, outer) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort('timeout'), ms);
+  const onOuter = () => ctrl.abort('stopped');
+  outer?.addEventListener('abort', onOuter);
+  try { return await fetch(url, { ...init, signal: ctrl.signal }); }
+  catch (e) { throw ctrl.signal.reason === 'stopped' ? Object.assign(new Error('stopped'), { name: 'AbortError' }) : ctrl.signal.reason === 'timeout' ? new Error('timeout') : e; }
+  finally { clearTimeout(timer); outer?.removeEventListener('abort', onOuter); }
+}
+
+// Ask the coach. Uses the Worker when configured, falls back to the offline coach otherwise.
+// `signal` lets the athlete stop a reply mid-way: it then resolves to { aborted: true }.
 export async function askCoach(messages, context, state, smart = false, app = '', signal = null) {
+  let reason = null;
   if (WORKER_URL) {
     try {
-      const res = await fetch(`${WORKER_URL.replace(/\/$/, '')}/chat`, {
+      const res = await timedFetch(`${WORKER_URL.replace(/\/$/, '')}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages, context, smart, app }),
-        signal,
-      });
+      }, smart ? 75000 : 45000, signal);
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.reply) return { reply: data.reply, actions: Array.isArray(data.actions) ? data.actions : [], provider: data.provider };
-      if (res.status === 429) return { reply: data.error || 'Too many messages. Give it a minute.', provider: 'limit' };
-    } catch (e) { if (e?.name === 'AbortError') return { aborted: true }; /* network error: fall through */ }
+      if (res.ok && data.reply) return { reply: data.reply, actions: Array.isArray(data.actions) ? data.actions : [], provider: data.provider, model: data.model, tier: data.tier };
+      reason = res.status === 429 ? 'busy' : data.reason || 'down';
+    } catch (e) { if (e?.name === 'AbortError') return { aborted: true }; reason = e?.message === 'timeout' ? 'slow' : 'down'; }
   }
   const last = messages.at(-1)?.content || '';
-  return { reply: offlineReply(last, state), actions: offlineActions(last, state), provider: 'offline' };
+  return { reply: offlineReply(last, state), actions: offlineActions(last, state), provider: 'offline', reason };
 }
 
 // Ask the AI to read free text (e.g. the dream). Resolves to null when offline or unsure.
 export async function understand(task, text) {
   if (!WORKER_URL || !String(text || '').trim()) return null;
   try {
-    const res = await fetch(`${WORKER_URL.replace(/\/$/, '')}/chat`, {
+    const res = await timedFetch(`${WORKER_URL.replace(/\/$/, '')}/chat`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode: 'understand', task, text }),
-    });
+    }, 45000);
     const data = await res.json().catch(() => ({}));
     return res.ok ? data.result || null : null;
   } catch { return null; }
 }
 
-// A conversation with the AI about the questionnaire answers (the answer check). Null when offline.
+// A conversation with the AI about the questionnaire answers (the answer check).
+// Resolves to { result, model, tier } or { result: null, reason } (busy / slow / down).
 export async function understandChat(task, messages) {
-  if (!WORKER_URL || !messages?.length) return null;
+  if (!WORKER_URL || !messages?.length) return { result: null, reason: 'down' };
   try {
-    const res = await fetch(`${WORKER_URL.replace(/\/$/, '')}/chat`, {
+    const res = await timedFetch(`${WORKER_URL.replace(/\/$/, '')}/chat`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode: 'understand', task, messages }),
-    });
+    }, 75000);
     const data = await res.json().catch(() => ({}));
-    return res.ok ? data.result || null : null;
-  } catch { return null; }
+    return res.ok && data.result ? { result: data.result, model: data.model, tier: data.tier } : { result: null, reason: res.status === 429 ? 'busy' : data.reason || 'down' };
+  } catch (e) { return { result: null, reason: e?.message === 'timeout' ? 'slow' : 'down' }; }
 }
 
 // Rule-based answers so the app is useful with no LLM at all.

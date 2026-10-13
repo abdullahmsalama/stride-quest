@@ -2,7 +2,7 @@ import * as E from './engine.js';
 import { RUN_LEVELS, PREP_STAGES, REBUILD_STAGES, WORLDS } from './data/tracks.js';
 import { EXERCISES, videoLink } from './data/exercises.js';
 import * as store from './store.js';
-import { askCoach, understand, understandChat, canListen, canSpeak, listen, speak } from './coach.js';
+import { askCoach, understand, understandChat, canListen, canSpeak, listen, speak, AI_TROUBLE, prettyModel } from './coach.js';
 import * as ACT from './actions.js';
 import * as M from './motivation.js';
 import { renderMap, runAvatar, mapPageY, runFogParts, POINTS, H as MAP_H, W as MAP_W } from './map.js';
@@ -299,7 +299,7 @@ function aiStatusLine() {
   const st = Object.values(ui.ai);
   if (!st.length) return '';
   const cls = st.includes('busy') ? 'busy' : st.every(x => x === 'off') ? 'off' : 'ok';
-  const txt = cls === 'busy' ? '🤖 The AI is reading your answers…' : cls === 'off' ? '🤖 The AI couldn\'t be reached: your placement uses the rules only (it still works).' : '🤖 The AI read your answers ✓';
+  const txt = cls === 'busy' ? '🤖 The AI is reading your answers… (the careful model takes about 10 seconds)' : cls === 'off' ? '🤖 The AI couldn\'t answer this time: your placement uses the app\'s own rules (it still works).' : `🤖 The AI read your answers ✓${ui.aiModel?.model ? ` · via ${prettyModel(ui.aiModel.model)} (${ui.aiModel.tier === 'paid' ? 'paid' : 'free'} tier)` : ''}`;
   return `<p class="ai-status ${cls}" id="ai-status">${txt}</p>`;
 }
 function refreshAiStatus() { const el = document.getElementById('ai-status'); if (el) el.outerHTML = aiStatusLine(); }
@@ -350,11 +350,12 @@ async function checkAnswers(note = '') {
   if (document.querySelector('.result')) renderOnboarding();
   ui.ai.check = 'busy'; refreshAiStatus();
   const first = `ANSWERS: ${key}\nDERIVED (worked out by the app): ${JSON.stringify(derivedFacts(a))}`;
-  const r = await understandChat('check', [{ role: 'user', content: first }, ...chat.map(({ role, content }) => ({ role, content }))]);
-  ui.ai.check = r ? 'ok' : 'off';
+  const res = await understandChat('check', [{ role: 'user', content: first }, ...chat.filter(m => !m.trouble).map(({ role, content }) => ({ role, content }))]);
+  const r = res.result;
+  ui.ai.check = r ? 'ok' : 'off'; ui.aiModel = r ? { model: res.model, tier: res.tier } : ui.aiModel;
   const issues = Array.isArray(r?.issues) ? r.issues.filter(i => CHECK_FIELDS.includes(i.field)).slice(0, 3) : (a.check.issues || []);
   if (r?.reply) chat.push({ role: 'assistant', content: String(r.reply).slice(0, 500), changes: (r.changes || []).map(validChange).filter(Boolean).slice(0, 4) });
-  else if (note) chat.push({ role: 'assistant', content: "I couldn't reach the AI just now. You can still fix answers with Back.", changes: [] });
+  else chat.push({ role: 'assistant', trouble: true, content: `${AI_TROUBLE[res.reason] || AI_TROUBLE.down} Your placement still works with the app's own rules, and you can fix answers with Back.`, changes: [] });
   ui.ob.a.check = { for: key, issues, chat, busy: false };
   if (document.querySelector('.result')) renderOnboarding();
 }
@@ -363,10 +364,11 @@ function checkBox() {
   const c = ui.ob.a.check;
   if (!c) return '';
   const issues = (c.issues || []).map(i => `<div class="check-item"><span>${h(i.message)}</span><button type="button" class="btn small" data-act="fix-field" data-field="${h(i.field)}">Fix it</button></div>`).join('');
-  const talk = (c.chat || []).map((m, mi) => `<div class="cc-msg ${m.role}">${h(m.content)}${(m.changes || []).map((ch, ci) => `<button type="button" class="btn small cc-change ${ch.applied ? 'done' : ''}" data-act="check-apply" data-m="${mi}" data-c="${ci}" ${ch.applied ? 'disabled' : ''}>${ch.applied ? '✓ Changed' : 'Apply'}: ${h(ch.label)} → ${h(ch.value)}</button>`).join('')}</div>`).join('');
+  const talk = (c.chat || []).map((m, mi) => `<div class="cc-msg ${m.role} ${m.trouble ? 'trouble' : ''}">${m.trouble ? '⚠️ ' : ''}${h(m.content)}${m.trouble && mi === c.chat.length - 1 ? '<button type="button" class="btn small cc-change" data-act="check-retry">↻ Try again</button>' : ''}${(m.changes || []).map((ch, ci) => `<button type="button" class="btn small cc-change ${ch.applied ? 'done' : ''}" data-act="check-apply" data-m="${mi}" data-c="${ci}" ${ch.applied ? 'disabled' : ''}>${ch.applied ? '✓ Changed' : 'Apply'}: ${h(ch.label)} → ${h(ch.value)}</button>`).join('')}</div>`).join('');
   const box = `${issues}${talk ? `<div class="cc-thread">${talk}</div>` : ''}${c.busy ? '<p class="hint">🤖 Reading…</p>' : ''}
     <div class="ai-fix"><input type="text" id="ai-note-check" maxlength="400" placeholder="${talk ? 'Reply to the AI…' : 'e.g. "I run 3 times a week, 50 km" or "my lifts are in lb"'}"><button type="button" class="btn small" data-act="ai-fix" data-task="check" ${c.busy ? 'disabled' : ''}>Send</button></div>`;
-  if (c.issues?.length || talk) return `<div class="check-box"><strong>🤖 Quick check before we start</strong>${box}<p class="hint">All correct? Just start your journey.</p></div>`;
+  const via = ui.aiModel?.model ? `<span class="hint"> · via ${h(prettyModel(ui.aiModel.model))} (${ui.aiModel.tier === 'paid' ? 'paid' : 'free'} tier)</span>` : '';
+  if (c.issues?.length || talk) return `<div class="check-box"><strong>🤖 Quick check before we start</strong>${via}${box}<p class="hint">All correct? Just start your journey.</p></div>`;
   return c.issues ? `<details class="ai-more"><summary>Something looks wrong? Talk to the AI</summary>${box}</details>` : '';
 }
 
@@ -1340,7 +1342,7 @@ function viewCoach() {
   const modeSeg = `<div class="seg coach-seg">${[[false, '⚡ Quick'], [true, '🧠 Smart · slower']].map(([v, l]) => `<button class="${!!ui.smartCoach === v ? 'on' : ''}" data-act="coach-mode" data-v="${v ? 1 : 0}">${l}</button>`).join('')}</div>
     <p class="hint coach-mode-hint">${ui.smartCoach ? '🧠 Smart coach thinks longer and is better at tricky questions like a wrong placement. Replies take about 5-30 seconds.' : '⚡ Quick coach answers in a couple of seconds. Switch to Smart for tricky questions.'}</p>`;
   return `${modeSeg}<section class="chat">
-      <div class="chat-log">${msgs.map((m, mi) => `<div class="msg ${m.role}">${md(m.content)}${m.provider === 'offline' ? '<span class="tag">offline coach</span>' : ''}</div>${m.role === 'user' && ui.chat.length && !(ui.thinking && mi === ui.chat.length - 1) ? `<div class="msg-tools"><button class="linkish" data-act="msg-edit" data-m="${mi}">✏️ Edit</button><button class="linkish" data-act="msg-del" data-m="${mi}">🗑 Delete</button></div>` : ''}${suggestionCards(m, mi)}`).join('')}
+      <div class="chat-log">${msgs.map((m, mi) => `<div class="msg ${m.role}">${md(m.content)}${m.provider === 'offline' ? `<span class="tag warn">${m.reason ? `⚠️ ${h(AI_TROUBLE[m.reason] || AI_TROUBLE.down)} Meanwhile, this answer is from the built-in coach.` : 'built-in coach'}</span>` : m.role === 'assistant' && m.model ? `<span class="tag">via ${h(prettyModel(m.model))} · ${m.tier === 'paid' ? 'paid' : 'free'} tier</span>` : ''}</div>${m.role === 'user' && ui.chat.length && !(ui.thinking && mi === ui.chat.length - 1) ? `<div class="msg-tools"><button class="linkish" data-act="msg-edit" data-m="${mi}">✏️ Edit</button><button class="linkish" data-act="msg-del" data-m="${mi}">🗑 Delete</button></div>` : ''}${suggestionCards(m, mi)}`).join('')}
         ${ui.thinking ? `<div class="msg assistant typing"><span></span><span></span><span></span>${ui.smartCoach ? '<em class="slow-note">🧠 Thinking it through…</em>' : ''}${ui.slow ? `<em class="slow-note">${ui.smartCoach ? 'Still thinking… smart answers take a bit longer' : 'Still thinking… the AI is busy, a few more seconds'}</em>` : ''}</div>` : ''}</div>
       <div class="quick">${['What should I do today?', 'I feel sore', 'Explain my level', 'How fast should easy runs be?'].map(q => `<button class="pill" data-act="quick" data-q="${h(q)}">${h(q)}</button>`).join('')}</div>
       <form id="chat-form" class="chat-input">
@@ -2155,6 +2157,15 @@ const actions = {
     await (task === 'dream' ? readDream(note) : task === 'lifts' ? readLifts(note) : checkAnswers(note));
     if (document.querySelector('.result')) renderOnboarding();
   },
+  // After a hiccup: drop the warning and ask again (the athlete's last message, if any, is still in the thread).
+  'check-retry'() {
+    const c = ui.ob.a.check;
+    if (!c) return;
+    c.chat = (c.chat || []).filter(m => !m.trouble);
+    const lastUser = [...c.chat].reverse().find(m => m.role === 'user');
+    if (lastUser) { c.chat.splice(c.chat.lastIndexOf(lastUser), 1); checkAnswers(lastUser.content); }
+    else { c.for = null; checkAnswers(); }
+  },
   'check-apply'(el) {
     const m = ui.ob.a.check?.chat?.[+el.dataset.m], ch = m?.changes?.[+el.dataset.c];
     if (!ch || ch.applied) return;
@@ -2308,9 +2319,9 @@ async function sendChat(text) {
   const res = await askCoach(history, `${E.coachContext(S, now())}\n${ACT.weekContext(S, now())}`, S, ui.smartCoach, FEATURE_BRIEF, ui.chatAbort.signal);
   ui.chatAbort = null;
   if (res.aborted) { clearTimeout(slowTimer); ui.thinking = false; ui.slow = false; saveChat(); render(); return; } // stopped: the message is already back in the box
-  const { reply, provider, actions = [] } = res;
+  const { reply, provider, actions = [], model, tier, reason } = res;
   const valid = actions.filter(a => ACT.describe(S, a, now()));
-  ui.chat.push({ role: 'assistant', content: reply, provider, actions: valid.map(a => ({ ...a, status: 'pending' })) });
+  ui.chat.push({ role: 'assistant', content: reply, provider, model, tier, reason, actions: valid.map(a => ({ ...a, status: 'pending' })) });
   clearTimeout(slowTimer);
   ui.thinking = false; ui.slow = false; saveChat(); render();
   if (ui.speakReplies) speak(reply);
