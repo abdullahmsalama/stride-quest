@@ -51,15 +51,37 @@ const LIFTS_SCHEMA = {
   required: ['confidence', 'summary'],
 };
 
-const CHECK = `You review an athlete's questionnaire answers (JSON) for likely MISTAKES before a training plan is built.
-Look for: unit mix-ups (kg vs lb, km vs miles, minutes vs hours, metres vs km), impossible or inconsistent numbers (e.g. a 10K pace faster than the 5K pace, a squat far above world records, a longest run much longer than weekly distance), and answers that contradict each other.
-Typical example: a bodyweight above about 130 with lifts in kg often means the bodyweight was typed in lb (176 lb = 80 kg). Do NOT judge ambition or fitness, and do not flag things that are simply unusual but possible. Return JSON only: {"issues": [{"field": string, "message": string}]} with at most 3 issues.
-"field" must be one of the input keys. "message" is one short, friendly sentence that says what looks off and asks a question. Return {"issues": []} when everything looks fine.`;
+const CHECK = `You help an athlete check their questionnaire answers before a training plan is built. You talk WITH them: they can explain, correct or ask, and you can propose changes to their answers.
+The first message is their answers as JSON, plus DERIVED figures the app computed. Later messages are the conversation.
+
+What each answer means (read carefully, do not guess other meanings):
+- runsPerWeek: average number of runs PER WEEK over the last 4 weeks.
+- weeklyKm: running distance per week, km. longestKm / longestTime: longest single run in the last 2 months.
+- best5kText / best10kText: a time (mm:ss or h:mm:ss); *Mode "time" = total time, "pace" = minutes per km.
+- continuous: how long they can run without stopping. daysPerWeek: days they can train.
+- bodyweight, squat5, deadlift5: in liftUnit (kg or lb); liftMode "5" = weight for 5 reps, "1" = 1-rep max. pullups: strict reps.
+- swimDist / swimM: longest continuous swim. longestRide / rideKm: longest ride, km. row1000Text: 1000 m row time.
+- sex, dream, dreamEvent, dreamDate: who they are and what they want.
+
+Flag ONLY clear mistakes: unit mix-ups (kg/lb, km/miles, minutes/hours, m/km), impossible numbers, or answers that truly contradict each other. Use the DERIVED figures. Hard limits, do not flag inside them:
+- kmPerRun between 1 and 35 is normal (50 km over 3 runs = ~17 km per run is a normal experienced runner).
+- longestShareOfWeek up to 60% is normal. 5K pace 2:50-12:00 per km is possible. A 10K pace slower than the 5K pace is normal.
+- Lifts up to 3x bodyweight (squat) and 3.5x (deadlift) are possible. Unusual but possible is fine. Never judge ambition. Never repeat an issue the athlete has already explained.
+
+Reply JSON only:
+{"reply": short friendly answer to the athlete's last message (one or two sentences; on the first message, summarise what you checked),
+ "issues": up to 3 current problems [{"field": an answer key, "message": one friendly sentence that asks a question}],
+ "changes": answer changes the athlete asked for or confirmed [{"field": an answer key, "value": the new value as text, "why": a few words}]}
+Only propose a change when the athlete said the new value or clearly confirmed it. Values use the same format as the answers (numbers as plain numbers, times as mm:ss).`;
 
 const CHECK_SCHEMA = {
   type: 'OBJECT',
-  properties: { issues: { type: 'ARRAY', items: { type: 'OBJECT', properties: { field: { type: 'STRING' }, message: { type: 'STRING' } }, required: ['field', 'message'] } } },
-  required: ['issues'],
+  properties: {
+    reply: { type: 'STRING' },
+    issues: { type: 'ARRAY', items: { type: 'OBJECT', properties: { field: { type: 'STRING' }, message: { type: 'STRING' } }, required: ['field', 'message'] } },
+    changes: { type: 'ARRAY', items: { type: 'OBJECT', properties: { field: { type: 'STRING' }, value: { type: 'STRING' }, why: { type: 'STRING' } }, required: ['field', 'value'] } },
+  },
+  required: ['reply', 'issues', 'changes'],
 };
 
 const UNDERSTAND_SCHEMA = {
@@ -371,13 +393,19 @@ export default {
     try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400, headers); }
 
     if (body.mode === 'understand') {
-      const text = String(body.text || '').slice(0, body.task === 'check' ? 2400 : 700).trim();
-      if (!text) return json({ error: 'no text' }, 400, headers);
       const lifts = body.task === 'lifts', check = body.task === 'check';
+      // The answer check is a conversation: the answers first, then the athlete and the AI taking turns.
+      const convo = check && Array.isArray(body.messages)
+        ? body.messages.filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string').slice(0, 14)
+          .map((m, i) => ({ role: m.role, content: m.content.slice(0, i === 0 ? 3000 : 700) }))
+        : null;
+      const text = String(body.text || '').slice(0, check ? 3000 : 700).trim();
+      if (!text && !convo?.length) return json({ error: 'no text' }, 400, headers);
       const sys = check ? CHECK : lifts ? UNDERSTAND_LIFTS : UNDERSTAND.replace('TODAY', new Date().toISOString().slice(0, 10));
-      for (const [name, call] of PROVIDERS) {
+      const chain = check ? [['gemini-smart', geminiSmart], ...PROVIDERS] : PROVIDERS; // the check needs the careful model
+      for (const [name, call] of chain) {
         try {
-          const raw = await call(env, sys, [{ role: 'user', content: text }], check ? CHECK_SCHEMA : lifts ? LIFTS_SCHEMA : UNDERSTAND_SCHEMA);
+          const raw = await call(env, sys, convo?.length ? convo : [{ role: 'user', content: text }], check ? CHECK_SCHEMA : lifts ? LIFTS_SCHEMA : UNDERSTAND_SCHEMA);
           const result = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, ''));
           return json({ result, provider: name }, 200, headers);
         } catch { /* try the next provider */ }

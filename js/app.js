@@ -2,7 +2,7 @@ import * as E from './engine.js';
 import { RUN_LEVELS, PREP_STAGES, REBUILD_STAGES, WORLDS } from './data/tracks.js';
 import { EXERCISES, videoLink } from './data/exercises.js';
 import * as store from './store.js';
-import { askCoach, understand, canListen, canSpeak, listen, speak } from './coach.js';
+import { askCoach, understand, understandChat, canListen, canSpeak, listen, speak } from './coach.js';
 import * as ACT from './actions.js';
 import * as M from './motivation.js';
 import { renderMap, runAvatar, mapPageY, runFogParts, POINTS, H as MAP_H, W as MAP_W } from './map.js';
@@ -99,7 +99,6 @@ function toast(messages) {
 // ---------- onboarding ----------
 const GOALS = [['fit', 'Get fit and healthy'], ['first5k', 'Run my first 5K'], ['faster', 'Get faster'], ['longer', 'Run longer distances'], ['race', 'Train for a race']];
 const TRACKS = [['run', '🏃 Running'], ['hybrid', '🏃🏋️ Hybrid (Alpha X, Hyrox, Tough Mudder…)'], ['tri', '🏊🚴🏃 Triathlon']];
-const RUNS = [[0, 'None'], [2, '1-3 runs'], [6, '4-8 runs'], [10, '9-12 runs'], [14, '13 or more']];
 const CONTINUOUS = [['none', "I don't run yet"], ['jogwalk20', 'Jog/walk mix for about 20 min'], ['10-15', '10-15 min without stopping'], ['20-30', '20-30 min'], ['30-45', '30-45 min'], ['45-75', '45-75 min'], ['75-120', '75 min - 2 h'], ['120+', 'Over 2 h']];
 const RED_FLAGS = [['sharp', 'Sharp or stabbing pain'], ['swelling', 'Swelling'], ['night', 'Pain at night or at rest'], ['walking', 'Pain while walking'], ['recent', 'Recent fracture or surgery']];
 const SELF_TEST = [
@@ -144,7 +143,9 @@ function obSteps(a) {
         <label class="field"><span>Event</span><input type="text" name="dreamEvent" value="${h(a.dreamEvent || '')}" maxlength="60" placeholder="e.g. Berlin Marathon, Hyrox Dubai"></label>
         <label class="field"><span>Date</span><input type="date" name="dreamDate" value="${h(a.dreamDate || '')}"></label>` },
     { title: 'Your sporting background', why: 'Former athletes keep their technique for life and come back faster: we credit that.', body: backgroundQuestions(a) },
-    { title: 'How many times did you run in the last 4 weeks?', why: 'Recent running tells us more than your best day ever.', body: radio('runsLast4w', RUNS, a.runsLast4w) },
+    { title: 'How many runs a week do you do?', why: 'Recent running tells us more than your best day ever.', body: `
+        <label class="field"><span>Runs per week, on average over the last 4 weeks</span><span class="with-unit"><input type="number" inputmode="numeric" name="runsPerWeek" min="0" max="14" step="1" value="${a.runsPerWeek ?? (a.runsLast4w != null && a.runsLast4w !== '' ? Math.round(+a.runsLast4w / 4) : '')}" placeholder="e.g. 3"><em>runs / week</em></span></label>
+        <p class="hint">0 if you haven't run lately. Count every run, including easy ones.</p>` },
     { title: 'Longest you can run without stopping?', why: 'Sets your first level so it feels doable.', body: radio('continuous', CONTINUOUS, a.continuous) },
     { title: 'Your running volume', why: 'Keeps your first weeks at a safe load.', body: `${num('weeklyKm', 'Roughly how many km per week lately?', a.weeklyKm, 'km')}
         <p class="q">Longest run in the last 2 months?</p><p class="hint">Distance, time, or both.</p>
@@ -283,7 +284,7 @@ function hybridRaces(a) {
 }
 
 // Ask the AI to look over all the answers for likely mistakes (units, typos, contradictions).
-const CHECK_FIELDS = ['runsLast4w', 'weeklyKm', 'longestKm', 'longestTime', 'best5kText', 'best5kMode', 'best10kText', 'best10kMode', 'continuous', 'dream', 'dreamEvent', 'dreamDate',
+const CHECK_FIELDS = ['runsPerWeek', 'weeklyKm', 'longestKm', 'longestTime', 'best5kText', 'best5kMode', 'best10kText', 'best10kMode', 'continuous', 'dream', 'dreamEvent', 'dreamDate',
   'sex', 'bodyweight', 'squat5', 'deadlift5', 'pullups', 'liftUnit', 'liftMode', 'liftExp', 'row1000Text', 'swimDist', 'swimM', 'longestRide', 'rideKm', 'daysPerWeek'];
 // What the AI is doing on the result screen: busy / ok / off (unreachable), per task.
 ui.ai = {};
@@ -305,15 +306,60 @@ function refreshAiStatus() { const el = document.getElementById('ai-status'); if
 // "Not quite? Tell the AI": a correction box that sends the athlete's own words back for a second reading.
 const aiFixBox = (task, prompt) => `<div class="ai-fix"><input type="text" id="ai-note-${task}" maxlength="240" placeholder="${h(prompt)}"><button type="button" class="btn small" data-act="ai-fix" data-task="${task}">Read again</button></div>`;
 
+// Answers the AI may change for the athlete (after they said or confirmed the new value), and how to check them.
+const CHECK_EDIT = {
+  runsPerWeek: ['Runs per week', 'int', 0, 14], weeklyKm: ['Weekly km', 'num', 0, 300], longestKm: ['Longest run (km)', 'num', 0, 250],
+  longestTime: ['Longest run (time)', 'time'], best5kText: ['Best 5K', 'time'], best10kText: ['Best 10K', 'time'], daysPerWeek: ['Training days', 'int', 1, 7],
+  bodyweight: ['Bodyweight', 'num', 25, 400], squat5: ['Squat', 'num', 0, 600], deadlift5: ['Deadlift', 'num', 0, 700], pullups: ['Pull-ups', 'int', 0, 100],
+  liftUnit: ['Lift units', ['kg', 'lb']], liftMode: ['Lifts are', ['5', '1']], row1000Text: ['1000 m row', 'time'], swimM: ['Longest swim (m)', 'num', 0, 20000], rideKm: ['Longest ride (km)', 'num', 0, 600],
+};
+function validChange(c) {
+  const spec = CHECK_EDIT[c?.field];
+  if (!spec) return null;
+  const v = String(c.value ?? '').trim(), [label, type, lo, hi] = spec;
+  if (Array.isArray(type)) return type.includes(v) ? { ...c, value: v, label } : null;
+  if (type === 'time') return parseTime(v) != null ? { ...c, value: v, label } : null;
+  const n = Number(v.replace(',', '.'));
+  return isFinite(n) && n >= lo && n <= hi && (type !== 'int' || Number.isInteger(n)) ? { ...c, value: String(n), label } : null;
+}
+// Figures the app works out, so the AI doesn't have to (and doesn't misread the answers).
+function derivedFacts(a) {
+  const x = normalize(a), d = {};
+  if (x.weeklyKm && x.runsPerWeek) d.kmPerRun = Math.round((x.weeklyKm / x.runsPerWeek) * 10) / 10;
+  if (x.best5k) d.pace5kPerKm = formatTime(x.best5k / 5);
+  if (x.best10k) d.pace10kPerKm = formatTime(x.best10k / 10);
+  if (x.longestKm && x.weeklyKm) d.longestShareOfWeek = `${Math.round((x.longestKm / x.weeklyKm) * 100)}%`;
+  return d;
+}
+const checkKey = a => JSON.stringify(Object.fromEntries(CHECK_FIELDS.filter(k => a[k] !== undefined && a[k] !== '').map(k => [k, a[k]])));
+// The answer check is a conversation: first the answers, then the athlete and the AI take turns.
 async function checkAnswers(note = '') {
-  const a = ui.ob.a;
-  const facts = Object.fromEntries(CHECK_FIELDS.filter(k => a[k] !== undefined && a[k] !== '').map(k => [k, a[k]]));
-  const key = JSON.stringify(facts);
-  if (a.check?.for === key && !note) return;
-  ui.ob.a.check = { for: key, issues: null };
-  const r = await aiRun('check', note ? `${key}\nThe athlete adds: ${note}` : key);
-  ui.ob.a.check = { for: key, note, issues: Array.isArray(r?.issues) ? r.issues.filter(i => CHECK_FIELDS.includes(i.field)).slice(0, 3) : [] };
+  const a = ui.ob.a, key = checkKey(a);
+  if (!note) { if (a.check?.for === key) return; a.check = { for: key, issues: null, chat: [] }; }
+  const chat = a.check?.chat || [];
+  if (note) chat.push({ role: 'user', content: note });
+  a.check = { ...(a.check || {}), for: key, chat, busy: true };
   if (document.querySelector('.result')) renderOnboarding();
+  ui.ai.check = 'busy'; refreshAiStatus();
+  const first = `ANSWERS: ${key}\nDERIVED (worked out by the app): ${JSON.stringify(derivedFacts(a))}`;
+  const r = await understandChat('check', [{ role: 'user', content: first }, ...chat.map(({ role, content }) => ({ role, content }))]);
+  ui.ai.check = r ? 'ok' : 'off';
+  const issues = Array.isArray(r?.issues) ? r.issues.filter(i => CHECK_FIELDS.includes(i.field)).slice(0, 3) : (a.check.issues || []);
+  if (r?.reply) chat.push({ role: 'assistant', content: String(r.reply).slice(0, 500), changes: (r.changes || []).map(validChange).filter(Boolean).slice(0, 4) });
+  else if (note) chat.push({ role: 'assistant', content: "I couldn't reach the AI just now. You can still fix answers with Back.", changes: [] });
+  ui.ob.a.check = { for: key, issues, chat, busy: false };
+  if (document.querySelector('.result')) renderOnboarding();
+}
+// The check box on the result screen: what looks off, the conversation, and a reply box.
+function checkBox() {
+  const c = ui.ob.a.check;
+  if (!c) return '';
+  const issues = (c.issues || []).map(i => `<div class="check-item"><span>${h(i.message)}</span><button type="button" class="btn small" data-act="fix-field" data-field="${h(i.field)}">Fix it</button></div>`).join('');
+  const talk = (c.chat || []).map((m, mi) => `<div class="cc-msg ${m.role}">${h(m.content)}${(m.changes || []).map((ch, ci) => `<button type="button" class="btn small cc-change ${ch.applied ? 'done' : ''}" data-act="check-apply" data-m="${mi}" data-c="${ci}" ${ch.applied ? 'disabled' : ''}>${ch.applied ? '✓ Changed' : 'Apply'}: ${h(ch.label)} → ${h(ch.value)}</button>`).join('')}</div>`).join('');
+  const box = `${issues}${talk ? `<div class="cc-thread">${talk}</div>` : ''}${c.busy ? '<p class="hint">🤖 Reading…</p>' : ''}
+    <div class="ai-fix"><input type="text" id="ai-note-check" maxlength="400" placeholder="${talk ? 'Reply to the AI…' : 'e.g. "I run 3 times a week, 50 km" or "my lifts are in lb"'}"><button type="button" class="btn small" data-act="ai-fix" data-task="check" ${c.busy ? 'disabled' : ''}>Send</button></div>`;
+  if (c.issues?.length || talk) return `<div class="check-box"><strong>🤖 Quick check before we start</strong>${box}<p class="hint">All correct? Just start your journey.</p></div>`;
+  return c.issues ? `<details class="ai-more"><summary>Something looks wrong? Talk to the AI</summary>${box}</details>` : '';
 }
 
 // Ask the AI to turn other lifts / tests into squat and deadlift estimates (non-blocking).
@@ -352,7 +398,7 @@ function normalize(a) {
   else if (hybrid.some(r => r.event === 'Alpha X' && r.format !== 'relay')) longestKm = Math.max(longestKm, 4);
   return {
     ...a,
-    runsLast4w: n(a.runsLast4w), weeklyKm: n(a.weeklyKm), longestKm, longestEstimated, longestMin,
+    runsLast4w: a.runsPerWeek != null && a.runsPerWeek !== '' ? Math.round(n(a.runsPerWeek) * 4) : n(a.runsLast4w), runsPerWeek: a.runsPerWeek != null && a.runsPerWeek !== '' ? n(a.runsPerWeek) : (a.runsLast4w != null && a.runsLast4w !== '' ? Math.round(n(a.runsLast4w) / 4) : null), weeklyKm: n(a.weeklyKm), longestKm, longestEstimated, longestMin,
     best5k: best5k || null, best10k: best10k || null, hybridRaces: hybrid,
     triRaces: TRI_RACES.map(([k]) => k).filter(k => a[`race_${k}`]),
     row1000: parseTime(a.row1000Text) || null,
@@ -411,8 +457,7 @@ function renderOnboarding() {
         <h2>Level ${lvl.n} · ${h(lvl.name)}</h2>
         <p>You qualify for Level ${preview.qualifying}. You start one level below it so the first wins come quickly. Pass the gates to climb back up fast.</p>
         ${aiStatusLine()}
-        ${ui.ob.a.check?.issues?.length ? `<div class="check-box"><strong>🤖 Quick check before we start</strong>${ui.ob.a.check.issues.map(i => `<div class="check-item"><span>${h(i.message)}</span><button type="button" class="btn small" data-act="fix-field" data-field="${h(i.field)}">Fix it</button></div>`).join('')}<p class="hint">All correct? Just start your journey. Or explain to the AI:</p>${aiFixBox('check', 'e.g. "my lifts are in lb" or "the 44 is my ride, not my run"')}</div>`
-          : ui.ob.a.check?.issues ? `<details class="ai-more"><summary>Something looks wrong? Tell the AI</summary>${aiFixBox('check', 'e.g. "my lifts are in lb" or "I ride 44 km, not 20"')}</details>` : ''}
+        ${checkBox()}
         ${dreamLine({ ...normalize(ui.ob.a), ...(ui.ob.a.dreamAI?.accepted ? { target: targetFromAI(ui.ob.a.dreamAI) || undefined, dreamDate: ui.ob.a.dreamDate || ui.ob.a.dreamAI.date || '' } : {}) }, preview.placed)}
         ${ui.ob.a.dreamAI ? `<div class="ai-read ${ui.ob.a.dreamAI.accepted ? '' : 'off'}"><span>🤖 Here's what I understood: <strong>${h(ui.ob.a.dreamAI.summary || '')}</strong></span>
           <div class="row">${ui.ob.a.dreamAI.accepted ? '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="0">Not quite</button>' : '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="1">Use this reading</button>'}</div>
@@ -2099,8 +2144,15 @@ const actions = {
     el.disabled = true; el.textContent = 'Reading…';
     collectOb();
     await (task === 'dream' ? readDream(note) : task === 'lifts' ? readLifts(note) : checkAnswers(note));
-    if (task === 'check' && !ui.ob.a.check?.issues?.length) toast('🤖 The AI found nothing else to fix. If the numbers are still off, change them with Back.');
     if (document.querySelector('.result')) renderOnboarding();
+  },
+  'check-apply'(el) {
+    const m = ui.ob.a.check?.chat?.[+el.dataset.m], ch = m?.changes?.[+el.dataset.c];
+    if (!ch || ch.applied) return;
+    ui.ob.a[ch.field] = ch.value; ch.applied = true;
+    ui.ob.a.check.for = checkKey(ui.ob.a); // keep the conversation going with the new answer
+    renderOnboarding(); toast(`Changed: ${ch.label} → ${ch.value}`);
+    checkAnswers(`(I applied: ${ch.label} = ${ch.value}.)`); // the AI sees the new answer and updates what's left to check
   },
   'dream-ai'(el) { if (ui.ob.a.dreamAI) { ui.ob.a.dreamAI.accepted = el.dataset.v === '1'; renderOnboarding(); } },
   'sugg-apply'(el) {

@@ -35,6 +35,19 @@ export async function understand(task, text) {
   } catch { return null; }
 }
 
+// A conversation with the AI about the questionnaire answers (the answer check). Null when offline.
+export async function understandChat(task, messages) {
+  if (!WORKER_URL || !messages?.length) return null;
+  try {
+    const res = await fetch(`${WORKER_URL.replace(/\/$/, '')}/chat`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'understand', task, messages }),
+    });
+    const data = await res.json().catch(() => ({}));
+    return res.ok ? data.result || null : null;
+  } catch { return null; }
+}
+
 // Rule-based answers so the app is useful with no LLM at all.
 function offlineReply(text, s) {
   const t = text.toLowerCase();
