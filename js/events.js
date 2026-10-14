@@ -83,5 +83,31 @@ export function upcoming(events, tracks, todayYmd, perTrack = 5) {
   return out;
 }
 
+// The two featured races per sport (picked by Abdullah), everything else goes under "Other competitions".
+// A featured race that has passed shows as "next edition expected" until its new date is in the calendar.
+// `next: 'tri'` = the nearest other race of that kind.
+export const FEATURED = {
+  run: [/pyramids half/i, /egyptian marathon/i],
+  tri: [/ironman 70\.3/i, { next: 'tri' }],
+  hybrid: [/alpha ?x/i, /hyrox/i],
+};
+export function featured(events, track, todayYmd) {
+  const mine = events.filter(e => e.track === track);
+  const picks = [];
+  for (const rule of FEATURED[track] || []) {
+    let e;
+    if (rule instanceof RegExp) {
+      const all = mine.filter(x => rule.test(x.name));
+      e = all.filter(x => x.date >= todayYmd).sort((a, b) => a.date.localeCompare(b.date))[0];
+      if (!e) { const last = all.sort((a, b) => b.date.localeCompare(a.date))[0]; if (last) e = { ...last, expected: `${+last.date.slice(0, 4) + 1}-${last.date.slice(5, 7)}` }; }
+    } else {
+      e = mine.filter(x => x.distance === rule.next && x.date >= todayYmd && !picks.some(p => p.uid === x.uid)).sort((a, b) => a.date.localeCompare(b.date))[0];
+    }
+    if (e && !picks.some(p => p.uid === e.uid)) picks.push(e);
+  }
+  const others = mine.filter(x => x.date >= todayYmd && !picks.some(p => p.uid === x.uid)).sort((a, b) => a.date.localeCompare(b.date));
+  return { picks, others };
+}
+
 // Days from today to a race (negative = passed).
 export const daysTo = (dateYmd, now) => Math.round((new Date(`${dateYmd}T12:00:00`) - new Date(new Date(now).toDateString())) / 864e5);

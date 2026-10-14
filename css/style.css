@@ -788,3 +788,4 @@ header.top { gap: 10px; }
 .ev.closed { opacity: .7; }
 .ev .btn { flex: none; }
 .ev-soon { margin-top: 4px; }
+.ev-more summary { cursor: pointer; margin: 6px 0; } .ev.compact { padding: 6px 8px; } .race-pick .ev-list { margin: 6px 0; }
