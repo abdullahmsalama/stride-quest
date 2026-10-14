@@ -470,8 +470,8 @@ function renderOnboarding() {
         <p>You qualify for Level ${preview.qualifying}. You start one level below it so the first wins come quickly. Pass the gates to climb back up fast.</p>
         ${aiStatusLine()}
         ${checkBox()}
-        ${(() => { const a = normalize(ui.ob.a), hot = TG.tooManyDays(a.runsPerWeek, (ui.ob.a.days || K.defaultDays(3)).length, preview.placed);
-          return hot ? `<div class="banner warn">⚠️ <strong>Easy does it.</strong> You run about ${hot.from} time${hot.from === 1 ? '' : 's'} a week now and picked ${hot.to} training days. Start with <strong>${hot.start}</strong> and add a day every 3–4 weeks: going up gradually is how you stay injury-free. <button type="button" class="linkish" data-act="fix-field" data-field="d_0">Change days</button></div>` : ''; })()}
+        ${(() => { const a = normalize(ui.ob.a), adv = TG.daysAdvice(a.runsPerWeek, (ui.ob.a.days || K.defaultDays(3)).length, preview.placed, backgroundOf(ui.ob.a));
+          return adv ? daysBanner(adv).replace(/<div class="row wrap">.*<\/div><\/div>$/s, '<div class="row wrap"><button type="button" class="btn small" data-act="fix-field" data-field="d_0">Change days</button></div></div>') : ''; })()}
         ${dreamLine({ ...normalize(ui.ob.a), ...(ui.ob.a.dreamAI?.accepted ? { target: targetFromAI(ui.ob.a.dreamAI) || undefined, dreamDate: ui.ob.a.dreamDate || ui.ob.a.dreamAI.date || '' } : {}) }, preview.placed)}
         ${ui.ob.a.dreamAI ? `<div class="ai-read ${ui.ob.a.dreamAI.accepted ? '' : 'off'}"><span>🤖 Here's what I understood: <strong>${h(ui.ob.a.dreamAI.summary || '')}</strong></span>
           <div class="row">${ui.ob.a.dreamAI.accepted ? '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="0">Not quite</button>' : '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="1">Use this reading</button>'}</div>
@@ -603,10 +603,11 @@ function banners() {
   if (S.refresher) out.push(S.refresher.reason === 'illness'
     ? `<div class="banner info"><strong>💛 Recovery plan.</strong> Easy health checks first, then you're back on your map${S.run.reclaim ? ` to reclaim Level ${S.run.reclaim}` : ''}. Feeling great early? The Prove It run fast-tracks you.</div>`
     : `<div class="banner info"><strong>Refresher course.</strong> Welcome back! Start with the Prove It run: hit it and you skip the rest.</div>`);
-  // Starting too hot: many more days than you've been doing, or a sudden spike in training.
-  const hot = TG.tooManyDays(S.answers?.runsPerWeek ?? (S.answers?.runsLast4w != null ? Math.round(S.answers.runsLast4w / 4) : null), S.profile.days?.length, S.run.level);
-  if (hot && now() - (S.placedAt || 0) < 28 * E.DAY && !ui.dismissed.has('hot')) out.push(`<div class="banner warn">⚠️ <strong>Easy does it.</strong> You've been running about ${hot.from} time${hot.from === 1 ? '' : 's'} a week and picked ${hot.to} training days. Jumping straight up is a classic way to get hurt. Start with <strong>${hot.start} days</strong> and add one more every 3–4 weeks: you'll get there faster by staying injury-free.
-      <div class="row wrap"><button class="btn small" data-act="edit-days">Change training days</button><button class="btn ghost small" data-act="dismiss-banner" data-key="hot">I know, keep ${hot.to}</button></div></div>`);
+  // Training days that don't fit the athlete: too many too soon (beginners), 7 days with no rest, or too
+  // few to keep progressing (intermediate and advanced).
+  const recent = S.answers?.runsPerWeek ?? (S.answers?.runsLast4w != null ? Math.round(S.answers.runsLast4w / 4) : null);
+  const adv = TG.daysAdvice(recent, S.profile.days?.length, S.run.level, S.background);
+  if (adv && !ui.dismissed.has('days')) out.push(daysBanner(adv, now() - (S.placedAt || 0) < 28 * E.DAY));
   const spike = TG.loadSpike(S.history, now());
   if (spike && !ui.dismissed.has('spike')) out.push(`<div class="banner warn">⚠️ <strong>Big week!</strong> ${spike.week} sessions in the last 7 days, versus your usual ${spike.usual}. Sudden jumps are when most injuries happen. Make the next day or two easy or rest: the gains come when you recover. <button class="linkish" data-act="dismiss-banner" data-key="spike">OK</button></div>`);
   const blockedAt = E.prepBlocksRun(S);
@@ -614,6 +615,13 @@ function banners() {
       <div class="row"><button class="btn small" data-act="prep-stage" data-n="${S.prep.level}">See my Prep steps</button></div></div>`);
   if (S.run.reclaim && blockedAt == null) out.push(`<div class="banner reclaim">🔒 <strong>Reclaim:</strong> ${h(E.runLevel(S.run.reclaim).name)} (Level ${S.run.reclaim}) is waiting for you.</div>`);
   return out.join('');
+}
+
+function daysBanner(a, recentStart = true) {
+  const btns = `<div class="row wrap"><button class="btn small" data-act="edit-days">Change training days</button><button class="btn ghost small" data-act="dismiss-banner" data-key="days">Keep ${a.to}</button></div>`;
+  if (a.kind === 'many' && a.noRest) return `<div class="banner warn">⚠️ <strong>7 days a week, no rest?</strong> Even elite athletes keep at least one rest or very easy day: that's when the body adapts. ${a.hi} days plus a rest day fits you.${btns}</div>`;
+  if (a.kind === 'many') return recentStart ? `<div class="banner warn">⚠️ <strong>Easy does it.</strong> You've been running about ${a.from} time${a.from === 1 ? '' : 's'} a week and picked ${a.to} training days. Jumping straight up is a classic way to get hurt. Start with <strong>${a.start} days</strong> and add one more every 3–4 weeks: you'll get there faster by staying injury-free.${btns}</div>` : '';
+  return `<div class="banner info">💡 <strong>${a.to} day${a.to === 1 ? '' : 's'} a week keeps you fit, but at your level it's slow going.</strong> ${a.lo}–${a.hi} days is what moves ${a.tier === 'advanced' ? 'an advanced runner' : 'you'} forward. Short on time? Two of them can be short, easy sessions.${btns}</div>`;
 }
 
 // A ready gate is still locked during the Rebuild Track: say so instead of "open".
@@ -1776,7 +1784,13 @@ const MODALS = {
       <p class="hint">${dateLong(e.date)} · in ${TG.daysUntil(e.date, now())} days${e.location ? ` · ${h(e.location.split(/,| — | - /)[0])}` : ''}</p>
       ${distPick}
       ${isRun ? `<p class="q">Your goal</p>${radio('tGoal', [['finish', 'Finish it, feeling good'], ['time', 'Race it for a time']], race.goal)}` : ''}
-      ${isRun && race.goal === 'time' ? `<label class="field"><span>Goal time</span><input type="text" name="tTime" value="${race.goalTime ? formatTime(race.goalTime) : ''}" placeholder="h:mm:ss, e.g. ${race.distance === '5k' ? '27:00' : race.distance === '10k' ? '55:00' : race.distance === 'half' ? '1:59:00' : '4:15:00'}" inputmode="text" autocomplete="off"></label>` : ''}
+      ${isRun && race.goal === 'time' ? (() => {
+        const mode = m.timeMode || 'time', km = TG.NEEDS[race.distance].km;
+        const shown = race.goalTime ? formatTime(mode === 'pace' ? race.goalTime / km : race.goalTime) : '';
+        const eg = mode === 'pace' ? ({ '5k': '5:30', '10k': '5:30', half: '5:40', marathon: '6:00' })[race.distance] : ({ '5k': '27:00', '10k': '55:00', half: '1:59:00', marathon: '4:15:00' })[race.distance];
+        return `${timeField('tTime', mode === 'pace' ? 'Goal pace (per km)' : 'Goal finish time', shown, `e.g. ${eg}`, 'tTimeMode', mode)}
+          ${race.goalTime ? `<p class="hint">= ${mode === 'pace' ? `${formatTime(race.goalTime)} finish time` : `${formatTime(race.goalTime / km)} per km`}</p>` : ''}`;
+      })() : ''}
       <div class="verdict-box">${verdictHtml(v, race)}${timeHtml(v, race)}</div>
       <p class="hint">How it works: your plan stays your levels. The app counts down, and in the last 4 weeks your Today page switches to race prep, a taper and race week.</p>
       <div class="row end">${mine ? '<button type="button" class="btn ghost" data-act="target-clear">Stop preparing</button>' : ''}<button type="button" class="btn ghost" data-act="close">Close</button>
@@ -2259,7 +2273,8 @@ const actions = {
     const f = document.getElementById('target-form'), e = raceFrom(el.dataset.uid);
     if (!e) return;
     const distance = f?.tDist?.value || e.distance, goal = f?.querySelector('[name=tGoal]:checked')?.value || 'finish';
-    const goalTime = goal === 'time' ? parseTime(f?.tTime?.value || '') : null;
+    const km = TG.NEEDS[distance]?.km, mode = f?.querySelector('[name=tTimeMode]:checked')?.value || 'time';
+    const goalTime = goal === 'time' ? raceMinutes(f?.tTime?.value || '', mode, km) : null;
     if (goal === 'time' && !goalTime) return toast('Type your goal time, for example 1:59:00.');
     if (!distance) return toast('Pick the distance first.');
     S.target = { uid: e.uid, name: e.name, date: e.date, distance, track: e.track, url: e.url, location: e.location, goal, goalTime, setAt: now() };
@@ -2629,10 +2644,11 @@ document.addEventListener('click', e => {
 
 document.addEventListener('change', async e => {
   const el = e.target;
+  if (el.closest('#target-form') && el.name === 'tTimeMode' && ui.modal?.type === 'target') { ui.modal.timeMode = el.value; renderModal(); return; }
   if (el.closest('#target-form') && ['tDist', 'tGoal', 'tTime'].includes(el.name) && ui.modal?.type === 'target') {
     if (el.name === 'tDist') ui.modal.distance = el.value || null;
     else if (el.name === 'tGoal') ui.modal.goal = el.value;
-    else { const tm = parseTime(el.value); if (!tm && el.value.trim()) return toast('Use h:mm:ss or mm:ss, for example 1:59:00.'); ui.modal.goalTime = tm; }
+    else { const km = TG.NEEDS[ui.modal.distance || raceFrom(ui.modal.uid)?.distance]?.km || 1, tm = raceMinutes(el.value, ui.modal.timeMode || 'time', km); if (!tm && el.value.trim()) return toast('Use h:mm:ss or mm:ss, for example 1:59:00 or 5:30.'); ui.modal.goalTime = tm; }
     renderModal(); return;
   }
   if (el.closest('#step-form') && el.name === 'when') {

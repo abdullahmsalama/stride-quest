@@ -94,3 +94,14 @@ test('competition: warnings for starting too hot', async () => {
   assert.ok(loadSpike(h, T));
   assert.equal(loadSpike(h.slice(0, 12), T), null);
 });
+
+test('training days: advice fits the athlete', async () => {
+  const { daysAdvice } = await import('../js/target.js');
+  assert.equal(daysAdvice(1, 4, 2)?.kind, 'many');            // beginner jumping 1 -> 4: too hot
+  assert.equal(daysAdvice(1, 2, 2), null);                    // beginner on 2 days: fine
+  assert.equal(daysAdvice(3, 6, 10), null);                   // advanced on 6 days: normal
+  assert.equal(daysAdvice(4, 7, 11)?.noRest, true);           // 7 days, no rest: never
+  assert.equal(daysAdvice(3, 2, 7)?.kind, 'few');             // intermediate on 2 days: too few
+  assert.equal(daysAdvice(4, 3, 10)?.kind, 'few');            // advanced on 3: slow going
+  assert.equal(daysAdvice(1, 5, 6, [{ sport: 'running', level: 'comp', years: '6', since: 'lt1' }]), null); // competitive past: fine
+});

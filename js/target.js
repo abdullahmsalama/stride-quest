@@ -168,15 +168,30 @@ export function phase(race, now) {
   return { id: 'build', d, title: 'Build', focus: ['Follow your level as usual: it builds you towards the race', 'Consistency beats big days'] };
 }
 
-// ---------- starting too hot ----------
-// Jumping straight to many more training days than you've been doing is a classic injury cause:
-// add about one day a week every 3-4 weeks. Returns a warning or null.
-export function tooManyDays(recentPerWeek, chosenDays, level) {
-  if (recentPerWeek == null || !(chosenDays > 0)) return null;
+// ---------- training days: too many for now, or too few to progress ----------
+// What fits depends on who you are: a beginner jumping from 1 run to 4 days risks injury, while 5-6
+// days is normal for an advanced runner; and 1-2 days is a fine start for a beginner but too little to
+// keep an intermediate or advanced runner progressing.
+//   tier: 'beginner' (Levels 1-4), 'intermediate' (5-8), 'advanced' (9+, or a competitive running past)
+export function tierOf(level, background = []) {
+  const b = bestFor(background, 'run'), strong = b && (RANK[b.level] || 0) >= 3 && (+b.years || 0) >= 3;
+  return level >= 9 || (strong && level >= 5) ? 'advanced' : level >= 5 ? 'intermediate' : 'beginner';
+}
+export const DAYS_FIT = { beginner: [2, 3], intermediate: [3, 4], advanced: [4, 6] };
+export function daysAdvice(recentPerWeek, chosenDays, level, background = []) {
+  if (!(chosenDays > 0)) return null;
+  const tier = tierOf(level, background), [lo, hi] = DAYS_FIT[tier];
+  if (chosenDays >= 7) return { kind: 'many', tier, from: recentPerWeek, to: chosenDays, start: 6, lo, hi, noRest: true };
+  if (chosenDays < lo && tier !== 'beginner') return { kind: 'few', tier, to: chosenDays, lo, hi };
+  if (recentPerWeek == null || tier === 'advanced') return null; // advanced: up to 6 days is normal
   const jump = chosenDays - recentPerWeek;
-  if (jump < 2 || (level >= 9 && jump < 3)) return null;
-  const start = Math.max(2, Math.min(chosenDays, recentPerWeek + 1));
-  return { from: recentPerWeek, to: chosenDays, start };
+  if (jump >= (tier === 'beginner' ? 2 : 3)) return { kind: 'many', tier, from: recentPerWeek, to: chosenDays, start: Math.max(2, Math.min(chosenDays, recentPerWeek + 1)), lo, hi };
+  return null;
+}
+// Kept for the existing callers: only the "too many" case.
+export function tooManyDays(recentPerWeek, chosenDays, level, background = []) {
+  const a = daysAdvice(recentPerWeek, chosenDays, level, background);
+  return a?.kind === 'many' && !a.noRest ? { from: a.from, to: a.to, start: a.start } : null;
 }
 // This week vs the athlete's normal (the 3 weeks before): more than ~1.5x is a spike (acute:chronic load).
 export function loadSpike(history, now) {
