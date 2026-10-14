@@ -618,8 +618,41 @@ function exHtml(st) {
         <div><strong>${h(EXERCISES[id].name)}</strong> <span class="dose">${h(EXERCISES[id].dose)}</span></div>
         <ul>${EXERCISES[id].cues.map(c => `<li>${h(c)}</li>`).join('')}</ul>
         ${EXERCISES[id].alt && S.hybrid && S.hybrid.gym !== 'full' ? `<p class="hint">🔁 ${h(EXERCISES[id].alt)}</p>` : ''}
-        <a href="${videoLink(id)}" target="_blank" rel="noopener">▶ Watch how</a></li>`).join('') + raceNote(st);
+        <div class="row wrap"><button type="button" class="btn small" data-act="videos" data-ex="${id}">▶ Watch how</button><a class="hint" href="${videoLink(id)}" target="_blank" rel="noopener">Search YouTube ↗</a></div></li>`).join('') + raceNote(st);
 }
+// ---------- demo videos: YouTube search inside the app, played in place, rated by everyone ----------
+const VOTES_KEY = 'stride-quest:votes';
+const myVotes = () => { try { return JSON.parse(localStorage.getItem(VOTES_KEY)) || {}; } catch { return {}; } };
+const setMyVote = (k, v) => { try { const all = myVotes(); if (v) all[k] = v; else delete all[k]; localStorage.setItem(VOTES_KEY, JSON.stringify(all)); } catch { /* ignore */ } };
+async function videoApi(body) {
+  if (!WORKER_URL) return { error: 'offline' };
+  try {
+    const r = await fetch(`${WORKER_URL.replace(/\/$/, '')}/videos`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json().catch(() => ({}));
+    return r.ok ? d : { error: d.error || 'busy', reason: d.reason };
+  } catch { return { error: 'offline' }; }
+}
+const vidCache = {};
+function videoList(panel, q, list) {
+  const votes = myVotes();
+  panel.innerHTML = `<p class="q">Demo videos <span class="hint">· most helpful first, rated by Stride Quest athletes</span></p>
+    <div class="vid-list">${list.map(v => `<button type="button" class="vid-item" data-act="vid-play" data-id="${h(v.id)}">
+      <span class="vid-thumb"><img src="${h(v.thumb || `https://i.ytimg.com/vi/${v.id}/mqdefault.jpg`)}" alt="" loading="lazy">${v.duration ? `<em>${h(v.duration)}</em>` : ''}</span>
+      <span class="vid-meta"><strong>${h(v.title)}</strong><span class="hint">${h(v.channel || '')}${v.up ? ` · 👍 ${v.up}` : ''}${votes[`${q}|${v.id}`] === 1 ? ' · you liked it' : ''}${v.suggested ? ' · suggested by athletes' : ''}</span></span></button>`).join('')}</div>
+    <details class="vid-suggest"><summary class="hint">Know a better video? Paste a link</summary>
+      <div class="ai-fix"><input type="url" placeholder="https://youtube.com/watch?v=…" maxlength="200"><button type="button" class="btn small" data-act="vid-suggest">Add</button></div></details>`;
+}
+function videoPlayer(panel, q, v) {
+  const mine = myVotes()[`${q}|${v.id}`] || 0;
+  panel.innerHTML = `<div class="vid-frame"><iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(v.id)}?autoplay=1&playsinline=1&rel=0&modestbranding=1" title="${h(v.title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen loading="lazy"></iframe></div>
+    <p class="vid-title"><strong>${h(v.title)}</strong> <span class="hint">${h(v.channel || '')}</span></p>
+    <div class="row wrap vid-rate"><span class="hint">Was it helpful?</span>
+      <button type="button" class="btn small ${mine === 1 ? 'on' : ''}" data-act="vid-vote" data-id="${h(v.id)}" data-v="1">👍 Helpful${v.up + (mine === 1 ? 0 : 0) ? ` · ${v.up}` : ''}</button>
+      <button type="button" class="btn small ${mine === -1 ? 'on' : ''}" data-act="vid-vote" data-id="${h(v.id)}" data-v="-1">👎 Not great</button>
+      <span class="grow"></span><button type="button" class="btn ghost small" data-act="vid-back">◂ Other videos</button></div>`;
+}
+const panelOf = el => el.closest('.ex')?.querySelector('.vid-panel');
+
 // Any session anywhere opens: open ones to log, the rest read-only.
 const sessionAct = (track, idx, status) => (status === 'open' || status === 'slot' ? `data-act="open-step" data-track="${track}" data-idx="${idx}"` : `data-act="step-info" data-track="${track}" data-idx="${idx}"`);
 
@@ -2087,6 +2120,43 @@ const actions = {
   'msg-del'(el) { chatRemove(+el.dataset.m); toast('Message deleted. The coach won\'t see it.'); },
   'msg-edit'(el) { const i = +el.dataset.m; ui.chatDraft = ui.chat[i]?.content || ''; chatRemove(i); },
   'log-info'(el) { ui.modal = { type: 'logInfo', ts: +el.dataset.ts }; renderModal(); },
+  async videos(el) {
+    const li = el.closest('.ex'), ex = el.dataset.ex, q = EXERCISES[ex]?.search || EXERCISES[ex]?.name;
+    let panel = li.querySelector('.vid-panel');
+    if (panel) { panel.remove(); return; } // tap again to close
+    panel = document.createElement('div'); panel.className = 'vid-panel'; panel.dataset.q = q;
+    panel.innerHTML = '<p class="hint">Finding demo videos…</p>';
+    li.appendChild(panel);
+    const d = vidCache[q] || await videoApi({ q });
+    if (d.error) { panel.innerHTML = `<p class="hint">⚠️ ${d.reason === 'busy' ? 'Videos are busy right now (free YouTube limit).' : "Videos can't be loaded right now."} <a href="${videoLink(ex)}" target="_blank" rel="noopener">Search YouTube instead ↗</a></p>`; return; }
+    vidCache[q] = d;
+    if (!d.videos.length) { panel.innerHTML = `<p class="hint">No demo found. <a href="${videoLink(ex)}" target="_blank" rel="noopener">Search YouTube ↗</a></p>`; return; }
+    count('view:videos');
+    videoList(panel, q, d.videos);
+  },
+  'vid-play'(el) { const panel = el.closest('.vid-panel'), q = panel.dataset.q; const v = vidCache[q]?.videos.find(x => x.id === el.dataset.id); if (v) videoPlayer(panel, q, v); },
+  'vid-back'(el) { const panel = el.closest('.vid-panel'), q = panel.dataset.q; videoList(panel, q, vidCache[q]?.videos || []); },
+  'vid-vote'(el) {
+    const panel = el.closest('.vid-panel'), q = panel.dataset.q, id = el.dataset.id, v = +el.dataset.v, k = `${q}|${id}`;
+    const prev = myVotes()[k] || 0, next = prev === v ? 0 : v; // tap again to take it back
+    setMyVote(k, next);
+    videoApi({ q, id, vote: next, undo: prev });
+    const item = vidCache[q]?.videos.find(x => x.id === id);
+    if (item) { item.up += (next === 1) - (prev === 1); item.down += (next === -1) - (prev === -1); videoPlayer(panel, q, item); }
+    if (next) toast(next === 1 ? '👍 Thanks! Helpful videos move up for everyone.' : '👎 Thanks! Unhelpful videos move down.');
+  },
+  async 'vid-suggest'(el) {
+    const panel = el.closest('.vid-panel'), q = panel.dataset.q, url = el.previousElementSibling?.value.trim();
+    if (!url) return toast('Paste a YouTube link first.');
+    el.disabled = true;
+    const d = await videoApi({ q, suggest: url });
+    el.disabled = false;
+    if (d.error) return toast(d.error === 'offline' ? 'No connection right now.' : d.error);
+    const list = vidCache[q]?.videos || [];
+    if (!list.some(x => x.id === d.video.id)) list.unshift({ ...d.video, up: 0, down: 0, suggested: 1 });
+    toast('Thanks! It shows for others once another athlete suggests it too.');
+    videoPlayer(panel, q, list.find(x => x.id === d.video.id));
+  },
   'step-info'(el) { ui.modal = { type: 'stepInfo', track: el.dataset.track, idx: +el.dataset.idx }; renderModal(); },
   'prep-stage'(el) { ui.modal = { type: 'prepStage', n: +el.dataset.n }; renderModal(); },
   'tour-start'() { ui.modal = null; renderModal(); startTour(0); },

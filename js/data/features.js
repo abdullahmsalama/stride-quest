@@ -16,6 +16,8 @@ export const FEATURES = [
   // ---------- Today ----------
   { id: 'today-next', group: 'today', title: "Today's session", text: 'The card at the top is what to do today, picked from your week. Tap Log it when you are done: say when you did it, how it went and what you actually did. Your words go to the coach.',
     show: { tab: 'today', sel: '.card.next' }, quest: { label: 'Log your first session', done: s => s.history.some(h => h.kind === 'session' || h.kind === 'attempt') } },
+  { id: 'videos', group: 'today', title: 'Demo videos', text: 'Every exercise has ▶ Watch how: short demo videos play right inside the session. Tap 👍 if one helped: the most helpful rise to the top for everyone. Know a better one? Paste its link.',
+    show: { tab: 'today', sel: '.card.next' } },
   { id: 'views', group: 'today', title: 'Just next or Full day', text: 'Just next shows only what matters now. Full day adds your week, daily orders and the level checklist.',
     show: { tab: 'today', sel: '.today-seg' } },
   { id: 'week', group: 'today', title: 'Your week', text: 'A rolling window from two days back to next week. Tap a session to move it to another day. Rest days count too.',

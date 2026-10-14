@@ -356,7 +356,7 @@ async function stats(request, env, headers) {
 }
 
 // Anonymous tallies (no ID): "one more athlete is preparing for Alpha X". Only these keys count.
-const COUNT_KEYS = /^(view:race-card|prep:(hyrox|alphax)(:(open|pro|base))?|site:(hyrox|alphax|calendar))$/;
+const COUNT_KEYS = /^(view:(race-card|videos)|prep:(hyrox|alphax)(:(open|pro|base))?|site:(hyrox|alphax|calendar))$/;
 async function tally(request, env, headers) {
   if (!env.DB) return json({ error: 'not set up' }, 503, headers);
   let body;
@@ -366,6 +366,77 @@ async function tally(request, env, headers) {
   const day = new Date().toISOString().slice(0, 10);
   await env.DB.prepare('INSERT INTO counts (key, day, n) VALUES (?1, ?2, 1) ON CONFLICT (key, day) DO UPDATE SET n = n + 1').bind(key, day).run();
   return json({ ok: true }, 200, headers);
+}
+
+// ---------- exercise videos (YouTube search inside the app) ----------
+// One YouTube search per exercise a week (the free quota is ~100 searches a day), then the athletes'
+// 👍 / 👎 reorder the list for everyone, and videos suggested by 2+ athletes join it.
+const VIDEO_TTL = 7 * 24 * 3600 * 1000;
+const isoDuration = d => { const m = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(d || ''); if (!m) return ''; const h = +m[1] || 0, mi = +m[2] || 0, se = +m[3] || 0; return h ? `${h}:${String(mi).padStart(2, '0')}:${String(se).padStart(2, '0')}` : `${mi}:${String(se).padStart(2, '0')}`; };
+async function youtubeSearch(env, q) {
+  const key = env.YOUTUBE_API_KEY;
+  if (!key) throw new Error('no key');
+  // Short form demos first (under 4 min), topped up with medium-length ones (4-20 min) if needed.
+  const search = async duration => {
+    const u = new URL('https://www.googleapis.com/youtube/v3/search');
+    Object.entries({ part: 'snippet', type: 'video', maxResults: '8', q: `${q} how to form`, videoEmbeddable: 'true', safeSearch: 'strict', relevanceLanguage: 'en', videoDuration: duration, key }).forEach(([k, v]) => u.searchParams.set(k, v));
+    const r = await fetch(u);
+    if (!r.ok) throw new Error(`youtube ${r.status}`);
+    return (await r.json()).items || [];
+  };
+  let items = await search('short');
+  if (items.length < 4) { const more = await search('medium'); items = [...items, ...more.filter(m => !items.some(i => i.id?.videoId === m.id?.videoId))]; }
+  const ids = items.map(i => i.id?.videoId).filter(Boolean);
+  const durs = {};
+  if (ids.length) { // lengths: 1 quota unit
+    const v = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids.join(',')}&key=${key}`);
+    if (v.ok) for (const it of (await v.json()).items || []) durs[it.id] = isoDuration(it.contentDetails?.duration);
+  }
+  return items.filter(i => i.id?.videoId).map(i => ({ id: i.id.videoId, title: i.snippet.title, channel: i.snippet.channelTitle, thumb: i.snippet.thumbnails?.medium?.url || i.snippet.thumbnails?.default?.url, duration: durs[i.id.videoId] || '' }));
+}
+const cleanQ = q => String(q || '').toLowerCase().replace(/[^a-z0-9 +'-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+async function videos(request, env, headers) {
+  if (!env.DB) return json({ error: 'not set up' }, 503, headers);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400, headers); }
+  const q = cleanQ(body.q);
+  if (!q) return json({ error: 'no query' }, 400, headers);
+  const vid = String(body.id || '');
+  if (body.vote) { // { q, id, vote: 1 | -1, undo: 1 | -1 | 0 }
+    if (!/^[\w-]{11}$/.test(vid)) return json({ error: 'bad id' }, 400, headers);
+    const up = (body.vote === 1 ? 1 : 0) - (body.undo === 1 ? 1 : 0), down = (body.vote === -1 ? 1 : 0) - (body.undo === -1 ? 1 : 0);
+    await env.DB.prepare('INSERT INTO video_votes (q, id, up, down) VALUES (?1, ?2, MAX(?3, 0), MAX(?4, 0)) ON CONFLICT (q, id) DO UPDATE SET up = MAX(up + ?3, 0), down = MAX(down + ?4, 0)').bind(q, vid, up, down).run();
+    return json({ ok: true }, 200, headers);
+  }
+  if (body.suggest) { // a pasted link: must be a real, embeddable YouTube video
+    const id = (/(?:v=|youtu\.be\/|shorts\/|embed\/)([\w-]{11})/.exec(String(body.suggest)) || [])[1];
+    if (!id) return json({ error: 'That doesn\'t look like a YouTube link.' }, 400, headers);
+    const o = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${id}`)}`);
+    if (!o.ok) return json({ error: 'That video can\'t be played here (private, removed or not embeddable).' }, 400, headers);
+    const meta = await o.json();
+    await env.DB.prepare('INSERT INTO video_suggest (q, id, title, channel, n) VALUES (?1, ?2, ?3, ?4, 1) ON CONFLICT (q, id) DO UPDATE SET n = n + 1').bind(q, id, String(meta.title || '').slice(0, 140), String(meta.author_name || '').slice(0, 80)).run();
+    return json({ ok: true, video: { id, title: meta.title, channel: meta.author_name, thumb: meta.thumbnail_url, duration: '' } }, 200, headers);
+  }
+  let list = null, cached = false;
+  const row = await env.DB.prepare('SELECT ts, json FROM video_cache WHERE q = ?1').bind(q).first();
+  if (row && Date.now() - row.ts < VIDEO_TTL) { list = JSON.parse(row.json); cached = true; }
+  if (!list) {
+    try {
+      list = await youtubeSearch(env, q);
+      await env.DB.prepare('INSERT INTO video_cache (q, ts, json) VALUES (?1, ?2, ?3) ON CONFLICT (q) DO UPDATE SET ts = ?2, json = ?3').bind(q, Date.now(), JSON.stringify(list)).run();
+    } catch (e) {
+      if (row) list = JSON.parse(row.json); // stale is better than nothing
+      else return json({ error: 'busy', reason: /403|429/.test(e.message) ? 'busy' : 'down' }, 503, headers);
+    }
+  }
+  const sugg = (await env.DB.prepare('SELECT id, title, channel, n FROM video_suggest WHERE q = ?1 AND n >= 2').bind(q).all()).results || [];
+  for (const sv of sugg) if (!list.some(v => v.id === sv.id)) list.push({ id: sv.id, title: sv.title, channel: sv.channel, thumb: `https://i.ytimg.com/vi/${sv.id}/mqdefault.jpg`, duration: '', suggested: sv.n });
+  const votes = Object.fromEntries(((await env.DB.prepare('SELECT id, up, down FROM video_votes WHERE q = ?1').bind(q).all()).results || []).map(v => [v.id, v]));
+  list = list.map((v, i) => ({ ...v, up: votes[v.id]?.up || 0, down: votes[v.id]?.down || 0, rank: i }))
+    .filter(v => !(v.down >= 3 && v.down > 2 * v.up)) // clearly unhelpful: dropped
+    .sort((a, b) => (b.up - b.down) - (a.up - a.down) || a.rank - b.rank)
+    .slice(0, 6);
+  return json({ q, videos: list, cached }, 200, headers);
 }
 
 export default {
@@ -380,6 +451,11 @@ export default {
       const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': env.GEMINI_API_KEY } });
       const d = await r.json().catch(() => ({}));
       return json({ models: (d.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace('models/', '')) }, 200, headers);
+    }
+    if (url.pathname === '/videos' && request.method === 'POST') {
+      if (!ok) return json({ error: 'origin not allowed' }, 403, headers);
+      if (limited(`v:${request.headers.get('CF-Connecting-IP') || 'unknown'}`, 30)) return json({ error: 'slow down' }, 429, headers);
+      return videos(request, env, headers);
     }
     if (url.pathname === '/count' && request.method === 'POST') {
       if (!ok) return json({ error: 'origin not allowed' }, 403, headers);
