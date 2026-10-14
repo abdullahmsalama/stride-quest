@@ -46,3 +46,31 @@ test('competition: phases count down to race day and recovery', () => {
   assert.equal(phase({ date: inWeeks(6) }, T).id, 'build');
   assert.equal(phase({ date: ymd(T - 3 * 864e5) }, T).id, 'recover');
 });
+
+test('competition: long distances need months of running behind you, not just levels', async () => {
+  const { breakdown } = await import('../js/target.js');
+  const s = beginner();
+  assert.ok(weeksToLevel(s, 7) >= 18, '10K: ~4-5 months');
+  assert.ok(weeksToLevel(s, 9) >= 26, 'half: ~6 months');
+  assert.ok(weeksToLevel(s, 12) >= 50, 'first marathon: ~a year');
+  assert.equal(breakdown(s, 12).limit, 'history');
+});
+
+test('competition: a goal time is judged against the bests', async () => {
+  const { judgeTime } = await import('../js/target.js');
+  // 5K best 25:00 predicts a 10K of about 52:08
+  assert.equal(judgeTime('10k', 54, { run5k: 25 }).kind, 'realistic');
+  assert.equal(judgeTime('10k', 60, { run5k: 25 }).kind, 'easy');
+  assert.equal(judgeTime('10k', 50.5, { run5k: 25 }).kind, 'stretch');
+  assert.equal(judgeTime('10k', 45, { run5k: 25 }).kind, 'too-fast');
+  assert.equal(judgeTime('10k', 45, {}).kind, 'unknown');
+  assert.ok(Math.abs(judgeTime('half', 105, { run5k: 22 }).pace - 105 / 21.1) < 1e-9);
+});
+
+test('competition: an experienced runner going for a time is never told to run-walk', () => {
+  const { state } = placeFromAnswers(newState(T), { continuous: '60+', longestKm: 18, best5k: 22, runsLast4w: 14, weeklyKm: 45, pain: 'none' }, T);
+  state.profile.days = [0, 2, 4];
+  const v = verdict(state, { distance: 'half', date: inWeeks(8), goal: 'time', goalTime: 105 }, T);
+  assert.notEqual(v.mode, 'runwalk');
+  assert.ok(['ok', 'tight'].includes(v.kind), v.kind);
+});

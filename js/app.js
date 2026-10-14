@@ -850,6 +850,29 @@ function hybridPrep(nextEv = {}) {
 const fmtRange = r => (r ? `${formatTime(r[0])}–${formatTime(r[1])}` : '');
 const DIST_OF = { '5k': '5K', '10k': '10K', half: 'Half marathon', marathon: 'Marathon', '70.3': 'IRONMAN 70.3', full: 'Full-distance triathlon', tri: 'Triathlon', hyrox: 'Hyrox', alphax: 'Alpha X' };
 const dateLong = ymd => new Date(`${ymd}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+// Estimates are estimates: a month, not a day.
+const monthYear = ymd => new Date(`${ymd}T12:00:00`).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+const pace = m => `${formatTime(m)} /km`;
+// "How this was worked out", in plain words.
+function howWorked(v, race) {
+  const b = v.bd;
+  if (!b || !TG.NEEDS[race.distance]) return '';
+  if (!b.weeks) return `<p class="hint">How this was worked out: you're already at Level ${b.cur}, where a ${TG.NEEDS[race.distance].label} is realistic. The rest is race prep and a taper.</p>`;
+  return `<details class="how-worked"><summary class="hint">How this was worked out</summary><p class="hint">You're at Level ${b.cur} and need Level ${b.goal} for this. Training ${b.days} days a week, the levels take about ${b.path} weeks. But a ${TG.NEEDS[race.distance].label} also needs about ${b.history} weeks of steady running behind you (tendons, joints and bones adapt slower than fitness)${b.limit === 'history' ? ', so that is what sets the date' : ''}. Plus a week to taper. Train fewer days, miss weeks or get ill, and it moves later; that's normal.</p></details>`;
+}
+// Predictions are rough: whole minutes over an hour, nearest 15 s below.
+const approx = m => (m >= 60 ? formatTime(Math.round(m)).replace(/:00$/, '') : formatTime(Math.round(m * 4) / 4));
+function timeHtml(v, race) {
+  const t = v.time;
+  if (!t || race.goal !== 'time') return '';
+  const g = `${formatTime(race.goalTime)} (${pace(t.pace)})`;
+  if (t.kind === 'unknown') return `<p class="verdict tight">⏱️ Goal ${g}. To judge it, the app needs a recent 5K or 10K time. <button type="button" class="linkish" data-act="edit-bests">Add my bests</button></p>`;
+  const P = approx(t.predicted);
+  if (t.kind === 'easy') return `<p class="verdict ok">⏱️ <strong>${g} is comfortably within reach.</strong> Your bests predict about ${P}: you could aim a bit faster, around ${P}. Or keep ${formatTime(race.goalTime)} and enjoy the day.</p>`;
+  if (t.kind === 'realistic') return `<p class="verdict ok">⏱️ <strong>${g} is realistic.</strong> Your bests predict about ${P}, so this goal is within reach. Go for it.</p>`;
+  if (t.kind === 'stretch') return `<p class="verdict tight">⏱️ <strong>${g} is a stretch.</strong> Your bests predict about ${P}. Possible on a great day with even pacing; ${P} is the safer target.</p>`;
+  return `<p class="verdict no">⏱️ <strong>${g} is faster than your bests support right now</strong> (about ${P} predicted). Realistic goal: <strong>${P}</strong>. Train well and ${approx(t.stretch)} could be in reach on the day. Beat your 5K best before the race and this updates.</p>`;
+}
 // Honest, never discouraging: every answer ends with what the athlete CAN do, and when.
 function verdictHtml(v, race) {
   const weeks = w => `${Math.round(w)} week${Math.round(w) === 1 ? '' : 's'}`;
@@ -857,15 +880,16 @@ function verdictHtml(v, race) {
   if (v.other) return v.kind === 'ok' ? `<p class="verdict ok">✅ <strong>Realistic.</strong> Your map gets you to race level in about ${weeks(v.need)}, with ${weeks(v.weeksLeft - v.need)} to spare.</p>`
     : v.kind === 'tight' ? `<p class="verdict tight">⚠️ <strong>Tight, but possible as a finish.</strong> You need about ${weeks(v.need)} and have ${weeks(v.weeksLeft)}. Aim to finish strong, not to race.</p>`
     : `<p class="verdict no">❌ <strong>Not yet.</strong> You need about ${weeks(v.need)} on your map and have ${weeks(v.weeksLeft)}. That's a "not yet", not a "never": a shorter race now, or this one's next edition, keeps you on the way.</p>`;
-  if (v.kind === 'ok') return `<p class="verdict ok">✅ <strong>Realistic.</strong> At your pace you're race-ready around ${dateLong(v.readyOn)}, with time to taper.${v.range ? ` Expect about <strong>${fmtRange(v.range)}</strong>.` : ''}</p>`;
-  if (v.kind === 'tight' && v.mode === 'runwalk') return `<p class="verdict tight">⚠️ <strong>Doable at a much slower pace: run-walk it</strong> (for example 1 minute walking every 3–4 minutes). Expect about <strong>${fmtRange(v.range)}</strong>. That's a real finish, and a great first race.</p>`;
-  if (v.kind === 'tight') return `<p class="verdict tight">⚠️ <strong>Tight.</strong> You'll just about get there, without a full taper. Go out easy and aim to finish comfortably, not to race.${v.range ? ` Expect about <strong>${fmtRange(v.range)}</strong>.` : ''}</p>`;
+  if (v.kind === 'ok') return `<p class="verdict ok">✅ <strong>Realistic.</strong> ${v.need ? `At your pace you're race-ready around ${monthYear(v.readyOn)} (about ${weeks(v.need)})` : 'You are race-ready already'}, with time to taper.${v.range && race.goal !== 'time' ? ` Expect about <strong>${fmtRange(v.range)}</strong>.` : ''}</p>${howWorked(v, race)}`;
+  if (v.kind === 'tight' && v.mode === 'runwalk') return `<p class="verdict tight">⚠️ <strong>Doable at a much slower pace: run-walk it</strong> (for example 1 minute walking every 3–4 minutes). Expect about <strong>${fmtRange(v.range)}</strong>. That's a real finish, and a great first race.</p>${howWorked(v, race)}`;
+  if (v.kind === 'tight' && v.why === 'time-later') return `<p class="verdict tight">⚠️ <strong>You'll be ready to run it strong, but racing it all-out is a little early.</strong> Your level for a fast ${TG.NEEDS[race.distance].label} comes around ${monthYear(v.readyOn)}. Run it well, treat a fast time as a bonus, and go all-out at the next one.${v.range ? ` Expect about <strong>${fmtRange(v.range)}</strong>.` : ''}</p>${howWorked(v, race)}`;
+  if (v.kind === 'tight') return `<p class="verdict tight">⚠️ <strong>Tight.</strong> You'll just about get there, without a full taper. Go out easy and aim to finish comfortably, not to race.${v.range ? ` Expect about <strong>${fmtRange(v.range)}</strong>.` : ''}</p>${howWorked(v, race)}`;
   const opts = [];
   if (v.shorter) opts.push(v.shorterMode === 'walk' ? `<li>🚶 <strong>Walk the 5K</strong> with a few easy jogs, if the event has one: a great way to be part of race day.</li>`
     : `<li>🏃 <strong>The ${TG.NEEDS[v.shorter].label}</strong> at this event, if it has one${v.shorterMode === 'runwalk' ? ', run-walking it at an easy pace' : ''}: realistic for you by then.</li>`);
   if (v.later) opts.push(`<li>📅 <strong>${h(v.later.name)}</strong> on ${dateLong(v.later.date)}: you'll be ready for it. <button class="linkish" data-act="target-pick" data-uid="${h(v.later.uid)}">Prepare for this one</button></li>`);
-  opts.push(`<li>🎯 At your pace you'd be ready for a ${TG.NEEDS[race.distance].label} around <strong>${dateLong(v.readyOn)}</strong>: watch for one around then.</li>`);
-  return `<p class="verdict no">❌ <strong>Not safely by ${dateLong(race.date)}.</strong> You'd need about ${weeks(v.need)} and have ${weeks(v.weeksLeft)}. Rushing it is how injuries happen. This is a "not yet", and here's how to still get your race:</p><ul class="verdict-opts">${opts.join('')}</ul>`;
+  opts.push(`<li>🎯 At your pace you'd be ready for a ${TG.NEEDS[race.distance].label} around <strong>${monthYear(v.readyOn)}</strong> (about ${weeks(v.need)} from now): look for one then.</li>`);
+  return `<p class="verdict no">❌ <strong>Not safely by ${dateLong(race.date)}.</strong> You'd need about ${weeks(v.need)} and have ${weeks(v.weeksLeft)}. Rushing it is how injuries happen. This is a "not yet", and here's how to still get your race:</p><ul class="verdict-opts">${opts.join('')}</ul>${howWorked(v, race)}`;
 }
 const raceFrom = uid => (ui.events || []).find(e => e.uid === uid) || (S.target?.uid === uid ? S.target : null);
 function targetCard(style = '') {
@@ -1728,14 +1752,16 @@ const MODALS = {
   target(m) {
     const e = raceFrom(m.uid);
     if (!e) return '<p>That race is no longer in the calendar.</p><div class="row end"><button class="btn ghost" data-act="close">Close</button></div>';
-    const race = { ...e, distance: m.distance || e.distance, goal: m.goal || (S.target?.uid === e.uid ? S.target.goal : 'finish') };
+    const was = S.target?.uid === e.uid ? S.target : {};
+    const race = { ...e, distance: m.distance || was.distance || e.distance, goal: m.goal || was.goal || 'finish', goalTime: m.goalTime ?? was.goalTime ?? null };
     const v = TG.verdict(S, race, now(), ui.events || []), isRun = !!TG.NEEDS[race.distance], mine = S.target?.uid === e.uid;
     const distPick = !race.distance || isRun ? `<label class="field"><span>Distance you'd run</span>${select('tDist', [['', 'Pick one'], ...Object.entries(TG.NEEDS).map(([k, n]) => [k, n.label[0].toUpperCase() + n.label.slice(1)])], race.distance || '')}</label>` : '';
     return `<form id="target-form" onsubmit="return false"><p class="eyebrow">🎯 Prepare for a race</p><h2>${h(e.name)}</h2>
       <p class="hint">${dateLong(e.date)} · in ${TG.daysUntil(e.date, now())} days${e.location ? ` · ${h(e.location.split(/,| — | - /)[0])}` : ''}</p>
       ${distPick}
       ${isRun ? `<p class="q">Your goal</p>${radio('tGoal', [['finish', 'Finish it, feeling good'], ['time', 'Race it for a time']], race.goal)}` : ''}
-      <div class="verdict-box">${verdictHtml(v, race)}</div>
+      ${isRun && race.goal === 'time' ? `<label class="field"><span>Goal time</span><input type="text" name="tTime" value="${race.goalTime ? formatTime(race.goalTime) : ''}" placeholder="h:mm:ss, e.g. ${race.distance === '5k' ? '27:00' : race.distance === '10k' ? '55:00' : race.distance === 'half' ? '1:59:00' : '4:15:00'}" inputmode="text" autocomplete="off"></label>` : ''}
+      <div class="verdict-box">${verdictHtml(v, race)}${timeHtml(v, race)}</div>
       <p class="hint">How it works: your plan stays your levels. The app counts down, and in the last 4 weeks your Today page switches to race prep, a taper and race week.</p>
       <div class="row end">${mine ? '<button type="button" class="btn ghost" data-act="target-clear">Stop preparing</button>' : ''}<button type="button" class="btn ghost" data-act="close">Close</button>
         ${!mine && race.distance ? `<button type="button" class="btn primary" data-act="target-set" data-uid="${h(e.uid)}">🎯 Make this my race</button>` : mine ? '<button type="button" class="btn primary" data-act="target-set" data-uid="' + h(e.uid) + '">Save</button>' : ''}</div></form>`;
@@ -2216,8 +2242,10 @@ const actions = {
     const f = document.getElementById('target-form'), e = raceFrom(el.dataset.uid);
     if (!e) return;
     const distance = f?.tDist?.value || e.distance, goal = f?.querySelector('[name=tGoal]:checked')?.value || 'finish';
+    const goalTime = goal === 'time' ? parseTime(f?.tTime?.value || '') : null;
+    if (goal === 'time' && !goalTime) return toast('Type your goal time, for example 1:59:00.');
     if (!distance) return toast('Pick the distance first.');
-    S.target = { uid: e.uid, name: e.name, date: e.date, distance, track: e.track, url: e.url, location: e.location, goal, setAt: now() };
+    S.target = { uid: e.uid, name: e.name, date: e.date, distance, track: e.track, url: e.url, location: e.location, goal, goalTime, setAt: now() };
     ui.modal = null; commit(S);
     toast(`🎯 ${e.name} is your race. Countdown on Today!`);
   },
@@ -2584,8 +2612,10 @@ document.addEventListener('click', e => {
 
 document.addEventListener('change', async e => {
   const el = e.target;
-  if (el.closest('#target-form') && (el.name === 'tDist' || el.name === 'tGoal') && ui.modal?.type === 'target') {
-    if (el.name === 'tDist') ui.modal.distance = el.value || null; else ui.modal.goal = el.value;
+  if (el.closest('#target-form') && ['tDist', 'tGoal', 'tTime'].includes(el.name) && ui.modal?.type === 'target') {
+    if (el.name === 'tDist') ui.modal.distance = el.value || null;
+    else if (el.name === 'tGoal') ui.modal.goal = el.value;
+    else { const tm = parseTime(el.value); if (!tm && el.value.trim()) return toast('Use h:mm:ss or mm:ss, for example 1:59:00.'); ui.modal.goalTime = tm; }
     renderModal(); return;
   }
   if (el.closest('#step-form') && el.name === 'when') {

@@ -801,3 +801,4 @@ header.top { gap: 10px; }
 .target-card h3 { margin: 4px 0; }
 .tc-phase { margin: 4px 0; }
 .tc-focus { margin: 4px 0 10px; padding-left: 18px; }
+.how-worked summary { cursor: pointer; margin-top: 6px; } .how-worked p { margin: 6px 0 0; }

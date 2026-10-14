@@ -28,15 +28,32 @@ const levelWeeks = (n, days, left = null) => {
   const todo = left == null ? sessions : left;
   return Math.max(left == null ? minWeeks(n) : minWeeks(n) * (todo / sessions), todo / Math.max(2, days));
 };
-// Weeks from where the athlete is to being *at* level `goal`.
+// Months of steady running a body needs before a distance, whatever the sessions say (common coaching
+// guidance: a continuous 5K after ~2 months from zero, 10K ~4-5 months, half ~6 months, a first
+// marathon after about a year). As weeks of running "history" each level stands for.
+const HISTORY = [[1, 0], [4, 9], [7, 20], [9, 26], [12, 52], [13, 70]];
+export const historyAt = level => {
+  for (let i = 1; i < HISTORY.length; i++) {
+    const [l0, w0] = HISTORY[i - 1], [l1, w1] = HISTORY[i];
+    if (level <= l1) return w0 + ((Math.max(level, l0) - l0) / (l1 - l0)) * (w1 - w0);
+  }
+  return HISTORY.at(-1)[1];
+};
+// Weeks from where the athlete is to being *at* level `goal`: the level path (sessions over training
+// days, never faster than the body adapts) or the running history that distance needs, whichever is longer.
 export function weeksToLevel(s, goal) {
+  return breakdown(s, goal).weeks;
+}
+export function breakdown(s, goal) {
   const days = Math.max(2, s.profile?.days?.length || s.profile?.daysPerWeek || 3);
   const cur = s.run?.level || 1;
-  if (cur >= goal) return 0;
+  if (cur >= goal) return { weeks: 0, path: 0, history: 0, days, cur, goal };
   const left = RUN_LEVELS[cur - 1].steps.filter((st, i) => st.type !== 'rest' && !s.run.done?.[i]).length;
-  let w = levelWeeks(cur, days, left);
-  for (let n = cur + 1; n < goal; n++) w += levelWeeks(n, days);
-  return Math.ceil(w * 2) / 2; // half weeks
+  let path = levelWeeks(cur, days, left);
+  for (let n = cur + 1; n < goal; n++) path += levelWeeks(n, days);
+  const history = historyAt(goal) - historyAt(cur);
+  const weeks = Math.ceil(Math.max(path, history) * 2) / 2; // half weeks
+  return { weeks, path: Math.round(path), history: Math.round(history), days, cur, goal, limit: history > path ? 'history' : 'path' };
 }
 
 // Finish-time range: from a real best (Riegel's formula, exponent 1.06) when there is one, else a
@@ -48,6 +65,20 @@ export function finishRange(distance, best5kMin, mode = 'finish') {
   if (best5kMin > 0 && mode !== 'runwalk') { const t = best5kMin * Math.pow(n.km / 5, 1.06); return [Math.round(t * 1.03), Math.round(t * 1.12)]; }
   const [a, b] = BASE[distance];
   return mode === 'runwalk' ? [Math.round(a * 1.25), Math.round(b * 1.3)] : [a, b];
+}
+
+// A goal time against what the athlete's bests predict (Riegel from the best 5K, or the 10K converted).
+// stretch: up to ~4% faster than predicted (possible on a great day); unrealistic beyond that.
+export function judgeTime(distance, goalMin, bests = {}) {
+  const n = NEEDS[distance];
+  if (!n || !(goalMin > 0)) return null;
+  const from5 = bests.run5k > 0 ? bests.run5k : bests.run10k > 0 ? bests.run10k / Math.pow(2, 1.06) : null;
+  const pace = goalMin / n.km;
+  if (!from5) return { kind: 'unknown', pace };
+  const predicted = from5 * Math.pow(n.km / 5, 1.06);
+  const r = goalMin / predicted;
+  const kind = r > 1.06 ? 'easy' : r >= 1.0 ? 'realistic' : r >= 0.96 ? 'stretch' : 'too-fast';
+  return { kind, pace, predicted, realistic: predicted, stretch: predicted * 0.96 };
 }
 
 const ymdPlus = (ymd, days) => new Date(new Date(`${ymd}T12:00:00`).getTime() + days * DAY).toISOString().slice(0, 10);
@@ -62,13 +93,21 @@ export function verdict(s, race, now, events = []) {
   const n = NEEDS[race.distance];
   const best5k = s.bests?.run5k || s.answers?.best5k || null;
   if (!n) return otherVerdict(s, race, weeksLeft);
+  // The distance itself needs the running history (finish level); racing it for a time adds the next
+  // level's sessions on top, but no extra months: that history is about the distance, not the speed.
   const goal = race.goal === 'time' ? n.time : n.finish;
-  const wFull = weeksToLevel(s, goal), wWalk = weeksToLevel(s, n.runwalk);
+  const bdFinish = breakdown(s, n.finish);
+  const timeExtra = race.goal === 'time' ? Math.max(0, breakdown(s, n.time).path - bdFinish.path) : 0;
+  const bd = { ...bdFinish, goal, path: bdFinish.path + timeExtra, weeks: Math.ceil(Math.max(bdFinish.weeks, bdFinish.path + timeExtra) * 2) / 2 };
+  const wFull = bd.weeks, wWalk = weeksToLevel(s, n.runwalk);
+  const canRunIt = bdFinish.weeks + 1 <= weeksLeft; // ready to run the distance, if not to race it
   const readyOn = ymdPlus(new Date(now).toISOString().slice(0, 10), Math.round(wFull * 7));
-  const base = { days, weeksLeft, need: wFull, readyOn, goalLevel: goal };
+  const time = race.goal === 'time' ? judgeTime(race.distance, race.goalTime, { run5k: best5k, run10k: s.bests?.run10k }) : null;
+  const base = { days, weeksLeft, need: wFull, readyOn, goalLevel: goal, bd, time };
   if (wFull + 1 <= weeksLeft) return { ...base, kind: 'ok', mode: race.goal === 'time' ? 'time' : 'finish', range: finishRange(race.distance, best5k, 'finish') };
   if (wFull <= weeksLeft) return { ...base, kind: 'tight', mode: 'finish', why: 'no-taper', range: finishRange(race.distance, best5k, 'finish') };
-  if (wWalk + 1 <= weeksLeft) return { ...base, kind: 'tight', mode: 'runwalk', why: 'slower', range: finishRange(race.distance, best5k, 'runwalk') };
+  if (race.goal === 'time' && canRunIt) return { ...base, kind: 'tight', mode: 'finish', why: 'time-later', range: finishRange(race.distance, best5k, 'finish') };
+  if (wWalk + 1 <= weeksLeft && (s.run?.level || 1) < n.finish) return { ...base, kind: 'tight', mode: 'runwalk', why: 'slower', range: finishRange(race.distance, best5k, 'runwalk') };
   // Not by this date: the longest shorter distance that fits, and a later race of this distance.
   const shorter = SHORTER[race.distance].find(d => weeksToLevel(s, NEEDS[d].finish) + 1 <= weeksLeft)
     || SHORTER[race.distance].find(d => weeksToLevel(s, NEEDS[d].runwalk) + 1 <= weeksLeft);
