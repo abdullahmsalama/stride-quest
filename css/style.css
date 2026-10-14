@@ -802,3 +802,13 @@ header.top { gap: 10px; }
 .tc-phase { margin: 4px 0; }
 .tc-focus { margin: 4px 0 10px; padding-left: 18px; }
 .how-worked summary { cursor: pointer; margin-top: 6px; } .how-worked p { margin: 6px 0 0; }
+/* The sport that leads the week: its races stand out */
+.race-sec.lead { margin: 4px -6px 10px; padding: 12px 12px 10px; border: 0; border-left: 5px solid var(--brand); border-radius: 14px; background: linear-gradient(135deg, var(--brand-soft, #ffe8dd), transparent 85%); }
+.race-sec.lead .q { font: 800 19px var(--display); letter-spacing: .02em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.race-sec.lead .ev { background: var(--surface); box-shadow: 0 2px 8px rgba(0, 0, 0, .06); }
+.race-sec.lead + .race-sec { border-top: 0; }
+.lead-tag { font: 700 11px var(--body); letter-spacing: .03em; color: #fff; background: var(--brand); padding: 3px 8px; border-radius: 999px; }
+/* Race rows: details on top, buttons under them on narrow screens (no word-by-word wrapping) */
+.ev { flex-wrap: wrap; }
+.ev > div { flex: 1 1 220px; }
+@media (max-width: 520px) { .ev-btns { width: 100%; justify-content: flex-start; } }

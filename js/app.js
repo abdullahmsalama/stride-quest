@@ -942,7 +942,7 @@ function evRow(e, compact = false) {
   const when = d === 0 ? 'today' : d === 1 ? 'tomorrow' : `in ${d} days`;
   const note = closed ? '🔒 registration closed' : d < 14 ? 'too soon to prepare for: great to join for fun or cheer' : e.closes ? `registration closes ${evDate(e.closes, today)}` : '';
   const isTarget = S.target?.uid === e.uid;
-  const prep = d >= 0 ? `<button class="btn ${isTarget ? 'primary' : 'ghost'} small" data-act="target-pick" data-uid="${h(e.uid)}">${isTarget ? '🎯 My race' : '🎯 Prepare'}</button>` : '';
+  const prep = d >= 0 ? `<button class="btn ${isTarget ? 'primary' : 'ghost'} small" data-act="target-pick" data-uid="${h(e.uid)}">${isTarget ? '🎯 My race' : '🎯 Set as my race'}</button>` : '';
   return `<li class="ev ${closed ? 'closed' : ''} ${compact ? 'compact' : ''} ${isTarget ? 'target' : ''}"><div><strong>${h(e.name)}</strong><span class="hint">${evDate(e.date, today)} · ${when}${e.location ? ` · ${h(e.location.split(/,| — | - /)[0])}` : ''}${note ? ` · ${note}` : ''}</span></div><span class="ev-btns">${prep}${e.url && !closed ? `<a class="btn small" href="${h(e.url)}" target="_blank" rel="noopener" data-act="race-site" data-k="calendar">Register ↗</a>` : ''}</span></li>`;
 }
 function raceCard(style = '') {
@@ -956,7 +956,8 @@ function raceCard(style = '') {
     const { picks, others } = EV.featured(ui.events, tr, today);
     const top = tr === 'hybrid' ? hybridPrep({ alphax: picks.find(e => /alpha ?x/i.test(e.name)), hyrox: picks.find(e => /hyrox/i.test(e.name)) })
       : picks.length ? `<ul class="ev-list">${picks.map(e => evRow(e)).join('')}</ul>` : '<p class="hint">No races in the calendar yet for this sport.</p>';
-    return `<div class="race-sec"><p class="q">${TRACK_RACES[tr]}</p>${top}
+    const isLead = tracks.length > 1 && tr === lead;
+    return `<div class="race-sec ${isLead ? 'lead' : ''}"><p class="q">${TRACK_RACES[tr]}${isLead ? ' <span class="lead-tag">⭐ Leads your week</span>' : ''}</p>${top}
       ${others.length ? `<details class="ev-more"><summary class="hint">Other competitions (${others.length})</summary><ul class="ev-list">${others.map(e => evRow(e, true)).join('')}</ul></details>` : ''}</div>`;
   };
   return `<section class="card race-card" ${style}><p class="eyebrow">🎯 Races in Egypt</p>${tracks.map(sec).join('')}
