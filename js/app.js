@@ -946,7 +946,9 @@ function evRow(e, compact = false) {
   return `<li class="ev ${closed ? 'closed' : ''} ${compact ? 'compact' : ''} ${isTarget ? 'target' : ''}"><div><strong>${h(e.name)}</strong><span class="hint">${evDate(e.date, today)} · ${when}${e.location ? ` · ${h(e.location.split(/,| — | - /)[0])}` : ''}${note ? ` · ${note}` : ''}</span></div><span class="ev-btns">${prep}${e.url && !closed ? `<a class="btn small" href="${h(e.url)}" target="_blank" rel="noopener" data-act="race-site" data-k="calendar">Register ↗</a>` : ''}</span></li>`;
 }
 function raceCard(style = '') {
-  const tracks = (S.profile.tracks || ['run']).filter(t => TRACK_RACES[t]);
+  // The sport that leads the week comes first; the others keep their usual order.
+  const lead = S.profile.primary || 'run';
+  const tracks = (S.profile.tracks || ['run']).filter(t => TRACK_RACES[t]).sort((a, b) => (b === lead) - (a === lead));
   if (ui.events == null && !ui.eventsLoading) { ui.eventsLoading = true; EV.loadEvents().then(ev => { ui.events = ev; ui.eventsLoading = false; if (ui.tab === 'today' || ui.tab === 'map') render(); }); }
   const today = E.dayKey(now());
   const sec = tr => {
