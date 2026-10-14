@@ -127,7 +127,7 @@ export function buildWeek(s, now, { skip } = {}) {
   for (const h of s.history) {
     // A failed attempt still used the day: nothing else is planned on it.
     if ((h.kind !== 'session' && h.kind !== 'attempt') || h.ts < monday || weekKey(h.ts) !== wk) continue;
-    byDay[dayIndex(h.ts)].push({ title: h.title, track: h.track, done: true, xp: h.xp, cls: 'done', ...(h.partial ? { partial: true } : {}), ...(h.kind === 'attempt' ? { attempt: true } : {}) });
+    byDay[dayIndex(h.ts)].push({ title: h.title, track: h.track, done: true, ts: h.ts, xp: h.xp, cls: 'done', ...(h.partial ? { partial: true } : {}), ...(h.kind === 'attempt' ? { attempt: true } : {}) });
   }
 
   // Free slots from today on: available days with nothing done yet.

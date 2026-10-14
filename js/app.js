@@ -612,10 +612,20 @@ const gateLockedLine = () => (S.rebuild.redFlag ? '🔒 All lanes ready, but the
 const STATUS_ICON = { done: '✅', provisional: '⏳', open: '<span class="dot"></span>', locked: '🔒', slot: '🧱' };
 const TYPE_LABEL = { run: 'Run', swim: 'Swim', bike: 'Bike', lift: 'Lift', engine: 'Engine', maint: 'Maintain', prep: 'Prep', slot: 'Prep slot', rest: 'Rest', gate: 'Gate', proveit: 'Prove It' };
 
+// A session's exercises with cues and demo links (the step pop-up and the read-only details share it).
+function exHtml(st) {
+  return (st.ex || []).map(id => EXERCISES[id] && `<li class="ex">
+        <div><strong>${h(EXERCISES[id].name)}</strong> <span class="dose">${h(EXERCISES[id].dose)}</span></div>
+        <ul>${EXERCISES[id].cues.map(c => `<li>${h(c)}</li>`).join('')}</ul>
+        ${EXERCISES[id].alt && S.hybrid && S.hybrid.gym !== 'full' ? `<p class="hint">🔁 ${h(EXERCISES[id].alt)}</p>` : ''}
+        <a href="${videoLink(id)}" target="_blank" rel="noopener">▶ Watch how</a></li>`).join('') + raceNote(st);
+}
+// Any session anywhere opens: open ones to log, the rest read-only.
+const sessionAct = (track, idx, status) => (status === 'open' || status === 'slot' ? `data-act="open-step" data-track="${track}" data-idx="${idx}"` : `data-act="step-info" data-track="${track}" data-idx="${idx}"`);
+
 function stepRow(track, st) {
-  const clickable = st.status === 'open' || st.status === 'slot';
   return `<li class="step ${st.status} t-${st.type}">
-      <button ${clickable ? `data-act="open-step" data-track="${track}" data-idx="${st.idx}"` : 'disabled'}>
+      <button ${sessionAct(track, st.idx, st.status)}>
         <span class="icon">${STATUS_ICON[st.status]}</span>
         <span class="txt"><span class="type">${TYPE_LABEL[st.type]}${st.boss ? ' · Boss' : ''}</span>${h(st.title)}${st.swapped ? ' <em class="hint">(swapped)</em>' : ''}${st.status === 'provisional' ? '<em class="hint"> done: counts after tomorrow morning\'s check</em>' : ''}${st.lockReason ? `<em class="lock-why">🔒 ${h(st.lockReason)}</em>` : ''}</span>
         <span class="xp">${st.xp ? `+${st.xp}` : ''}</span>
@@ -919,13 +929,13 @@ function todayParts(t) {
       </section>`
     : `<section class="card next rest-day" style="order:5"><p class="eyebrow">Today · ${K.DAY_NAMES[w.today]}</p>
         <h3>${doneToday.length ? (doneToday.every(i => i.attempt) ? 'Logged for today 💛 Rest up, it\'s back on your next training day' : 'Done for today ✅') : S.mode?.type === 'sick' ? 'Rest and recover 💤' : 'Rest day 😴'}</h3>
-        <p class="hint">${nextDay ? `Next: ${nextDay.name} · ${h(nextDay.items.find(i => !i.done).title)}` : 'Next sessions appear as you progress.'}</p>
+        <p class="hint">${nextDay ? (() => { const it = nextDay.items.find(i => !i.done); return `Next: ${nextDay.name} · ${it.idx != null ? `<button class="linkish" data-act="open-step" data-track="${it.track}" data-idx="${it.idx}">${h(it.title)}</button>` : h(it.title)}`; })() : 'Next sessions appear as you progress.'}</p>
         ${!doneToday.length && S.mode?.type !== 'sick' ? `<button class="btn ghost small" data-act="rest" ${restDoneToday ? 'disabled' : ''}>${restDoneToday ? 'Rest day logged ✓' : `😴 Log rest day (+${E.XP.restDay} XP)`}</button>` : ''}</section>`;
   // Rolling view: two days back, today, four days ahead (into next week when needed).
   const dayRow = d => `<li class="wk-day ${d.today ? 'today' : ''} ${d.past ? 'past' : ''} ${d.available ? '' : 'off'} ${d.week === 'next' && d.i === 0 ? 'wk-new' : ''}">
         <span class="wk-name">${d.today ? 'Today' : d.name}<small>${new Date(d.date).getDate()}</small></span>
         <div class="wk-items">${d.items.length ? d.items.map(it => `<div class="wk-item ${it.done ? 'done' : ''} ${it.optional ? 'opt' : ''}">
-            <span>${it.done ? (it.attempt ? '✗' : it.partial ? '◐' : '✅') : CLS_ICON[it.cls] || '•'} ${h(it.title)}${it.attempt ? ' <em class="hint">tried</em>' : it.partial ? ' <em class="hint">partly done</em>' : ''}${it.keySession && !it.done ? ' <b class="key">KEY</b>' : ''}</span>
+            <span ${it.done && it.ts ? `class="wk-open" role="button" tabindex="0" data-act="log-info" data-ts="${it.ts}"` : it.idx != null && !it.sick ? `class="wk-open" role="button" tabindex="0" data-act="open-step" data-track="${it.track}" data-idx="${it.idx}"` : ''}>${it.done ? (it.attempt ? '✗' : it.partial ? '◐' : '✅') : CLS_ICON[it.cls] || '•'} ${h(it.title)}${it.attempt ? ' <em class="hint">tried</em>' : it.partial ? ' <em class="hint">partly done</em>' : ''}${it.keySession && !it.done ? ' <b class="key">KEY</b>' : ''}</span>
             ${d.week === 'this' && !it.done && !it.sick && it.idx != null ? `<button class="link small" data-act="move-item" data-key="${h(it.key)}">Move</button>` : ''}</div>`).join('')
           : `<span class="hint">${d.past ? '–' : d.available ? 'Free' : 'Rest'}</span>`}</div></li>`;
   const week = `<section class="card week" style="order:6"><h3>Your week</h3>
@@ -1612,6 +1622,33 @@ function painButtons() {
 }
 
 const MODALS = {
+  // A logged session: when, how it went, the athlete's own words (and the exercises, if it's this level's).
+  logInfo(m) {
+    const x = S.history.find(e => e.ts === m.ts && (e.kind === 'session' || e.kind === 'attempt'));
+    if (!x) return '<p>That log is no longer here.</p><div class="row end"><button class="btn ghost" data-act="close">Close</button></div>';
+    const steps = x.idx != null ? E.trackSteps(S, x.track) : [], st = steps[x.idx];
+    const same = st && st.title === x.title;
+    const when = new Date(x.ts).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' });
+    const how = x.kind === 'attempt' ? '✗ Tried, but couldn\'t do it' : x.partial ? '◐ Partly done' : '✅ Done';
+    return `<div class="step-info"><p class="eyebrow">${h(trackTitle(x.track) || '')}</p><h2>${h(x.title)}</h2>
+      <p class="si-status">${how} · ${h(when)}${x.pain != null ? ` · pain ${x.pain}/10` : ''}${x.xp ? ` · +${x.xp} XP` : ''}</p>
+      ${x.actual ? `<p><strong>What you did:</strong> ${h(x.actual)}</p>` : ''}${x.note ? `<p><strong>Notes:</strong> ${h(x.note)}</p>` : ''}
+      ${same && st.detail ? `<p class="hint">${h(st.detail)}</p>` : ''}${same && st.ex?.length ? `<ul class="exercises">${exHtml(st)}</ul>` : ''}
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Close</button></div></div>`;
+  },
+  stepInfo(m) {
+    const st = E.trackSteps(S, m.track)[m.idx];
+    if (!st) return '<p>This session has moved on.</p><div class="row end"><button class="btn ghost" data-act="close">Close</button></div>';
+    const log = [...S.history].reverse().find(x => x.track === m.track && x.idx === m.idx && (x.kind === 'session' || x.kind === 'attempt'));
+    const when = log ? new Date(log.ts).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+    const status = st.status === 'done' ? `✅ Done${when ? ` on ${when}` : ''}${log?.partial ? ' (partly)' : ''}.${log?.actual ? ` You wrote: “${h(log.actual)}”` : ''}`
+      : st.status === 'provisional' ? '⏳ Done: it counts after tomorrow morning\'s check (pain 2/10 or less).'
+      : st.status === 'locked' ? `🔒 ${h(st.lockReason || 'Not open yet.')}` : '';
+    return `<div class="step-info"><p class="eyebrow">${h(TYPE_LABEL[st.type] || '')}${st.boss ? ' · Boss' : ''} · ${trackTitle(m.track)}</p><h2>${h(st.title)}</h2>
+      ${st.detail ? `<p>${h(st.detail)}</p>` : ''}${status ? `<p class="si-status">${status}</p>` : ''}
+      ${st.ex?.length ? `<ul class="exercises">${exHtml(st)}</ul>` : ''}
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Close</button></div></div>`;
+  },
   prepStage(m) {
     const p = PREP_STAGES[m.n], cur = S.prep.level, done = m.n < cur || (m.n === 7 && S.prep.mastered);
     const needs = RUN_LEVELS.filter(l => l.needsPrep === m.n);
@@ -1833,11 +1870,7 @@ const MODALS = {
   },
   step(m) {
     const st = E.trackSteps(S, m.track)[m.idx];
-    const exs = (st.ex || []).map(id => EXERCISES[id] && `<li class="ex">
-        <div><strong>${h(EXERCISES[id].name)}</strong> <span class="dose">${h(EXERCISES[id].dose)}</span></div>
-        <ul>${EXERCISES[id].cues.map(c => `<li>${h(c)}</li>`).join('')}</ul>
-        ${EXERCISES[id].alt && S.hybrid && S.hybrid.gym !== 'full' ? `<p class="hint">🔁 ${h(EXERCISES[id].alt)}</p>` : ''}
-        <a href="${videoLink(id)}" target="_blank" rel="noopener">▶ Watch how</a></li>`).join('') + raceNote(st);
+    const exs = exHtml(st);
     const passQ = st.type === 'proveit' ? `<p class="q">Did you hit it?</p>${radio('passed', [['1', 'Yes, I hit it'], ['0', 'Not quite']], '1')}` : '';
     const raceQ = m.track === 'hyGate' && st.boss ? `<p class="q">Your race</p>
         <label class="field"><span>Race</span>${select('raceEvent', [['alphax:open', 'Alpha X Open'], ['alphax:base', 'Alpha X Base'], ['hyrox:open', 'Hyrox Open'], ['hyrox:pro', 'Hyrox Pro'], ['sim', 'Simulation (no race)']], S.hybrid?.race ? `${S.hybrid.race.event}:${S.hybrid.race.division}` : 'alphax:open')}</label>
@@ -2053,6 +2086,8 @@ const actions = {
   // Delete one of your messages (and the coach's reply to it): the coach no longer sees either.
   'msg-del'(el) { chatRemove(+el.dataset.m); toast('Message deleted. The coach won\'t see it.'); },
   'msg-edit'(el) { const i = +el.dataset.m; ui.chatDraft = ui.chat[i]?.content || ''; chatRemove(i); },
+  'log-info'(el) { ui.modal = { type: 'logInfo', ts: +el.dataset.ts }; renderModal(); },
+  'step-info'(el) { ui.modal = { type: 'stepInfo', track: el.dataset.track, idx: +el.dataset.idx }; renderModal(); },
   'prep-stage'(el) { ui.modal = { type: 'prepStage', n: +el.dataset.n }; renderModal(); },
   'tour-start'() { ui.modal = null; renderModal(); startTour(0); },
   'tour-step'(el) { ui.tour.i = Math.max(0, ui.tour.i + +el.dataset.d); tourGo(); },
@@ -2578,7 +2613,7 @@ window.addEventListener('hashchange', () => {
   if (!ui.modal) render();
 });
 
-$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help', 'prepStage'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help', 'prepStage', 'stepInfo', 'logInfo'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
 
 // ---------- installable app ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;

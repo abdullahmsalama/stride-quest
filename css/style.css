@@ -753,3 +753,7 @@ header.top { gap: 10px; }
 .cc-change.done { opacity: .7; }
 .tag.warn { display: block; margin-top: 8px; padding: 6px 8px; border-radius: 8px; background: var(--warn-soft, #fff3cd); color: var(--ink); font-size: 12px; white-space: normal; }
 .cc-msg.trouble { background: var(--warn-soft, #fff3cd); border-color: transparent; }
+.wk-open { cursor: pointer; border-radius: 6px; }
+.wk-open:hover { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
+.steps .step.done button, .steps .step.locked button, .steps .step.provisional button { cursor: pointer; }
+.si-status { padding: 8px 10px; border-radius: 10px; background: rgba(127, 127, 127, .08); }
