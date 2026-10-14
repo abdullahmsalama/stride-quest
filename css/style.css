@@ -789,3 +789,15 @@ header.top { gap: 10px; }
 .ev .btn { flex: none; }
 .ev-soon { margin-top: 4px; }
 .ev-more summary { cursor: pointer; margin: 6px 0; } .ev.compact { padding: 6px 8px; } .race-pick .ev-list { margin: 6px 0; }
+.ev-btns { display: flex; gap: 6px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
+.ev.target { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(255, 107, 53, .25); }
+.verdict-box { margin: 12px 0; }
+.verdict { padding: 10px 12px; border-radius: 12px; margin: 0; line-height: 1.45; }
+.verdict.ok { background: var(--lime-soft, #e9f7d8); }
+.verdict.tight { background: var(--warn-soft, #fff3cd); }
+.verdict.no { background: rgba(229, 57, 53, .1); }
+.verdict-opts { margin: 8px 0 0; padding-left: 4px; list-style: none; display: grid; gap: 6px; }
+.target-card { border-left: 5px solid var(--brand); }
+.target-card h3 { margin: 4px 0; }
+.tc-phase { margin: 4px 0; }
+.tc-focus { margin: 4px 0 10px; padding-left: 18px; }

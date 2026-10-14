@@ -46,6 +46,8 @@ export const FEATURES = [
   // ---------- Races ----------
   { id: 'race-prep', group: 'race', title: 'Race prep: Alpha X and Hyrox', text: 'Pick Alpha X (Base or Open) or Hyrox (Open or Pro). Your simulations then follow that race\'s format and stations. "What is it?" links to the official website.',
     show: { tab: 'today', sel: '.race-card' }, quest: { label: 'Look at Race prep for Alpha X or Hyrox', done: (s, f) => !!s.hybrid?.race || f.race_info } },
+  { id: 'target', group: 'race', title: 'Competition mode', text: 'Tap 🎯 Prepare on any race. The app checks it honestly against your level and training days: realistic, doable at a slower pace, or not yet (with a shorter distance or a later race instead). Your plan stays your levels; in the last 4 weeks Today switches to race prep, a taper and race week, then you log your result.',
+    show: { tab: 'today', sel: '.race-card' }, quest: { label: 'Pick a race to prepare for', done: s => !!s.target } },
   { id: 'calendar', group: 'race', title: 'Competitions Calendar', text: 'Real events to enter. Egypt opens the Egypt Fitness Calendar with every event we can verify; worldwide is coming soon.',
     show: { tab: 'events', sel: '.comp-card' }, quest: { label: 'Find a competition in the calendar', done: (s, f) => f.tab_events } },
   { id: 'challenge', group: 'race', title: 'Challenge a friend', text: 'Send a friend a challenge link. It fits their level, so it is fair whoever you challenge.',

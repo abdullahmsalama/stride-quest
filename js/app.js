@@ -26,6 +26,7 @@ import { NORMS, RHO } from './data/norms.js';
 import { WORKER_URL } from './config.js';
 import { RACES } from './data/races.js';
 import * as EV from './events.js';
+import * as TG from './target.js';
 import { FEATURES, GROUPS, FEATURE_BRIEF } from './data/features.js';
 
 // ---------- state ----------
@@ -845,6 +846,43 @@ function hybridPrep(nextEv = {}) {
   return `${one('alphax', !cur || cur.event === 'alphax')}${one('hyrox', cur?.event === 'hyrox')}`;
 }
 
+// ---------- competition mode: a target race, an honest verdict, phases, race day ----------
+const fmtRange = r => (r ? `${formatTime(r[0])}–${formatTime(r[1])}` : '');
+const DIST_OF = { '5k': '5K', '10k': '10K', half: 'Half marathon', marathon: 'Marathon', '70.3': 'IRONMAN 70.3', full: 'Full-distance triathlon', tri: 'Triathlon', hyrox: 'Hyrox', alphax: 'Alpha X' };
+const dateLong = ymd => new Date(`${ymd}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+// Honest, never discouraging: every answer ends with what the athlete CAN do, and when.
+function verdictHtml(v, race) {
+  const weeks = w => `${Math.round(w)} week${Math.round(w) === 1 ? '' : 's'}`;
+  if (v.kind === 'unknown') return '<p class="verdict">Pick the distance below and the app checks it against your level.</p>';
+  if (v.other) return v.kind === 'ok' ? `<p class="verdict ok">✅ <strong>Realistic.</strong> Your map gets you to race level in about ${weeks(v.need)}, with ${weeks(v.weeksLeft - v.need)} to spare.</p>`
+    : v.kind === 'tight' ? `<p class="verdict tight">⚠️ <strong>Tight, but possible as a finish.</strong> You need about ${weeks(v.need)} and have ${weeks(v.weeksLeft)}. Aim to finish strong, not to race.</p>`
+    : `<p class="verdict no">❌ <strong>Not yet.</strong> You need about ${weeks(v.need)} on your map and have ${weeks(v.weeksLeft)}. That's a "not yet", not a "never": a shorter race now, or this one's next edition, keeps you on the way.</p>`;
+  if (v.kind === 'ok') return `<p class="verdict ok">✅ <strong>Realistic.</strong> At your pace you're race-ready around ${dateLong(v.readyOn)}, with time to taper.${v.range ? ` Expect about <strong>${fmtRange(v.range)}</strong>.` : ''}</p>`;
+  if (v.kind === 'tight' && v.mode === 'runwalk') return `<p class="verdict tight">⚠️ <strong>Doable at a much slower pace: run-walk it</strong> (for example 1 minute walking every 3–4 minutes). Expect about <strong>${fmtRange(v.range)}</strong>. That's a real finish, and a great first race.</p>`;
+  if (v.kind === 'tight') return `<p class="verdict tight">⚠️ <strong>Tight.</strong> You'll just about get there, without a full taper. Go out easy and aim to finish comfortably, not to race.${v.range ? ` Expect about <strong>${fmtRange(v.range)}</strong>.` : ''}</p>`;
+  const opts = [];
+  if (v.shorter) opts.push(v.shorterMode === 'walk' ? `<li>🚶 <strong>Walk the 5K</strong> with a few easy jogs, if the event has one: a great way to be part of race day.</li>`
+    : `<li>🏃 <strong>The ${TG.NEEDS[v.shorter].label}</strong> at this event, if it has one${v.shorterMode === 'runwalk' ? ', run-walking it at an easy pace' : ''}: realistic for you by then.</li>`);
+  if (v.later) opts.push(`<li>📅 <strong>${h(v.later.name)}</strong> on ${dateLong(v.later.date)}: you'll be ready for it. <button class="linkish" data-act="target-pick" data-uid="${h(v.later.uid)}">Prepare for this one</button></li>`);
+  opts.push(`<li>🎯 At your pace you'd be ready for a ${TG.NEEDS[race.distance].label} around <strong>${dateLong(v.readyOn)}</strong>: watch for one around then.</li>`);
+  return `<p class="verdict no">❌ <strong>Not safely by ${dateLong(race.date)}.</strong> You'd need about ${weeks(v.need)} and have ${weeks(v.weeksLeft)}. Rushing it is how injuries happen. This is a "not yet", and here's how to still get your race:</p><ul class="verdict-opts">${opts.join('')}</ul>`;
+}
+const raceFrom = uid => (ui.events || []).find(e => e.uid === uid) || (S.target?.uid === uid ? S.target : null);
+function targetCard(style = '') {
+  const t = S.target;
+  if (!t) return '';
+  const ph = TG.phase(t, now());
+  if (ph.id === 'done') return `<section class="card target-card" ${style}><p class="eyebrow">🏁 ${h(t.name)}</p><h3>${t.result ? `Finished in ${h(formatTime(t.result.time))} 🎉` : 'Race done 🎉'}</h3><p class="hint">Ready for the next one?</p><div class="row wrap"><button class="btn small" data-act="target-clear">Pick my next race</button></div></section>`;
+  const v = TG.verdict(S, t, now(), ui.events || []);
+  const when = ph.d > 1 ? `in ${ph.d} days` : ph.d === 1 ? 'tomorrow' : ph.d === 0 ? 'today!' : `${-ph.d} day${ph.d === -1 ? '' : 's'} ago`;
+  const badge = { ok: '✅ on track', tight: v.mode === 'runwalk' ? '⚠️ run-walk it' : '⚠️ tight: aim to finish', no: '❌ not yet: see options' }[v.kind] || '';
+  return `<section class="card target-card" ${style}><p class="eyebrow">🎯 My race · ${h(DIST_OF[t.distance] || 'Race')}</p>
+      <h3>${h(t.name)} <span class="hint">${when}</span></h3>
+      <p class="tc-phase"><strong>${ph.title}</strong>${badge ? ` · ${badge}` : ''}</p>
+      <ul class="tc-focus">${ph.focus.map(f => `<li>${h(f)}</li>`).join('')}</ul>
+      <div class="row wrap">${ph.id === 'race' || (ph.id === 'recover' && !t.result) ? '<button class="btn primary small" data-act="target-result">🏁 Log my result</button>' : ''}<button class="btn ghost small" data-act="target-pick" data-uid="${h(t.uid)}">Details</button></div></section>`;
+}
+
 // 🎯 Races: two featured races per sport the athlete trains for (from the Egypt Fitness Calendar),
 // the rest folded under "Other competitions". Hybrid's two are the Alpha X / Hyrox prep cards.
 const TRACK_RACES = { run: '🏃 Running', tri: '🏊🚴🏃 Triathlon', hybrid: '🏃🏋️ Hybrid' };
@@ -855,7 +893,9 @@ function evRow(e, compact = false) {
   const d = EV.daysTo(e.date, now()), closed = e.closes && e.closes < today;
   const when = d === 0 ? 'today' : d === 1 ? 'tomorrow' : `in ${d} days`;
   const note = closed ? '🔒 registration closed' : d < 14 ? 'too soon to prepare for: great to join for fun or cheer' : e.closes ? `registration closes ${evDate(e.closes, today)}` : '';
-  return `<li class="ev ${closed ? 'closed' : ''} ${compact ? 'compact' : ''}"><div><strong>${h(e.name)}</strong><span class="hint">${evDate(e.date, today)} · ${when}${e.location ? ` · ${h(e.location.split(/,| — | - /)[0])}` : ''}${note ? ` · ${note}` : ''}</span></div>${e.url && !closed ? `<a class="btn small" href="${h(e.url)}" target="_blank" rel="noopener" data-act="race-site" data-k="calendar">Register ↗</a>` : ''}</li>`;
+  const isTarget = S.target?.uid === e.uid;
+  const prep = d >= 0 ? `<button class="btn ${isTarget ? 'primary' : 'ghost'} small" data-act="target-pick" data-uid="${h(e.uid)}">${isTarget ? '🎯 My race' : '🎯 Prepare'}</button>` : '';
+  return `<li class="ev ${closed ? 'closed' : ''} ${compact ? 'compact' : ''} ${isTarget ? 'target' : ''}"><div><strong>${h(e.name)}</strong><span class="hint">${evDate(e.date, today)} · ${when}${e.location ? ` · ${h(e.location.split(/,| — | - /)[0])}` : ''}${note ? ` · ${note}` : ''}</span></div><span class="ev-btns">${prep}${e.url && !closed ? `<a class="btn small" href="${h(e.url)}" target="_blank" rel="noopener" data-act="race-site" data-k="calendar">Register ↗</a>` : ''}</span></li>`;
 }
 function raceCard(style = '') {
   const tracks = (S.profile.tracks || ['run']).filter(t => TRACK_RACES[t]);
@@ -926,7 +966,7 @@ const credit = '<p class="byline credit">Developed by <button type="button" clas
   const toggle = `<div class="seg today-seg" role="tablist">${[['simple', '✨ Just next'], ['full', '📋 Full day']].map(([k, l]) =>
     `<button role="tab" class="${(simple ? 'simple' : 'full') === k ? 'on' : ''}" data-act="set-view" data-v="${k}">${l}</button>`).join('')}</div>`;
   if (simple) {
-    return `${toggle}<div class="simple">${banners()}${hero}${waitCard}${p.today}${gettingStarted()}${raceCard()}
+    return `${toggle}<div class="simple">${banners()}${hero}${targetCard()}${waitCard}${p.today}${gettingStarted()}${raceCard()}
       <button class="btn ghost wide" data-act="set-view" data-v="full">See my week and more ▾</button></div>${credit}`;
   }
   const boost = `<section class="card boost" ${o(3)}>
@@ -971,7 +1011,7 @@ const credit = '<p class="byline credit">Developed by <button type="button" clas
   // Two columns on wide screens; on phones the wrappers dissolve and `order` restores one column.
   return `${toggle}<div class="cols">
       <div class="col-main"><div ${o(1)}>${banners()}</div>${waitCard}${p.today}${p.week}${p.nextWeek}${levelSteps}</div>
-      <div class="col-side">${hero}${gettingStarted(o(4))}${raceCard(o(5))}${boost}${install}${p.tracks}${daily}${modes}</div>
+      <div class="col-side">${hero}${targetCard(o(3))}${gettingStarted(o(4))}${raceCard(o(5))}${boost}${install}${p.tracks}${daily}${modes}</div>
     </div>${credit}`;
 }
 
@@ -1685,6 +1725,28 @@ function painButtons() {
 }
 
 const MODALS = {
+  target(m) {
+    const e = raceFrom(m.uid);
+    if (!e) return '<p>That race is no longer in the calendar.</p><div class="row end"><button class="btn ghost" data-act="close">Close</button></div>';
+    const race = { ...e, distance: m.distance || e.distance, goal: m.goal || (S.target?.uid === e.uid ? S.target.goal : 'finish') };
+    const v = TG.verdict(S, race, now(), ui.events || []), isRun = !!TG.NEEDS[race.distance], mine = S.target?.uid === e.uid;
+    const distPick = !race.distance || isRun ? `<label class="field"><span>Distance you'd run</span>${select('tDist', [['', 'Pick one'], ...Object.entries(TG.NEEDS).map(([k, n]) => [k, n.label[0].toUpperCase() + n.label.slice(1)])], race.distance || '')}</label>` : '';
+    return `<form id="target-form" onsubmit="return false"><p class="eyebrow">🎯 Prepare for a race</p><h2>${h(e.name)}</h2>
+      <p class="hint">${dateLong(e.date)} · in ${TG.daysUntil(e.date, now())} days${e.location ? ` · ${h(e.location.split(/,| — | - /)[0])}` : ''}</p>
+      ${distPick}
+      ${isRun ? `<p class="q">Your goal</p>${radio('tGoal', [['finish', 'Finish it, feeling good'], ['time', 'Race it for a time']], race.goal)}` : ''}
+      <div class="verdict-box">${verdictHtml(v, race)}</div>
+      <p class="hint">How it works: your plan stays your levels. The app counts down, and in the last 4 weeks your Today page switches to race prep, a taper and race week.</p>
+      <div class="row end">${mine ? '<button type="button" class="btn ghost" data-act="target-clear">Stop preparing</button>' : ''}<button type="button" class="btn ghost" data-act="close">Close</button>
+        ${!mine && race.distance ? `<button type="button" class="btn primary" data-act="target-set" data-uid="${h(e.uid)}">🎯 Make this my race</button>` : mine ? '<button type="button" class="btn primary" data-act="target-set" data-uid="' + h(e.uid) + '">Save</button>' : ''}</div></form>`;
+  },
+  raceResult() {
+    const t = S.target;
+    return `<form id="result-form"><h2>🏁 ${h(t.name)}</h2><p class="why">💡 However it went, you showed up and did it. That's the hardest part.</p>
+      ${timeField('rTime', 'Your finish time', '', 'h:mm:ss, e.g. 2:05:30')}
+      <label class="field"><span>How did it feel? <em class="hint">optional</em></span><input type="text" name="rNote" maxlength="200" placeholder="e.g. went out too fast, strong finish"></label>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Later</button><button class="btn primary" type="submit">Save my result</button></div></form>`;
+  },
   // A logged session: when, how it went, the athlete's own words (and the exercises, if it's this level's).
   logInfo(m) {
     const x = S.history.find(e => e.ts === m.ts && (e.kind === 'session' || e.kind === 'attempt'));
@@ -2149,6 +2211,18 @@ const actions = {
   // Delete one of your messages (and the coach's reply to it): the coach no longer sees either.
   'msg-del'(el) { chatRemove(+el.dataset.m); toast('Message deleted. The coach won\'t see it.'); },
   'msg-edit'(el) { const i = +el.dataset.m; ui.chatDraft = ui.chat[i]?.content || ''; chatRemove(i); },
+  'target-pick'(el) { ui.modal = { type: 'target', uid: el.dataset.uid }; renderModal(); },
+  'target-set'(el) {
+    const f = document.getElementById('target-form'), e = raceFrom(el.dataset.uid);
+    if (!e) return;
+    const distance = f?.tDist?.value || e.distance, goal = f?.querySelector('[name=tGoal]:checked')?.value || 'finish';
+    if (!distance) return toast('Pick the distance first.');
+    S.target = { uid: e.uid, name: e.name, date: e.date, distance, track: e.track, url: e.url, location: e.location, goal, setAt: now() };
+    ui.modal = null; commit(S);
+    toast(`🎯 ${e.name} is your race. Countdown on Today!`);
+  },
+  'target-clear'() { S.target = null; ui.modal = null; commit(S); toast('Race cleared. Pick another whenever you like.'); },
+  'target-result'() { ui.modal = { type: 'raceResult' }; renderModal(); },
   'log-info'(el) { ui.modal = { type: 'logInfo', ts: +el.dataset.ts }; renderModal(); },
   async videos(el) {
     const li = el.closest('.ex'), ex = el.dataset.ex, q = EXERCISES[ex]?.search || EXERCISES[ex]?.name;
@@ -2510,6 +2584,10 @@ document.addEventListener('click', e => {
 
 document.addEventListener('change', async e => {
   const el = e.target;
+  if (el.closest('#target-form') && (el.name === 'tDist' || el.name === 'tGoal') && ui.modal?.type === 'target') {
+    if (el.name === 'tDist') ui.modal.distance = el.value || null; else ui.modal.goal = el.value;
+    renderModal(); return;
+  }
   if (el.closest('#step-form') && el.name === 'when') {
     const f = el.form;
     const w = f.querySelector('[name=when]:checked')?.value || 'today';
@@ -2584,6 +2662,18 @@ document.addEventListener('submit', e => {
     commit(S);
     toast(`Welcome to ${HYB.hybWorld(S).emoji} ${HYB.hybWorld(S).name}!`);
     if (ui.pendingRace) { ui.modal = { type: 'race', k: ui.pendingRace }; ui.pendingRace = null; renderModal(); }
+    return;
+  }
+  if (f.id === 'result-form') {
+    const tm = parseTime(f.rTime.value);
+    if (!tm) return toast('Use h:mm:ss or mm:ss, for example 2:05:30 or 27:40.');
+    const t = S.target, key = { '5k': 'run5k', '10k': 'run10k', half: 'half', marathon: 'marathon' }[t.distance];
+    t.result = { time: tm, note: f.rNote.value.trim().slice(0, 200), ts: now() };
+    if (key && !(S.bests?.[key] > 0 && S.bests[key] <= tm)) S.bests = { ...(S.bests || {}), [key]: tm };
+    if (/hyrox/i.test(t.name) && !(S.bests?.hyrox > 0 && S.bests.hyrox <= tm)) S.bests = { ...(S.bests || {}), hyrox: tm };
+    S.history.push({ ts: now(), kind: 'event', title: `🏁 ${t.name}: ${formatTime(tm)}`, xp: 0 });
+    ui.modal = null; commit(S); confetti(); sfx.fanfare();
+    toast(`🏁 ${formatTime(tm)} at ${t.name}. Huge! Rest up this week.`);
     return;
   }
   if (f.id === 'dream-form') {
@@ -2713,7 +2803,7 @@ window.addEventListener('hashchange', () => {
   if (!ui.modal) render();
 });
 
-$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help', 'prepStage', 'stepInfo', 'logInfo'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help', 'prepStage', 'stepInfo', 'logInfo', 'target', 'raceResult'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
 
 // ---------- installable app ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;

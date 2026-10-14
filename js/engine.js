@@ -908,6 +908,10 @@ export function coachContext(s, now) {
     lines.push(`Hybrid: world "${HYB.hybWorld(s).name}"; strength ${HYB.strengthStage(s).name}, engine ${HYB.engineStage(s).name}, run = Run Track level ${s.run.level}. Current block: ${b.type === 'deload' ? 'deload week' : `${b.type} block (building ${b.type}, maintaining ${b.type === 'engine' ? 'strength' : 'engine'})`}. ${lim ? `Limiter: ${lim.lane}.` : 'All lanes ready: race gate open.'} Gym: ${s.hybrid.gym}.`);
   }
   if (s.answers?.hybridRaces?.length) lines.push(`Hybrid races finished: ${s.answers.hybridRaces.map(r => [r.event, r.division || r.category, r.format].filter(Boolean).join(' ')).join('; ')}.`);
+  if (s.target) {
+    const d = Math.floor((new Date(`${s.target.date}T12:00:00`) - new Date(new Date(now).toDateString())) / DAY);
+    lines.push(`TARGET RACE: ${s.target.name} (${s.target.distance}, goal: ${s.target.goal}) on ${s.target.date}, ${d >= 0 ? `in ${d} days` : `${-d} days ago`}${s.target.result ? `; finished in ${Math.floor(s.target.result.time)} min` : ''}. Phases: build > race prep (last 4 weeks) > taper (last 2) > race week > recovery. Be honest about readiness but always encouraging.`);
+  }
   if (s.hybrid?.race?.event) lines.push(`Preparing for: ${s.hybrid.race.event === 'alphax' ? 'Alpha X' : 'Hyrox'} ${s.hybrid.race.division} (simulations follow that race's format).`);
   if (s.bests) {
     const t = m => (m ? `${Math.floor(m / 60) ? `${Math.floor(m / 60)}:${String(Math.floor(m % 60)).padStart(2, '0')}` : Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, '0')}` : null);
