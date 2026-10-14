@@ -777,3 +777,14 @@ header.top { gap: 10px; }
 .vid-rate .btn.on { border-color: var(--brand); background: var(--brand-soft); }
 .vid-suggest { margin-top: 8px; }
 .vid-suggest summary { cursor: pointer; }
+.race-sec { border-top: 1px solid var(--line); padding-top: 10px; }
+.race-sec:first-of-type { border-top: 0; padding-top: 0; }
+.race-sec .q { margin: 4px 0 8px; font-weight: 800; }
+.ev-list { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 8px; }
+.ev { display: flex; align-items: center; gap: 10px; justify-content: space-between; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); }
+.ev div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ev strong { font-size: 14px; }
+.ev.expected { border-style: dashed; }
+.ev.closed { opacity: .7; }
+.ev .btn { flex: none; }
+.ev-soon { margin-top: 4px; }

@@ -25,6 +25,7 @@ import * as STATS from './stats.js';
 import { NORMS, RHO } from './data/norms.js';
 import { WORKER_URL } from './config.js';
 import { RACES } from './data/races.js';
+import * as EV from './events.js';
 import { FEATURES, GROUPS, FEATURE_BRIEF } from './data/features.js';
 
 // ---------- state ----------
@@ -827,7 +828,7 @@ function raceNote(st) {
   return `<li class="ex race-note race-${race.event}"><div><strong>${r.icon} Your race: ${h(r.name)} ${h(div)}</strong></div>
     <p class="hint">Do the race parts in its format: ${h(r.format(race.division))}. Stations: ${h(r.stations.join(', '))}. Half simulation = half the rounds. Use your division's official weights.</p></li>`;
 }
-function raceCard(style = '') {
+function hybridPrep() {
   const cur = S.hybrid?.race, has = HYB.hasHybrid(S);
   countOnce('view:race-card');
   const one = (k, big) => {
@@ -840,7 +841,31 @@ function raceCard(style = '') {
           : `<button class="btn ${big ? 'primary' : ''} small" data-act="race-start" data-k="${k}">${has ? `Prepare for ${h(r.name)}` : `Start ${h(r.name)} prep`}</button><button class="btn ghost small" data-act="race-info" data-k="${k}">What is it?</button>`}</div>
       </div>`;
   };
-  return `<section class="card race-card" ${style}><p class="eyebrow">🎯 Race prep</p>${one('alphax', !cur || cur.event === 'alphax')}${one('hyrox', cur?.event === 'hyrox')}</section>`;
+  return `${one('alphax', !cur || cur.event === 'alphax')}${one('hyrox', cur?.event === 'hyrox')}`;
+}
+
+// 🎯 Races: real events for the sports this athlete trains for (from the Egypt Fitness Calendar),
+// plus "Prepare for Alpha X / Hyrox" for Hybrid athletes only.
+const TRACK_RACES = { run: '🏃 Running', tri: '🏊🚴🏃 Triathlon', hybrid: '🏃🏋️ Hybrid' };
+function raceCard(style = '') {
+  const tracks = (S.profile.tracks || ['run']).filter(t => TRACK_RACES[t]);
+  if (ui.events == null && !ui.eventsLoading) { ui.eventsLoading = true; EV.loadEvents().then(ev => { ui.events = ev; ui.eventsLoading = false; if (ui.tab === 'today' || ui.tab === 'map') render(); }); }
+  const today = E.dayKey(now()), lists = ui.events ? EV.upcoming(ui.events, tracks, today) : {};
+  const fmt = d => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: d.slice(0, 4) === today.slice(0, 4) ? undefined : 'numeric' });
+  const row = e => {
+    if (e.expected) return `<li class="ev expected"><div><strong>${h(e.name)}</strong><span class="hint">Next edition expected ~${new Date(`${e.expected}-15T12:00:00`).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })} · date not announced yet</span></div>${e.url ? `<a class="btn ghost small" href="${h(e.url)}" target="_blank" rel="noopener" data-act="race-site" data-k="calendar">Info ↗</a>` : ''}</li>`;
+    const d = EV.daysTo(e.date, now()), closed = e.closes && e.closes < today;
+    const when = d === 0 ? 'today' : d === 1 ? 'tomorrow' : `in ${d} days`;
+    const note = closed ? '🔒 registration closed' : e.closes ? `registration closes ${fmt(e.closes)}` : '';
+    return `<li class="ev ${closed ? 'closed' : ''}"><div><strong>${EV.isMajor(e) ? '⭐ ' : ''}${h(e.name)}</strong><span class="hint">${fmt(e.date)} · ${when}${e.location ? ` · ${h(e.location.split(/,| — | - /)[0])}` : ''}${note ? ` · ${note}` : ''}</span></div>${e.url && !closed ? `<a class="btn small" href="${h(e.url)}" target="_blank" rel="noopener" data-act="race-site" data-k="calendar">Register ↗</a>` : ''}</li>`;
+  };
+  const sec = tr => `<div class="race-sec"><p class="q">${TRACK_RACES[tr]}</p>${tr === 'hybrid' ? hybridPrep() : ''}
+      ${ui.events == null ? '<p class="hint">Loading races…</p>' : (() => { const L = lists[tr] || { soon: [], main: [] };
+        return `${L.main.length ? `<ul class="ev-list">${L.main.map(row).join('')}</ul>` : '<p class="hint">No races in the calendar yet for this sport.</p>'}
+          ${L.soon.length ? `<p class="hint ev-soon">This week and next: ${L.soon.map(e => `${h(e.name)} (${fmt(e.date)})`).join(' · ')}. Too soon to prepare for, but great to join for fun or cheer.</p>` : ''}
+          ${L.more ? `<p class="hint">+${L.more} more in the <a href="${CALENDAR_URL}" target="_blank" rel="noopener" data-act="race-site" data-k="calendar">calendar</a>.</p>` : ''}`; })()}</div>`;
+  return `<section class="card race-card" ${style}><p class="eyebrow">🎯 Races in Egypt</p>${tracks.map(sec).join('')}
+      <p class="hint">From the <a href="${CALENDAR_URL}" target="_blank" rel="noopener" data-act="race-site" data-k="calendar">Egypt Fitness Calendar</a>: past races drop off by themselves.</p></section>`;
 }
 
 // Anonymous counters (no ID, no personal data) that show race organisers how many athletes train
