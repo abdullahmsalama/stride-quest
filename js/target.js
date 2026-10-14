@@ -4,6 +4,7 @@
 import { RUN_LEVELS } from './data/tracks.js';
 import { TRI_WORLDS } from './data/tri.js';
 import { HYBRID_WORLDS } from './data/hybrid.js';
+import { bestFor } from './background.js';
 
 const DAY = 864e5;
 
@@ -17,6 +18,8 @@ export const NEEDS = {
   marathon: { finish: 12, time: 12, runwalk: 10, km: 42.2, label: 'marathon' },
 };
 // Shorter options to suggest, longest first.
+// Taper before the race, by distance (weeks): a few easy days for a 5K, two weeks for a marathon.
+export const TAPER = { '5k': 0.5, '10k': 1, half: 1.5, marathon: 2 };
 const SHORTER = { marathon: ['half', '10k', '5k'], half: ['10k', '5k'], '10k': ['5k'], '5k': [] };
 
 // Weeks to work through a level: its sessions spread over the training days, but never faster than
@@ -44,16 +47,36 @@ export const historyAt = level => {
 export function weeksToLevel(s, goal) {
   return breakdown(s, goal).weeks;
 }
+// Everything that moves the date, in one place:
+//   - levels: sessions spread over the training days, never faster than the body adapts;
+//   - running history the distance needs, minus credit for having run seriously before (the body
+//     re-adapts faster: more for higher levels and more years, less the longer ago it was);
+//   - an easier (deload) week about every 4th week: the level path takes ~15% longer;
+//   - a buffer for sickness and missed days: ~10%, at least a week, on anything over 6 weeks.
+// `best` is the optimistic case (no deloads, no buffer); `weeks` is the realistic one used for verdicts.
+const RANK = { rec: 1, club: 2, comp: 3, subelite: 4, elite: 5 };
+const AGO = { now: 1, lt1: 1, '1to3': 0.8, '3to10': 0.6, '10plus': 0.4 };
+export function backgroundCredit(s) {
+  const b = bestFor(s.background || [], 'run');
+  if (!b) return 0;
+  const lvl = RANK[b.level] || 0, yrs = +b.years || 1;
+  const base = lvl >= 3 ? 0.6 : lvl === 2 ? 0.45 : 0.25; // share of the history requirement already "banked"
+  return Math.min(0.75, base * (yrs >= 6 ? 1.15 : yrs >= 3 ? 1 : 0.8) * (AGO[b.since] ?? 0.6));
+}
 export function breakdown(s, goal) {
   const days = Math.max(2, s.profile?.days?.length || s.profile?.daysPerWeek || 3);
   const cur = s.run?.level || 1;
-  if (cur >= goal) return { weeks: 0, path: 0, history: 0, days, cur, goal };
+  const credit = backgroundCredit(s);
+  if (cur >= goal) return { weeks: 0, best: 0, path: 0, history: 0, days, cur, goal, credit };
   const left = RUN_LEVELS[cur - 1].steps.filter((st, i) => st.type !== 'rest' && !s.run.done?.[i]).length;
   let path = levelWeeks(cur, days, left);
   for (let n = cur + 1; n < goal; n++) path += levelWeeks(n, days);
-  const history = historyAt(goal) - historyAt(cur);
-  const weeks = Math.ceil(Math.max(path, history) * 2) / 2; // half weeks
-  return { weeks, path: Math.round(path), history: Math.round(history), days, cur, goal, limit: history > path ? 'history' : 'path' };
+  const history = (historyAt(goal) - historyAt(cur)) * (1 - credit);
+  const best = Math.max(path, history);
+  const withDeload = Math.max(path * 1.15, history);
+  const buffer = withDeload > 6 ? Math.max(1, withDeload * 0.1) : 0;
+  const half = w => Math.ceil(w * 2) / 2;
+  return { weeks: half(withDeload + buffer), best: half(best), path: Math.round(path), history: Math.round(history), deload: Math.round(withDeload - best), buffer: Math.round(buffer), days, cur, goal, credit, limit: history > path * 1.15 ? 'history' : 'path' };
 }
 
 // Finish-time range: from a real best (Riegel's formula, exponent 1.06) when there is one, else a
@@ -98,24 +121,25 @@ export function verdict(s, race, now, events = []) {
   const goal = race.goal === 'time' ? n.time : n.finish;
   const bdFinish = breakdown(s, n.finish);
   const timeExtra = race.goal === 'time' ? Math.max(0, breakdown(s, n.time).path - bdFinish.path) : 0;
-  const bd = { ...bdFinish, goal, path: bdFinish.path + timeExtra, weeks: Math.ceil(Math.max(bdFinish.weeks, bdFinish.path + timeExtra) * 2) / 2 };
+  const bd = { ...bdFinish, goal, path: bdFinish.path + timeExtra, weeks: Math.ceil(Math.max(bdFinish.weeks, (bdFinish.path + timeExtra) * 1.25) * 2) / 2, best: Math.ceil(Math.max(bdFinish.best, bdFinish.path + timeExtra) * 2) / 2 };
   const wFull = bd.weeks, wWalk = weeksToLevel(s, n.runwalk);
-  const canRunIt = bdFinish.weeks + 1 <= weeksLeft; // ready to run the distance, if not to race it
+  const canRunIt = bdFinish.weeks + (TAPER[race.distance] || 1) <= weeksLeft; // ready to run the distance, if not to race it
   const readyOn = ymdPlus(new Date(now).toISOString().slice(0, 10), Math.round(wFull * 7));
   const time = race.goal === 'time' ? judgeTime(race.distance, race.goalTime, { run5k: best5k, run10k: s.bests?.run10k }) : null;
   const base = { days, weeksLeft, need: wFull, readyOn, goalLevel: goal, bd, time };
-  if (wFull + 1 <= weeksLeft) return { ...base, kind: 'ok', mode: race.goal === 'time' ? 'time' : 'finish', range: finishRange(race.distance, best5k, 'finish') };
+  const taper = TAPER[race.distance] || 1;
+  if (wFull + taper <= weeksLeft) return { ...base, kind: 'ok', mode: race.goal === 'time' ? 'time' : 'finish', range: finishRange(race.distance, best5k, 'finish') };
   if (wFull <= weeksLeft) return { ...base, kind: 'tight', mode: 'finish', why: 'no-taper', range: finishRange(race.distance, best5k, 'finish') };
   if (race.goal === 'time' && canRunIt) return { ...base, kind: 'tight', mode: 'finish', why: 'time-later', range: finishRange(race.distance, best5k, 'finish') };
-  if (wWalk + 1 <= weeksLeft && (s.run?.level || 1) < n.finish) return { ...base, kind: 'tight', mode: 'runwalk', why: 'slower', range: finishRange(race.distance, best5k, 'runwalk') };
+  if (wWalk + 0.5 <= weeksLeft && (s.run?.level || 1) < n.finish) return { ...base, kind: 'tight', mode: 'runwalk', why: 'slower', range: finishRange(race.distance, best5k, 'runwalk') };
   // Not by this date: the longest shorter distance that fits, and a later race of this distance.
-  const shorter = SHORTER[race.distance].find(d => weeksToLevel(s, NEEDS[d].finish) + 1 <= weeksLeft)
-    || SHORTER[race.distance].find(d => weeksToLevel(s, NEEDS[d].runwalk) + 1 <= weeksLeft);
+  const fits = (d, lvl) => weeksToLevel(s, lvl) + (TAPER[d] || 1) <= weeksLeft;
+  const shorter = SHORTER[race.distance].find(d => fits(d, NEEDS[d].finish)) || SHORTER[race.distance].find(d => fits(d, NEEDS[d].runwalk));
   const later = events.filter(e => e.distance === race.distance && e.date >= ymdPlus(readyOn, 7) && !e.expected)
     .sort((a, b) => a.date.localeCompare(b.date))[0] || null;
   // A 5K can always be walked (with a few jogs) by someone without pain: a real way to take part.
   const walk = !shorter && (race.distance === '5k' || SHORTER[race.distance].includes('5k')) && !s.rebuild?.active ? '5k' : null;
-  return { ...base, kind: 'no', shorter: shorter || walk, shorterMode: shorter ? (weeksToLevel(s, NEEDS[shorter].finish) + 1 <= weeksLeft ? 'finish' : 'runwalk') : walk ? 'walk' : null, later };
+  return { ...base, kind: 'no', shorter: shorter || walk, shorterMode: shorter ? (fits(shorter, NEEDS[shorter].finish) ? 'finish' : 'runwalk') : walk ? 'walk' : null, later };
 }
 
 // Triathlon and Hybrid: worlds on their map instead of run levels (about six weeks a world).
@@ -142,4 +166,23 @@ export function phase(race, now) {
   if (d <= 14) return { id: 'taper', d, title: 'Taper', focus: ['Cut your volume by about a third', 'Keep one short session at race pace', 'Your long run is shorter this week'] };
   if (d <= 28) return { id: 'peak', d, title: 'Race prep', focus: ['One session at your race pace', 'A long run close to race effort', 'Practise race-day food and kit'] };
   return { id: 'build', d, title: 'Build', focus: ['Follow your level as usual: it builds you towards the race', 'Consistency beats big days'] };
+}
+
+// ---------- starting too hot ----------
+// Jumping straight to many more training days than you've been doing is a classic injury cause:
+// add about one day a week every 3-4 weeks. Returns a warning or null.
+export function tooManyDays(recentPerWeek, chosenDays, level) {
+  if (recentPerWeek == null || !(chosenDays > 0)) return null;
+  const jump = chosenDays - recentPerWeek;
+  if (jump < 2 || (level >= 9 && jump < 3)) return null;
+  const start = Math.max(2, Math.min(chosenDays, recentPerWeek + 1));
+  return { from: recentPerWeek, to: chosenDays, start };
+}
+// This week vs the athlete's normal (the 3 weeks before): more than ~1.5x is a spike (acute:chronic load).
+export function loadSpike(history, now) {
+  const W = 7 * DAY, sessions = h => h.kind === 'session' || h.kind === 'attempt';
+  const week = history.filter(h => sessions(h) && h.ts > now - W).length;
+  const before = history.filter(h => sessions(h) && h.ts <= now - W && h.ts > now - 4 * W).length / 3;
+  if (before < 1.5 || week < 3) return null; // too little history to judge, or a light week
+  return week >= before * 1.5 + 1 ? { week, usual: Math.round(before * 10) / 10 } : null;
 }

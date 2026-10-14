@@ -8,11 +8,14 @@ const beginner = () => { const { state } = placeFromAnswers(newState(T), { conti
 const ymd = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const inWeeks = w => ymd(T + w * 7 * 864e5);
 
-test('competition: from zero to a continuous 5K takes about 9 weeks at 3 runs a week (Couch to 5K)', () => {
+test('competition: from zero to a continuous 5K takes about 9 weeks at 3 runs a week (Couch to 5K)', async () => {
   const s = beginner();
   assert.equal(s.run.level, 1);
-  const w = weeksToLevel(s, 4);
-  assert.ok(w >= 9 && w <= 11, String(w));
+  const { breakdown } = await import('../js/target.js');
+  const b = breakdown(s, 4);
+  assert.ok(b.best >= 9 && b.best <= 10, `best ${b.best}`);           // Couch to 5K: 9 weeks
+  assert.ok(b.weeks >= 10 && b.weeks <= 12.5, `realistic ${b.weeks}`); // + an easier week now and then, + a little buffer
+  const w = b.weeks;
   assert.ok(weeksToLevel({ ...s, profile: { ...s.profile, days: [0, 3] } }, 4) > w, 'fewer training days take longer');
   assert.equal(verdict(s, { distance: '5k', date: inWeeks(12) }, T).kind, 'ok');
 });
@@ -73,4 +76,21 @@ test('competition: an experienced runner going for a time is never told to run-w
   const v = verdict(state, { distance: 'half', date: inWeeks(8), goal: 'time', goalTime: 105 }, T);
   assert.notEqual(v.mode, 'runwalk');
   assert.ok(['ok', 'tight'].includes(v.kind), v.kind);
+});
+
+test('competition: running seriously before (even years ago) shortens the long build-up', async () => {
+  const { breakdown } = await import('../js/target.js');
+  const fresh = beginner(), former = { ...beginner(), background: [{ sport: 'running', level: 'club', years: '6', since: '1to3' }] };
+  assert.ok(breakdown(former, 12).weeks < breakdown(fresh, 12).weeks - 10);
+});
+
+test('competition: warnings for starting too hot', async () => {
+  const { tooManyDays, loadSpike } = await import('../js/target.js');
+  assert.deepEqual(tooManyDays(1, 4, 2), { from: 1, to: 4, start: 2 });
+  assert.equal(tooManyDays(3, 4, 5), null);
+  const day = 864e5, h = [];
+  for (let w = 1; w < 4; w++) for (let i = 0; i < 3; i++) h.push({ kind: 'session', ts: T - (w * 7 + i) * day });
+  for (let i = 0; i < 6; i++) h.push({ kind: 'session', ts: T - i * day });
+  assert.ok(loadSpike(h, T));
+  assert.equal(loadSpike(h.slice(0, 12), T), null);
 });

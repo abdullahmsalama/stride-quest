@@ -470,6 +470,8 @@ function renderOnboarding() {
         <p>You qualify for Level ${preview.qualifying}. You start one level below it so the first wins come quickly. Pass the gates to climb back up fast.</p>
         ${aiStatusLine()}
         ${checkBox()}
+        ${(() => { const a = normalize(ui.ob.a), hot = TG.tooManyDays(a.runsPerWeek, (ui.ob.a.days || K.defaultDays(3)).length, preview.placed);
+          return hot ? `<div class="banner warn">⚠️ <strong>Easy does it.</strong> You run about ${hot.from} time${hot.from === 1 ? '' : 's'} a week now and picked ${hot.to} training days. Start with <strong>${hot.start}</strong> and add a day every 3–4 weeks: going up gradually is how you stay injury-free. <button type="button" class="linkish" data-act="fix-field" data-field="d_0">Change days</button></div>` : ''; })()}
         ${dreamLine({ ...normalize(ui.ob.a), ...(ui.ob.a.dreamAI?.accepted ? { target: targetFromAI(ui.ob.a.dreamAI) || undefined, dreamDate: ui.ob.a.dreamDate || ui.ob.a.dreamAI.date || '' } : {}) }, preview.placed)}
         ${ui.ob.a.dreamAI ? `<div class="ai-read ${ui.ob.a.dreamAI.accepted ? '' : 'off'}"><span>🤖 Here's what I understood: <strong>${h(ui.ob.a.dreamAI.summary || '')}</strong></span>
           <div class="row">${ui.ob.a.dreamAI.accepted ? '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="0">Not quite</button>' : '<button type="button" class="btn ghost small" data-act="dream-ai" data-v="1">Use this reading</button>'}</div>
@@ -601,6 +603,12 @@ function banners() {
   if (S.refresher) out.push(S.refresher.reason === 'illness'
     ? `<div class="banner info"><strong>💛 Recovery plan.</strong> Easy health checks first, then you're back on your map${S.run.reclaim ? ` to reclaim Level ${S.run.reclaim}` : ''}. Feeling great early? The Prove It run fast-tracks you.</div>`
     : `<div class="banner info"><strong>Refresher course.</strong> Welcome back! Start with the Prove It run: hit it and you skip the rest.</div>`);
+  // Starting too hot: many more days than you've been doing, or a sudden spike in training.
+  const hot = TG.tooManyDays(S.answers?.runsPerWeek ?? (S.answers?.runsLast4w != null ? Math.round(S.answers.runsLast4w / 4) : null), S.profile.days?.length, S.run.level);
+  if (hot && now() - (S.placedAt || 0) < 28 * E.DAY && !ui.dismissed.has('hot')) out.push(`<div class="banner warn">⚠️ <strong>Easy does it.</strong> You've been running about ${hot.from} time${hot.from === 1 ? '' : 's'} a week and picked ${hot.to} training days. Jumping straight up is a classic way to get hurt. Start with <strong>${hot.start} days</strong> and add one more every 3–4 weeks: you'll get there faster by staying injury-free.
+      <div class="row wrap"><button class="btn small" data-act="edit-days">Change training days</button><button class="btn ghost small" data-act="dismiss-banner" data-key="hot">I know, keep ${hot.to}</button></div></div>`);
+  const spike = TG.loadSpike(S.history, now());
+  if (spike && !ui.dismissed.has('spike')) out.push(`<div class="banner warn">⚠️ <strong>Big week!</strong> ${spike.week} sessions in the last 7 days, versus your usual ${spike.usual}. Sudden jumps are when most injuries happen. Make the next day or two easy or rest: the gains come when you recover. <button class="linkish" data-act="dismiss-banner" data-key="spike">OK</button></div>`);
   const blockedAt = E.prepBlocksRun(S);
   if (blockedAt != null) out.push(`<div class="banner info"><strong>Level ${S.run.level} cleared! 🎉</strong> Level ${S.run.level + 1} also needs body prep <strong>P${blockedAt}</strong>, and you're at P${S.prep.level}${blockedAt - S.prep.level > 1 ? ` (${blockedAt - S.prep.level} stages to go)` : ''}. Your week now brings Prep Track sessions; Level ${S.run.level + 1} opens as soon as you reach P${blockedAt}.
       <div class="row"><button class="btn small" data-act="prep-stage" data-n="${S.prep.level}">See my Prep steps</button></div></div>`);
@@ -855,10 +863,18 @@ const monthYear = ymd => new Date(`${ymd}T12:00:00`).toLocaleDateString(undefine
 const pace = m => `${formatTime(m)} /km`;
 // "How this was worked out", in plain words.
 function howWorked(v, race) {
-  const b = v.bd;
-  if (!b || !TG.NEEDS[race.distance]) return '';
-  if (!b.weeks) return `<p class="hint">How this was worked out: you're already at Level ${b.cur}, where a ${TG.NEEDS[race.distance].label} is realistic. The rest is race prep and a taper.</p>`;
-  return `<details class="how-worked"><summary class="hint">How this was worked out</summary><p class="hint">You're at Level ${b.cur} and need Level ${b.goal} for this. Training ${b.days} days a week, the levels take about ${b.path} weeks. But a ${TG.NEEDS[race.distance].label} also needs about ${b.history} weeks of steady running behind you (tendons, joints and bones adapt slower than fitness)${b.limit === 'history' ? ', so that is what sets the date' : ''}. Plus a week to taper. Train fewer days, miss weeks or get ill, and it moves later; that's normal.</p></details>`;
+  const b = v.bd, n = TG.NEEDS[race.distance];
+  if (!b || !n) return '';
+  if (!b.weeks) return `<p class="hint">How this was worked out: you're already at Level ${b.cur}, where a ${n.label} is realistic. The rest is race prep and a taper.</p>`;
+  const wk = x => `${x} week${x === 1 ? '' : 's'}`;
+  return `<details class="how-worked"><summary class="hint">How this was worked out</summary><ul class="hint">
+      <li>📈 You're at Level ${b.cur} and need Level ${b.goal}. Training <strong>${b.days} days a week</strong>, that's about ${wk(b.path)} of sessions.</li>
+      <li>🦴 A ${n.label} also needs about ${wk(b.history)} of steady running behind you: tendons, joints and bones adapt slower than fitness.${b.credit ? ` <strong>Your running background counts</strong>: ${Math.round(b.credit * 100)}% of that is already banked.` : ''}${b.limit === 'history' ? ' This is what sets the date.' : ''}</li>
+      ${b.deload ? `<li>😮‍💨 An easier week about every 4th week, to absorb the training: about ${wk(b.deload)}.</li>` : ''}
+      ${b.buffer ? `<li>🤒 A buffer for a cold, travel or a missed week: about ${wk(b.buffer)}.</li>` : ''}
+      <li>🏁 A taper before the race: about ${TG.TAPER[race.distance]} week${TG.TAPER[race.distance] === 1 ? '' : 's'}.</li>
+      <li>So: <strong>best case about ${wk(Math.round(b.best))}, realistic about ${wk(Math.round(b.weeks))}</strong>. Train more consistently and it comes sooner; miss weeks and it moves later. That's normal.</li>
+    </ul></details>`;
 }
 // Predictions are rough: whole minutes over an hour, nearest 15 s below.
 const approx = m => (m >= 60 ? formatTime(Math.round(m)).replace(/:00$/, '') : formatTime(Math.round(m * 4) / 4));
@@ -880,7 +896,7 @@ function verdictHtml(v, race) {
   if (v.other) return v.kind === 'ok' ? `<p class="verdict ok">✅ <strong>Realistic.</strong> Your map gets you to race level in about ${weeks(v.need)}, with ${weeks(v.weeksLeft - v.need)} to spare.</p>`
     : v.kind === 'tight' ? `<p class="verdict tight">⚠️ <strong>Tight, but possible as a finish.</strong> You need about ${weeks(v.need)} and have ${weeks(v.weeksLeft)}. Aim to finish strong, not to race.</p>`
     : `<p class="verdict no">❌ <strong>Not yet.</strong> You need about ${weeks(v.need)} on your map and have ${weeks(v.weeksLeft)}. That's a "not yet", not a "never": a shorter race now, or this one's next edition, keeps you on the way.</p>`;
-  if (v.kind === 'ok') return `<p class="verdict ok">✅ <strong>Realistic.</strong> ${v.need ? `At your pace you're race-ready around ${monthYear(v.readyOn)} (about ${weeks(v.need)})` : 'You are race-ready already'}, with time to taper.${v.range && race.goal !== 'time' ? ` Expect about <strong>${fmtRange(v.range)}</strong>.` : ''}</p>${howWorked(v, race)}`;
+  if (v.kind === 'ok') return `<p class="verdict ok">✅ <strong>Realistic.</strong> ${v.need ? `At your pace you're race-ready around ${monthYear(v.readyOn)} (${v.bd?.best && v.bd.best < v.need ? `${Math.round(v.bd.best)}–${Math.round(v.need)} weeks` : `about ${weeks(v.need)}`})` : 'You are race-ready already'}, with time to taper.${v.range && race.goal !== 'time' ? ` Expect about <strong>${fmtRange(v.range)}</strong>.` : ''}</p>${howWorked(v, race)}`;
   if (v.kind === 'tight' && v.mode === 'runwalk') return `<p class="verdict tight">⚠️ <strong>Doable at a much slower pace: run-walk it</strong> (for example 1 minute walking every 3–4 minutes). Expect about <strong>${fmtRange(v.range)}</strong>. That's a real finish, and a great first race.</p>${howWorked(v, race)}`;
   if (v.kind === 'tight' && v.why === 'time-later') return `<p class="verdict tight">⚠️ <strong>You'll be ready to run it strong, but racing it all-out is a little early.</strong> Your level for a fast ${TG.NEEDS[race.distance].label} comes around ${monthYear(v.readyOn)}. Run it well, treat a fast time as a bonus, and go all-out at the next one.${v.range ? ` Expect about <strong>${fmtRange(v.range)}</strong>.` : ''}</p>${howWorked(v, race)}`;
   if (v.kind === 'tight') return `<p class="verdict tight">⚠️ <strong>Tight.</strong> You'll just about get there, without a full taper. Go out easy and aim to finish comfortably, not to race.${v.range ? ` Expect about <strong>${fmtRange(v.range)}</strong>.` : ''}</p>${howWorked(v, race)}`;
@@ -2237,6 +2253,7 @@ const actions = {
   // Delete one of your messages (and the coach's reply to it): the coach no longer sees either.
   'msg-del'(el) { chatRemove(+el.dataset.m); toast('Message deleted. The coach won\'t see it.'); },
   'msg-edit'(el) { const i = +el.dataset.m; ui.chatDraft = ui.chat[i]?.content || ''; chatRemove(i); },
+  'dismiss-banner'(el) { ui.dismissed.add(el.dataset.key); render(); },
   'target-pick'(el) { ui.modal = { type: 'target', uid: el.dataset.uid }; renderModal(); },
   'target-set'(el) {
     const f = document.getElementById('target-form'), e = raceFrom(el.dataset.uid);
