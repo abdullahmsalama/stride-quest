@@ -76,6 +76,8 @@ export const FEATURES = [
     show: { tab: 'map', sel: '.fog-summit' }, quest: { label: 'Set your dream', done: s => !!(s.profile?.dream?.text || s.profile?.dream?.event) } },
   { id: 'pain', group: 'me', title: 'Pain and the Rebuild track', text: 'Report pain when you log a session. The app moves you to the Rebuild track, locks impact work and tells you why. Once you are pain-free, you come back near your old level.',
     show: { tab: 'today', sel: '.card.next' } },
+  { id: 'strava', group: 'me', title: 'Connect Strava', text: 'Connect once in Me and your workouts come in by themselves from any watch or app that syncs to Strava (Garmin, Apple Watch, COROS, Runna…). A run can count as your planned session with one tap; other workouts count in your week and Nutrition. Read-only, and you can disconnect any time.',
+    show: { tab: 'me', sel: '.strava-card' } },
   { id: 'data', group: 'me', title: 'Your data', text: 'Everything is saved in this browser. Export it to move to another phone, or retake the assessment (with your previous answers in one tap).',
     show: { tab: 'me', sel: '[data-act=export]' } },
 ];

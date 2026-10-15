@@ -852,3 +852,10 @@ header.top { gap: 10px; }
 .carb-week em { font-style: normal; color: var(--ink-2); }
 @media (max-width: 350px) { .tabs button { font-size: 9.5px; letter-spacing: -.02em; } .tabs button span { font-size: 17px; } }
 .act-row { margin-top: 10px; } .ot-detail { margin: -2px 0 10px 30px; padding: 10px; border-left: 3px solid var(--line); } .ot-list { margin: 4px 0 10px; padding-left: 18px; font-size: 14px; }
+/* Strava (brand: "Connect with Strava" in Strava orange, "Powered by Strava") */
+.strava-btn { background: #fc4c02; color: #fff; border: 0; border-radius: 8px; padding: 10px 16px; font: 700 14px var(--body); cursor: pointer; }
+.strava-btn:hover { background: #e34402; }
+.strava-card .powered { margin: 10px 0 0; font: 700 11px var(--body); letter-spacing: .04em; text-transform: uppercase; color: #fc4c02; }
+.strava-match { margin-top: 12px; padding: 10px 12px; border-radius: 12px; border-left: 4px solid #fc4c02; background: rgba(252, 76, 2, .07); }
+.strava-match p { margin: 0 0 8px; }
+.strava-link { color: #fc4c02; font-weight: 700; }

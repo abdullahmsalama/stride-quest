@@ -30,3 +30,18 @@ export function legDays(list = []) {
   for (const o of list) if (otherOf(o.kind)?.legs && o.effort !== 'easy') for (const d of o.days || []) { add(d, o.effort === 'hard' ? 10 : 6); add((d + 1) % 7, o.effort === 'hard' ? 4 : 2); }
   return out;
 }
+
+// Strava activity types -> our kinds (runs are handled separately).
+export const STRAVA_RUN = new Set(['Run', 'TrailRun', 'VirtualRun']);
+const STRAVA_KIND = [
+  [/WeightTraining|Crossfit|HighIntensityIntervalTraining|Workout|StairStepper|Elliptical|Rowing|VirtualRow/, 'weights'],
+  [/Ride|Velomobile|Handcycle/, 'cycling'], [/Swim/, 'swim'], [/Soccer|Basketball|Volleyball|Rugby|Football|Hockey|Handball/, 'team'],
+  [/Tennis|Padel|Squash|Badminton|Pickleball|TableTennis|Racquet/, 'racket'], [/Yoga|Pilates/, 'yoga'],
+];
+export const kindOfStrava = type => (STRAVA_KIND.find(([re]) => re.test(type || '')) || [])[1] || 'other';
+// Effort from average heart rate as a share of an age-estimated max (220 - age), else moderate.
+export function effortOf(hr, age) {
+  if (!(hr > 0) || !(age > 0)) return 'moderate';
+  const pct = hr / (220 - age);
+  return pct < 0.7 ? 'easy' : pct < 0.82 ? 'moderate' : 'hard';
+}

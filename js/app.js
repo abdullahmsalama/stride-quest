@@ -28,7 +28,7 @@ import { RACES } from './data/races.js';
 import * as EV from './events.js';
 import * as TG from './target.js';
 import * as NU from './nutrition.js';
-import { OTHER, EFFORT, otherItems, sessionItem, otherOf } from './data/other.js';
+import { OTHER, EFFORT, otherItems, sessionItem, otherOf, STRAVA_RUN, kindOfStrava, effortOf } from './data/other.js';
 import { FEATURES, GROUPS, FEATURE_BRIEF } from './data/features.js';
 
 // ---------- state ----------
@@ -1110,7 +1110,8 @@ function todayParts(t) {
         <p class="hint">${nextDay ? (() => { const it = nextDay.items.find(i => !i.done); return `Next: ${nextDay.name} · ${it.idx != null ? `<button class="linkish" data-act="open-step" data-track="${it.track}" data-idx="${it.idx}">${h(it.title)}</button>` : h(it.title)}`; })() : 'Next sessions appear as you progress.'}</p>
         ${!doneToday.length && S.mode?.type !== 'sick' ? `<button class="btn ghost small" data-act="rest" ${restDoneToday ? 'disabled' : ''}>${restDoneToday ? 'Rest day logged ✓' : `😴 Log rest day (+${E.XP.restDay} XP)`}</button>` : ''}</section>`;
   // Training outside the plan (gym, football…) is logged from here; it shows in the week and Nutrition counts it.
-  const actRow = '<div class="row wrap act-row"><button class="btn ghost small" data-act="extra-add">➕ Log another activity</button></div>';
+  const match = stravaMatches()[0];
+  const actRow = `${match ? `<div class="strava-match"><p>🔗 <strong>From Strava:</strong> ${h(match.act.title.replace(/^🏃 /, ''))}. Count it as today's <strong>${h(match.step.title)}</strong>?</p><div class="row wrap"><button class="btn small primary" data-act="strava-log" data-ts="${match.act.ts}" data-track="${match.step.track}" data-idx="${match.step.idx}">Log it</button><button class="btn ghost small" data-act="strava-skip" data-ts="${match.act.ts}">Not this one</button></div></div>` : ''}<div class="row wrap act-row"><button class="btn ghost small" data-act="extra-add">➕ Log another activity</button></div>`;
   const todayWithAct = todayCard.replace(/<\/section>\s*$/, `${actRow}</section>`);
   // Rolling view: two days back, today, four days ahead (into next week when needed).
   const dayRow = d => `<li class="wk-day ${d.today ? 'today' : ''} ${d.past ? 'past' : ''} ${d.available ? '' : 'off'} ${d.week === 'next' && d.i === 0 ? 'wk-new' : ''}">
@@ -1579,6 +1580,72 @@ function numbersCard() {
     </section>`;
 }
 
+// ---------- Strava (opt-in): your activities come in by themselves ----------
+const STRAVA_KEY = 'stride-quest:strava';
+const stravaState = () => { try { return JSON.parse(localStorage.getItem(STRAVA_KEY)) || {}; } catch { return {}; } };
+const setStrava = v => { try { localStorage.setItem(STRAVA_KEY, JSON.stringify(v)); } catch { /* ignore */ } };
+const STRAVA_RETURN = () => location.origin + location.pathname;
+function stravaConnect() {
+  const st = stravaState(), device = st.device || crypto.randomUUID();
+  setStrava({ ...st, device });
+  location.href = `${WORKER_URL.replace(/\/$/, '')}/strava/connect?device=${device}&return=${encodeURIComponent(STRAVA_RETURN())}`;
+}
+// Back from Strava: ?strava=connected|denied|scope|limit|error
+function stravaReturn() {
+  const q = new URLSearchParams(location.search), r = q.get('strava');
+  if (!r) return;
+  history.replaceState(null, '', location.pathname + location.hash);
+  const msg = { connected: '🔗 Strava connected! Your activities are coming in.', denied: 'Strava wasn\'t connected (you cancelled).', scope: 'Please allow "View data about your activities" so the app can read your runs.',
+    limit: 'Strava only lets this app connect a limited number of athletes for now. Ask Abdullah to raise the limit.', error: 'Strava couldn\'t be connected. Try again in a minute.' }[r];
+  if (r === 'connected') { setStrava({ ...stravaState(), connected: true, since: Date.now() }); setTimeout(() => stravaSync(true), 300); }
+  if (msg) setTimeout(() => toast(msg), 600);
+}
+// A logged activity from Strava (non-run: counts in the week and nutrition; run: also offered as today's session).
+function fromStrava(a) {
+  const run = STRAVA_RUN.has(a.type), age = +S.nutrition?.age || null;
+  const effort = effortOf(a.hr, age), minutes = Math.round(a.minutes || a.elapsed || 0);
+  const pace = a.km > 0 ? minutes / a.km : null;
+  const item = run ? { title: `Run ${a.km} km`, cls: minutes >= 75 ? 'long' : effort === 'hard' ? 'hard' : 'easy', track: 'run', minutes, effort, km: a.km }
+    : sessionItem({ kind: kindOfStrava(a.type), minutes, effort });
+  const title = run ? `🏃 ${a.name || 'Run'} · ${a.km} km${pace ? ` · ${formatTime(pace)} /km` : ''}` : `${(otherOf(kindOfStrava(a.type)) || otherOf('other')).label.split(' ')[0]} ${a.name || a.type} · ${minutes} min`;
+  return { ts: Date.parse(a.start) || now(), kind: 'activity', title, xp: 0, item, strava: { id: a.id, type: a.type, km: a.km, minutes: a.minutes || minutes, hr: a.hr, climb: a.climb }, run };
+}
+async function stravaSync(force = false) {
+  const st = stravaState();
+  if (!st.connected || !st.device || !WORKER_URL || ui.stravaSyncing) return;
+  if (!force && st.lastSync && Date.now() - st.lastSync < 20 * 60000) return;
+  ui.stravaSyncing = true;
+  try {
+    const r = await fetch(`${WORKER_URL.replace(/\/$/, '')}/strava/activities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: st.device, after: st.lastSeen ? st.lastSeen / 1000 - 3600 : null }) });
+    const d = await r.json();
+    if (!d.connected) { setStrava({ ...st, connected: false }); if (d.error) toast(d.error); return; }
+    if (d.error) { if (force) toast(d.error === 'busy' ? 'Strava is busy right now. Try again soon.' : "Strava couldn't be read right now."); return; }
+    const known = new Set(S.history.filter(x => x.strava).map(x => x.strava.id));
+    const fresh = (d.activities || []).filter(a => !known.has(a.id)).map(fromStrava);
+    if (fresh.length) { S.history.push(...fresh.map(({ run, ...x }) => x)); S.history.sort((a, b) => a.ts - b.ts); store.save(S); }
+    setStrava({ ...st, connected: true, name: d.name || st.name, lastSync: Date.now(), lastSeen: Math.max(st.lastSeen || 0, ...(d.activities || []).map(a => Date.parse(a.start) || 0)) });
+    if (fresh.length) { toast(`🔗 ${fresh.length} new activit${fresh.length === 1 ? 'y' : 'ies'} from Strava`); render(); }
+    else if (force) toast('Strava: nothing new.');
+  } catch { if (force) toast('No connection to Strava right now.'); }
+  finally { ui.stravaSyncing = false; }
+}
+// A Strava run on a day with a planned run that isn't logged yet: offer to count it as that session.
+function stravaMatches() {
+  const w = K.buildWeek(S, now()), open = (w.days[w.today]?.items || []).filter(it => !it.done && it.track === 'run' && it.idx != null && (it.cls === 'easy' || it.cls === 'long' || it.cls === 'hard' || it.cls === 'test'));
+  if (!open.length) return [];
+  return S.history.filter(x => x.kind === 'activity' && x.strava && STRAVA_RUN.has(x.strava.type) && !x.linked && !x.dismissed && E.dayKey(x.ts) === ymdNow()).map(x => ({ act: x, step: open[0] }));
+}
+function stravaCard() {
+  const st = stravaState();
+  const btn = '<button class="strava-btn" data-act="strava-connect">Connect with Strava</button>';
+  return `<section class="card strava-card"><h3>🔗 Strava</h3>
+      ${st.connected ? `<p>Connected${st.name ? ` as <strong>${h(st.name)}</strong>` : ''}. ${st.lastSync ? `Last synced ${new Date(st.lastSync).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.` : ''}</p>
+        <p class="hint">Runs, rides, gym sessions and more come in by themselves: they show in your week, count in Nutrition, and a run can count as your planned session with one tap.</p>
+        <div class="row wrap"><button class="btn small" data-act="strava-sync">${ui.stravaSyncing ? 'Syncing…' : '↻ Sync now'}</button><button class="btn ghost small" data-act="strava-disconnect">Disconnect</button></div>`
+      : `<p class="hint">Connect once and your workouts come in by themselves, from any watch or app that syncs to Strava (Garmin, Apple Watch, COROS, Runna…). Read-only: the app never posts to Strava.</p>${btn}`}
+      <p class="powered">Powered by Strava</p></section>`;
+}
+
 // ---------- floating coach ----------
 // A little coach in the corner of every screen (cap, whistle, friendly face). Waves now and then; a dot
 // when the coach has said something you haven't seen.
@@ -1618,8 +1685,10 @@ function nutriGoal() {
 // Today's training: the plan, plus regular outside sessions on this weekday, plus one-offs added today.
 function nutriDay() {
   const w = K.buildWeek(S, now());
-  const logged = S.history.filter(x => x.kind === 'activity' && E.dayKey(x.ts) === ymdNow()).map(x => x.item);
-  const planned = (w.days[w.today]?.items || []).filter(x => !x.sick && !x.activity);
+  const logged = S.history.filter(x => x.kind === 'activity' && !x.linked && E.dayKey(x.ts) === ymdNow()).map(x => x.item);
+  // Done sessions keep counting: their kind comes from the title (a long run, intervals, strength…).
+  const doneCls = it => (it.track === 'run' ? (/long/i.test(it.title) ? 'long' : /tempo|interval|hill|x \d|fartlek|race|time trial|boss|gate/i.test(it.title) ? 'hard' : 'easy') : it.track === 'swim' ? 'swim' : it.track === 'bike' ? 'bike' : it.track === 'engine' ? 'hard' : 'strength');
+  const planned = (w.days[w.today]?.items || []).filter(x => !x.sick && !x.activity && !x.attempt).map(x => (x.done ? { ...x, cls: doneCls(x) } : x));
   // A regular outside session (e.g. gym on Mondays) logged today isn't counted twice.
   const regular = otherItems(S.otherTraining, w.today).filter(r => !logged.some(l => l.kind === r.kind));
   return [...planned, ...regular, ...logged];
@@ -1871,6 +1940,7 @@ function viewMe() {
     <section class="card"><h3>Recent activity</h3>${hist.length ? `<ul class="history">${hist.map(x =>
       `<li><span>${new Date(x.ts).toLocaleDateString()}</span>${h(x.title)}${x.pain != null ? ` <em>pain ${x.pain}/10</em>` : ''}<b>${x.xp ? `+${x.xp}` : ''}</b></li>`).join('')}</ul>` : '<p class="hint">Nothing yet. Your first step is on the Today tab.</p>'}</section>
     ${installCard('me')}
+    ${WORKER_URL ? stravaCard() : ''}
     <section class="card"><h3>🏋️ My other training</h3>${(S.otherTraining || []).length ? `<ul class="ot-list">${S.otherTraining.map(o => `<li>${h(otherLine(o))}</li>`).join('')}</ul>` : '<p class="hint">Gym, football, padel…? Add it so your plan keeps hard runs off heavy-leg days and your nutrition counts it.</p>'}
       <button class="btn small" data-act="other-edit">${(S.otherTraining || []).length ? 'Edit' : 'Add other training'}</button></section>
     <section class="card"><h3>❓ Help</h3><p class="hint">How everything in the app works, with "Show me" buttons. Also under ❓ Help at the top of every screen.</p><button class="btn" data-act="help">Open Help</button></section>
@@ -2003,6 +2073,7 @@ const MODALS = {
       <p class="si-status">${how} · ${h(when)}${x.pain != null ? ` · pain ${x.pain}/10` : ''}${x.xp ? ` · +${x.xp} XP` : ''}</p>
       ${x.actual ? `<p><strong>What you did:</strong> ${h(x.actual)}</p>` : ''}${x.note ? `<p><strong>Notes:</strong> ${h(x.note)}</p>` : ''}
       ${same && st.detail ? `<p class="hint">${h(st.detail)}</p>` : ''}${same && st.ex?.length ? `<ul class="exercises">${exHtml(st)}</ul>` : ''}
+      ${x.strava ? `<p><a class="strava-link" href="https://www.strava.com/activities/${encodeURIComponent(x.strava.id)}" target="_blank" rel="noopener">View on Strava ↗</a></p>` : ''}
       <div class="row end">${x.kind === 'activity' ? `<button type="button" class="btn ghost" data-act="activity-del" data-ts="${x.ts}">Remove</button>` : ''}<button type="button" class="btn ghost" data-act="close">Close</button></div></div>`;
   },
   stepInfo(m) {
@@ -2459,6 +2530,22 @@ const actions = {
   'dismiss-banner'(el) { ui.dismissed.add(el.dataset.key); render(); },
   'coach-open'() { ui.prevTab = ui.tab === 'coach' ? ui.prevTab : ui.tab; ui.coachUnread = false; ui.tab = 'coach'; render(); },
   'coach-back'() { ui.tab = ui.prevTab || 'today'; render(); },
+  'strava-connect'() { stravaConnect(); },
+  'strava-sync'() { stravaSync(true); render(); },
+  async 'strava-disconnect'() {
+    const st = stravaState();
+    if (!confirm('Disconnect Strava? Activities already brought in stay; nothing new comes in.')) return;
+    try { await fetch(`${WORKER_URL.replace(/\/$/, '')}/strava/disconnect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: st.device }) }); } catch { /* offline: tokens expire anyway */ }
+    setStrava({ device: st.device }); render(); toast('Strava disconnected.');
+  },
+  // Count a Strava run as today's planned session: the usual log pop-up, filled in from Strava.
+  'strava-log'(el) {
+    const act = S.history.find(x => x.ts === +el.dataset.ts && x.strava);
+    ui.modal = { type: 'step', track: el.dataset.track, idx: +el.dataset.idx, fromStrava: act?.ts }; renderModal();
+    const f = document.getElementById('step-form'), a = act?.strava;
+    if (f && a) { const inp = f.querySelector('[name=actual]'); if (inp) inp.value = `${a.km} km in ${formatTime(a.minutes)}${a.hr ? `, avg HR ${Math.round(a.hr)}` : ''} (Strava)`; }
+  },
+  'strava-skip'(el) { const act = S.history.find(x => x.ts === +el.dataset.ts && x.strava); if (act) { act.dismissed = true; commit(S); } },
   'other-edit'() { ui.modal = { type: 'otherTraining', a: otherToAnswers(S.otherTraining) }; renderModal(); },
   'extra-add'() { ui.modal = { type: 'extraSession' }; renderModal(); },
   'activity-del'(el) { const i = S.history.findIndex(x => x.kind === 'activity' && x.ts === +el.dataset.ts); if (i >= 0) { S.history.splice(i, 1); ui.modal = null; commit(S); toast('Removed.'); } },
@@ -3084,6 +3171,7 @@ document.addEventListener('submit', e => {
     const st = E.trackSteps(S, m.track)[m.idx];
     const { state, outcome } = E.completeStep(S, m.track, m.idx, { pain, passed, race, now: ts, result, actual, note, backdated,
       morningOk: f.querySelector('[name=morning]:checked')?.value !== 'sore' });
+    if (m.fromStrava) { const act = state.history.find(x => x.ts === m.fromStrava && x.strava); if (act) act.linked = true; } // counted once, as the session
     ui.modal = null; S = state; store.save(S);
     handleOutcome(outcome);
     if (actual || note || result !== 'full') sessionFeedback(st, { when, ts, result, pain, actual, note });
@@ -3166,4 +3254,8 @@ function renderToasts() {
   $('#toasts').innerHTML = ui.toasts.map(t => `<div class="toast">${h(t.m)}</div>`).join('');
 }
 
+stravaReturn();
 render();
+// Strava: bring new activities in on open, and when coming back to the app (at most every 20 min).
+setTimeout(() => stravaSync(), 1500);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') stravaSync(); });

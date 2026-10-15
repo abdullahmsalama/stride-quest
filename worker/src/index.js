@@ -439,6 +439,80 @@ async function videos(request, env, headers) {
   return json({ q, videos: list, cached }, 200, headers);
 }
 
+// ---------- Strava (opt-in): log in with Strava, then read the athlete's own activities ----------
+const STRAVA = 'https://www.strava.com';
+const isDevice = d => /^[0-9a-f-]{36}$/.test(String(d || ''));
+async function stravaToken(env, body) {
+  const r = await fetch(`${STRAVA}/oauth/token`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: env.STRAVA_CLIENT_ID, client_secret: env.STRAVA_CLIENT_SECRET, ...body }) });
+  if (!r.ok) throw new Error(`strava ${r.status}`);
+  return r.json();
+}
+// A valid access token for this device (refreshed when it's about to expire).
+async function stravaAccess(env, device) {
+  const row = await env.DB.prepare('SELECT * FROM strava WHERE device = ?1').bind(device).first();
+  if (!row) return null;
+  if (row.expires * 1000 > Date.now() + 120000) return row;
+  const t = await stravaToken(env, { grant_type: 'refresh_token', refresh_token: row.refresh });
+  await env.DB.prepare('UPDATE strava SET access = ?2, refresh = ?3, expires = ?4 WHERE device = ?1').bind(device, t.access_token, t.refresh_token, t.expires_at).run();
+  return { ...row, access: t.access_token, refresh: t.refresh_token, expires: t.expires_at };
+}
+async function strava(request, env, url, headers, ok) {
+  if (!env.DB || !env.STRAVA_CLIENT_ID) return json({ error: 'Strava is not set up' }, 503, headers);
+  const self = `${url.origin}/strava/callback`;
+  const allowedReturn = u => { try { const o = new URL(u).origin; return (env.ALLOWED_ORIGINS || '').split(',').map(x => x.trim()).includes(o) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o); } catch { return false; } };
+  // 1) The app sends the athlete here; Strava asks them to allow read access.
+  if (url.pathname === '/strava/connect') {
+    const device = url.searchParams.get('device'), back = url.searchParams.get('return') || '';
+    if (!isDevice(device) || !allowedReturn(back)) return new Response('Bad request', { status: 400 });
+    const state = btoa(JSON.stringify({ device, back }));
+    const go = new URL(`${STRAVA}/oauth/authorize`);
+    Object.entries({ client_id: env.STRAVA_CLIENT_ID, redirect_uri: self, response_type: 'code', approval_prompt: 'auto', scope: 'read,activity:read_all', state }).forEach(([k, v]) => go.searchParams.set(k, v));
+    return Response.redirect(go.toString(), 302);
+  }
+  // 2) Strava sends them back with a code: swap it for tokens, then return to the app.
+  if (url.pathname === '/strava/callback') {
+    let st = {};
+    try { st = JSON.parse(atob(url.searchParams.get('state') || '')); } catch { /* bad state */ }
+    if (!isDevice(st.device) || !allowedReturn(st.back)) return new Response('Bad request', { status: 400 });
+    const back = new URL(st.back);
+    if (url.searchParams.get('error') || !url.searchParams.get('code')) { back.searchParams.set('strava', 'denied'); return Response.redirect(back.toString(), 302); }
+    if (!/activity:read/.test(url.searchParams.get('scope') || '')) { back.searchParams.set('strava', 'scope'); return Response.redirect(back.toString(), 302); }
+    try {
+      const t = await stravaToken(env, { code: url.searchParams.get('code'), grant_type: 'authorization_code' });
+      const name = [t.athlete?.firstname, t.athlete?.lastname?.[0]].filter(Boolean).join(' ');
+      await env.DB.prepare('INSERT INTO strava (device, athlete, name, access, refresh, expires, scope, ts) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT (device) DO UPDATE SET athlete = ?2, name = ?3, access = ?4, refresh = ?5, expires = ?6, scope = ?7, ts = ?8')
+        .bind(st.device, t.athlete?.id || null, name, t.access_token, t.refresh_token, t.expires_at, url.searchParams.get('scope'), Date.now()).run();
+      back.searchParams.set('strava', 'connected');
+    } catch (e) { back.searchParams.set('strava', /403|limit/i.test(e.message) ? 'limit' : 'error'); }
+    return Response.redirect(back.toString(), 302);
+  }
+  // 3) The app asks for its activities (and only its own), or disconnects.
+  if (request.method !== 'POST') return json({ error: 'not found' }, 404, headers);
+  if (!ok) return json({ error: 'origin not allowed' }, 403, headers);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400, headers); }
+  if (!isDevice(body.device)) return json({ error: 'bad device' }, 400, headers);
+  if (url.pathname === '/strava/disconnect') {
+    const row = await env.DB.prepare('SELECT access FROM strava WHERE device = ?1').bind(body.device).first();
+    if (row) { try { await fetch(`${STRAVA}/oauth/deauthorize`, { method: 'POST', headers: { Authorization: `Bearer ${row.access}` } }); } catch { /* still delete */ } }
+    await env.DB.prepare('DELETE FROM strava WHERE device = ?1').bind(body.device).run();
+    return json({ disconnected: true }, 200, headers);
+  }
+  if (url.pathname === '/strava/activities') {
+    const row = await stravaAccess(env, body.device).catch(() => null);
+    if (!row) return json({ connected: false }, 200, headers);
+    const after = Math.max(0, Math.floor(+body.after || (Date.now() / 1000 - 14 * 86400)));
+    const r = await fetch(`${STRAVA}/api/v3/athlete/activities?after=${after}&per_page=60`, { headers: { Authorization: `Bearer ${row.access}` } });
+    if (r.status === 401) return json({ connected: false, error: 'Strava access was removed. Connect again.' }, 200, headers);
+    if (r.status === 429) return json({ connected: true, error: 'busy' }, 200, headers);
+    if (!r.ok) return json({ connected: true, error: `strava ${r.status}` }, 200, headers);
+    const list = (await r.json()).map(a => ({ id: a.id, name: a.name, type: a.sport_type || a.type, start: a.start_date, local: a.start_date_local, km: Math.round((a.distance || 0) / 10) / 100,
+      minutes: Math.round((a.moving_time || 0) / 6) / 10, elapsed: Math.round((a.elapsed_time || 0) / 6) / 10, hr: a.average_heartrate || null, maxHr: a.max_heartrate || null, climb: a.total_elevation_gain || 0, kj: a.kilojoules || null }));
+    return json({ connected: true, name: row.name, activities: list }, 200, headers);
+  }
+  return json({ error: 'not found' }, 404, headers);
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin');
@@ -458,6 +532,7 @@ export default {
       const d = await r.json().catch(() => ({}));
       return json({ models: (d.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace('models/', '')) }, 200, headers);
     }
+    if (url.pathname.startsWith('/strava/')) return strava(request, env, url, headers, ok);
     if (url.pathname === '/videos' && request.method === 'POST') {
       if (!ok) return json({ error: 'origin not allowed' }, 403, headers);
       if (limited(`v:${request.headers.get('CF-Connecting-IP') || 'unknown'}`, 30)) return json({ error: 'slow down' }, 429, headers);
