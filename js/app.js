@@ -517,7 +517,7 @@ function renderOnboarding() {
   } else body = st.body;
   $('#app').innerHTML = `
     <main class="onboarding">
-      <div class="ob-top"><button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest">🏃 Stride Quest</button><div class="progress"><div style="width:${((i + 1) / steps.length) * 100}%"></div></div></div>
+      <div class="ob-top"><button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest"><img class="brand-logo" src="icons/logo-96.png" alt="" width="28" height="28">Stride Quest</button><div class="progress"><div style="width:${((i + 1) / steps.length) * 100}%"></div></div></div>
       ${returning}
       <form id="ob-form" class="card ob-card" autocomplete="off">
         ${!st.welcome && !st.result ? `<p class="eyebrow">Question ${i} of ${steps.length - 2}</p>` : ''}
@@ -542,7 +542,7 @@ function render() {
   const views = { today: viewToday, map: viewMap, challenge: viewChallenge, events: viewCompetitions, stats: viewStats, nutrition: viewNutrition, coach: viewCoach, me: viewMe };
   $('#app').innerHTML = `
     <header class="top">
-      <button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest">🏃 Stride Quest</button>
+      <button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest"><img class="brand-logo" src="icons/logo-96.png" alt="" width="28" height="28">Stride Quest</button>
       <div class="chips"><button class="chip help-btn" data-act="help" title="How the app works" aria-label="Help">❓<span class="help-word"> Help</span></button><span class="chip" title="Total XP: ${S.xp}">⚡ ${S.xp >= 10000 ? `${(S.xp / 1000).toFixed(1).replace(/\.0$/, '')}k` : S.xp}<span class="xp-word"> XP</span></span><span class="chip" title="Day streak">🔥 ${E.dayStreak(S, t)}</span></div>
     </header>
     <main class="view view-${ui.tab}">${views[ui.tab]()}</main>
@@ -2134,7 +2134,7 @@ const MODALS = {
   },
   help() { return helpPanel(); },
   aboutMe() {
-    return `<div class="about-me"><h2>🏃 Stride Quest</h2><p class="about-by">Developed by <b>Abdullah Salama</b></p>
+    return `<div class="about-me"><h2><img class="brand-logo" src="icons/logo-96.png" alt="" width="36" height="36">Stride Quest</h2><p class="about-by">Developed by <b>Abdullah Salama</b></p>
       <p class="about-why">💙 I built Stride Quest to help people move, stay consistent and reach their goals: to become stronger, healthier and better.</p>
       <p class="about-bio">I'm a hybrid athlete who loves pushing my limits, and a Data Scientist / ML Engineer with 13+ years in tech and 8+ in AI. MSc from Hamburg University of Technology, now doing a PhD in AI focused on compact models. Always learning, and trying to help make the world a better place.</p>
       <a class="link-row" href="https://www.linkedin.com/in/abdullah-salama/" target="_blank" rel="noopener"><b>LinkedIn</b><span>Open ↗</span></a>

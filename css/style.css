@@ -674,6 +674,10 @@ textarea { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px 
 .tabs button .lbl { font: inherit; text-align: left; } /* one label, so spacing never splits "Competitions Calendar" */
 .brand-btn { background: none; border: 0; padding: 0; color: inherit; cursor: pointer; text-align: left; }
 .brand-btn:hover { opacity: .8; }
+.brand-btn { display: inline-flex; align-items: center; gap: 8px; }
+.brand-logo { width: 28px; height: 28px; border-radius: 7px; flex: none; }
+.about-me h2 { display: flex; align-items: center; gap: 10px; }
+.about-me h2 .brand-logo { width: 36px; height: 36px; border-radius: 9px; }
 .about-by { font-size: 16px; margin: 4px 0 6px; }
 .about-bio { font-size: 14px; line-height: 1.5; margin: 10px 0 12px; }
 .about-why { font-size: 15px; font-weight: 600; line-height: 1.45; margin: 12px 0 0; }
