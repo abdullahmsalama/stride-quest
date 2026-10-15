@@ -43,9 +43,10 @@ export function sessionOf(it, easyPace) {
   const run = it.track === 'run' && RUN_CLS.has(it.cls) || RUN_CLS.has(it.cls) && !it.track;
   const pace = it.cls === 'hard' || it.cls === 'test' ? easyPace * 0.85 : easyPace;
   if (minutes == null && km != null && run) minutes = km * pace;
+  if (it.minutes > 0) minutes = +it.minutes;
   if (minutes == null) minutes = DEFAULT_MIN[it.cls] ?? (it.cls === 'rest' ? 0 : 30);
   if (run && km == null) km = minutes / pace;
-  return { minutes: Math.round(minutes), km: run ? Math.round(km * 10) / 10 : null, run, cls: it.cls, title: it.title };
+  return { minutes: Math.round(minutes), km: run ? Math.round(km * 10) / 10 : null, run, cls: it.cls, title: it.title, met: it.met, effort: it.effort };
 }
 export const LOADS = {
   rest: { label: 'Rest day', carbs: [3, 4] },
@@ -59,9 +60,9 @@ export function dayLoad(items, p, rmrKcal) {
   const sessions = (items || []).filter(it => it.cls && it.cls !== 'rest' && !it.sick).map(it => sessionOf(it, pace));
   const perMin = rmrKcal / 1440;
   let exKcal = 0;
-  for (const s of sessions) exKcal += s.run ? Math.max(0, p.kg * s.km * 1.0 - perMin * s.minutes) : Math.max(0, ((MET[s.cls] || 6) - 1) * p.kg * (s.minutes / 60));
+  for (const s of sessions) exKcal += s.run ? Math.max(0, p.kg * s.km * 1.0 - perMin * s.minutes) : Math.max(0, ((s.met || MET[s.cls] || 6) - 1) * p.kg * (s.minutes / 60));
   const minutes = sessions.reduce((a, s) => a + s.minutes, 0), longest = Math.max(0, ...sessions.map(s => s.minutes));
-  const intense = sessions.some(s => s.cls === 'hard' || s.cls === 'test' || s.cls === 'long');
+  const intense = sessions.some(s => s.cls === 'hard' || s.cls === 'test' || s.cls === 'long' || s.effort === 'hard');
   const load = !sessions.length ? 'rest' : minutes > 150 ? 'very' : intense || minutes > 75 ? 'hard' : minutes > 45 ? 'moderate' : 'light';
   return { sessions, minutes, longest, exKcal: Math.round(exKcal), load, strength: sessions.some(s => s.cls === 'strength') };
 }

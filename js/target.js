@@ -195,7 +195,7 @@ export function tooManyDays(recentPerWeek, chosenDays, level, background = []) {
 }
 // This week vs the athlete's normal (the 3 weeks before): more than ~1.5x is a spike (acute:chronic load).
 export function loadSpike(history, now) {
-  const W = 7 * DAY, sessions = h => h.kind === 'session' || h.kind === 'attempt';
+  const W = 7 * DAY, sessions = h => h.kind === 'session' || h.kind === 'attempt' || h.kind === 'activity';
   const week = history.filter(h => sessions(h) && h.ts > now - W).length;
   const before = history.filter(h => sessions(h) && h.ts <= now - W && h.ts > now - 4 * W).length / 3;
   if (before < 1.5 || week < 3) return null; // too little history to judge, or a light week

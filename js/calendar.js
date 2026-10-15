@@ -2,6 +2,7 @@
 // today and later days get the next open steps, placed by simple safety rules. Missed sessions never
 // pile up because the plan always restarts from today. Pure functions.
 import { DAY, dayKey, weekKey, activeTrack, trackSteps, prepBlocksRun } from './engine.js';
+import { legDays } from './data/other.js';
 import { hasTri } from './tri.js';
 import { hasHybrid } from './hybrid.js';
 
@@ -155,9 +156,13 @@ export function buildWeek(s, now, { skip } = {}) {
   const take = [...main, ...extra].slice(0, slots.length);
   const free = new Set(slots);
   const placed = [];
+  // Heavy outside sessions (gym, football, padel, cycling): hard runs stay off that day (strongly) and the
+  // day after (mildly); when the week is full, the least bad day wins.
+  const outside = legDays(s.otherTraining);
   const hardDays = () => placed.filter(p => HARD.has(p.it.cls) && p.it.cls !== 'impact').map(p => p.d);
   const put = (it, d) => { free.delete(d); placed.push({ it, d }); };
-  const far = (cands, avoid) => cands.sort((a, b) => Math.min(...avoid.map(x => Math.abs(x - b)), 9) - Math.min(...avoid.map(x => Math.abs(x - a)), 9))[0];
+  const score = (d, avoid) => Math.min(...avoid.map(x => Math.abs(x - d)), 9) - (outside.get(d) || 0);
+  const far = (cands, avoid) => [...cands].sort((a, b) => score(b, avoid) - score(a, avoid))[0];
 
   // Moved items keep the day the athlete chose.
   for (const it of take) if (moves[it.key] != null && moves[it.key] >= today) put(it, moves[it.key]);
@@ -185,6 +190,9 @@ export function buildWeek(s, now, { skip } = {}) {
   if (mode?.type === 'busy') notes.push('Busy week: only Key sessions are planned. Short 20-minute versions still count.');
   const left = list.length - take.length;
   if (!slots.length) notes.push('No training days left this week. Next week picks up from here.');
+  // Other activities logged this week (gym, football…): shown as done, but they don't take the day:
+  // the planned session for that day still stands.
+  for (const h of s.history) if (h.kind === 'activity' && h.ts >= monday && weekKey(h.ts) === wk) byDay[dayIndex(h.ts)].push({ title: h.title, done: true, ts: h.ts, cls: 'done', activity: true });
   return { weekKey: wk, monday, today, days: frame(byDay, monday, today, days), warnings: warningsFor(byDay), notes, mode, left };
 }
 

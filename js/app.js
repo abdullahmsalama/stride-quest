@@ -28,6 +28,7 @@ import { RACES } from './data/races.js';
 import * as EV from './events.js';
 import * as TG from './target.js';
 import * as NU from './nutrition.js';
+import { OTHER, EFFORT, otherItems, sessionItem, otherOf } from './data/other.js';
 import { FEATURES, GROUPS, FEATURE_BRIEF } from './data/features.js';
 
 // ---------- state ----------
@@ -123,6 +124,26 @@ const select = (name, opts, cur) => `<select name="${name}">${opts.map(([v, l]) 
 const OTHER_EVENTS = ['CrossFit Open', 'CrossFit Games', 'Wodapalooza', 'Rogue Invitational', 'Tough Mudder', 'Spartan Race', 'DEKA', 'ATHX'];
 const num = (name, label, cur, unit) => `<label class="field"><span>${h(label)}</span><span class="with-unit"><input type="number" inputmode="decimal" min="0" step="any" name="${name}" value="${cur ?? ''}"><em>${h(unit)}</em></span></label>`;
 
+// "Other training" questions (also used in Me to edit them later). Names: ot_<kind> (do it?),
+// otd_<kind>_<weekday>, otm_<kind> (minutes), ote_<kind> (effort), otn (name for "something else").
+function otherBlock(a) {
+  return `<p class="hint">Optional: skip if Stride Quest is all you do.</p><div class="choices">${OTHER.map(o => {
+    const on = !!a[`ot_${o.k}`];
+    return `${check(`ot_${o.k}`, o.label, on)}${on ? `<div class="ot-detail">
+        ${o.k === 'other' ? `<label class="field"><span>What is it?</span><input type="text" name="otn" maxlength="40" value="${h(a.otn || '')}" placeholder="e.g. boxing, CrossFit, hiking"></label>` : ''}
+        <p class="q">Which days?</p><div class="day-picker">${K.DAY_NAMES.map((d, i) => `<label class="day-chip"><input type="checkbox" name="otd_${o.k}_${i}" ${a[`otd_${o.k}_${i}`] ? 'checked' : ''}><span>${d}</span></label>`).join('')}</div>
+        <div class="row wrap"><label class="field"><span>Usual length</span><span class="with-unit"><input type="number" inputmode="numeric" name="otm_${o.k}" value="${a[`otm_${o.k}`] || ''}" min="10" max="300" placeholder="60"><em>min</em></span></label></div>
+        <p class="q">How hard, usually?</p>${radio(`ote_${o.k}`, EFFORT, a[`ote_${o.k}`] || 'moderate')}</div>` : ''}`;
+  }).join('')}</div>`;
+}
+// The answers above as a list: [{ kind, days, minutes, effort, name }].
+function otherFrom(a) {
+  return OTHER.filter(o => a[`ot_${o.k}`]).map(o => ({ kind: o.k, name: o.k === 'other' ? String(a.otn || '').trim().slice(0, 40) : '', days: K.DAY_NAMES.map((d, i) => i).filter(i => a[`otd_${o.k}_${i}`]),
+    minutes: Math.max(10, Math.min(300, +a[`otm_${o.k}`] || 60)), effort: a[`ote_${o.k}`] || 'moderate' }));
+}
+const otherToAnswers = list => Object.fromEntries((list || []).flatMap(o => [[`ot_${o.kind}`, true], [`otm_${o.kind}`, o.minutes], [`ote_${o.kind}`, o.effort], ...(o.name ? [['otn', o.name]] : []), ...o.days.map(d => [`otd_${o.kind}_${d}`, true])]));
+const otherLine = o => `${(otherOf(o.kind) || otherOf('other')).label.split(' (')[0]}${o.name ? ` (${o.name})` : ''} · ${o.days.length ? o.days.map(d => K.DAY_NAMES[d]).join(', ') : 'no fixed days'} · ${o.minutes} min · ${o.effort}`;
+
 function obSteps(a) {
   const steps = [
     { welcome: true, title: "Let's build your plan", body: `
@@ -166,6 +187,7 @@ function obSteps(a) {
     { title: 'Which days can you train?', why: 'We build your week around your life, not the other way round.', body: `<p class="hint">Pick at least 2. You can move sessions any time.</p>
         <div class="day-picker">${K.DAY_NAMES.map((d, i) => `<label class="day-chip"><input type="checkbox" name="d_${i}" ${(a.days || K.defaultDays(3)).includes(i) ? 'checked' : ''}><span>${d}</span></label>`).join('')}</div>
         <label class="field"><span>Best day for your longest session</span><select name="longDay">${K.DAY_NAMES.map((d, i) => `<option value="${i}" ${(a.longDay ?? 5) === i ? 'selected' : ''}>${d}</option>`).join('')}</select></label>` },
+    { title: 'Do you train anything else?', why: 'Gym, football or padel count too: we keep your hard runs away from heavy-leg days, and your nutrition counts them.', body: otherBlock(a) }
   ];
   if (E.qualifyingLevel(normalize(a)) >= 3) {
     steps.push({ title: 'Quick body check', why: 'Strong landings and ankles come before speed work.', body: `<p class="hint">Tick what you can do today. Not sure? Try it now: each has a demo link. Leave one unticked only if you can't do it: we'll start your Prep just before it.</p>
@@ -1087,6 +1109,9 @@ function todayParts(t) {
         <h3>${doneToday.length ? (doneToday.every(i => i.attempt) ? 'Logged for today 💛 Rest up, it\'s back on your next training day' : 'Done for today ✅') : S.mode?.type === 'sick' ? 'Rest and recover 💤' : 'Rest day 😴'}</h3>
         <p class="hint">${nextDay ? (() => { const it = nextDay.items.find(i => !i.done); return `Next: ${nextDay.name} · ${it.idx != null ? `<button class="linkish" data-act="open-step" data-track="${it.track}" data-idx="${it.idx}">${h(it.title)}</button>` : h(it.title)}`; })() : 'Next sessions appear as you progress.'}</p>
         ${!doneToday.length && S.mode?.type !== 'sick' ? `<button class="btn ghost small" data-act="rest" ${restDoneToday ? 'disabled' : ''}>${restDoneToday ? 'Rest day logged ✓' : `😴 Log rest day (+${E.XP.restDay} XP)`}</button>` : ''}</section>`;
+  // Training outside the plan (gym, football…) is logged from here; it shows in the week and Nutrition counts it.
+  const actRow = '<div class="row wrap act-row"><button class="btn ghost small" data-act="extra-add">➕ Log another activity</button></div>';
+  const todayWithAct = todayCard.replace(/<\/section>\s*$/, `${actRow}</section>`);
   // Rolling view: two days back, today, four days ahead (into next week when needed).
   const dayRow = d => `<li class="wk-day ${d.today ? 'today' : ''} ${d.past ? 'past' : ''} ${d.available ? '' : 'off'} ${d.week === 'next' && d.i === 0 ? 'wk-new' : ''}">
         <span class="wk-name">${d.today ? 'Today' : d.name}<small>${new Date(d.date).getDate()}</small></span>
@@ -1104,7 +1129,7 @@ function todayParts(t) {
   const coming = [];
   const tracksCard = coming.length ? `<section class="card info-card" style="order:8"><p>${coming.map(k => k === 'hybrid' ? '🏋️ <strong>Hybrid track</strong>' : '🏊 <strong>Triathlon track</strong>').join(' and ')} ${coming.length > 1 ? 'are' : 'is'} being built. Your training already counts toward ${coming.length > 1 ? 'them' : 'it'}: carry-over will show the moment ${coming.length > 1 ? 'they open' : 'it opens'}.</p></section>` : '';
 
-  return { today: todayCard, week, nextWeek, tracks: hybridCard() + triCard() };
+  return { today: todayWithAct, week, nextWeek, tracks: hybridCard() + triCard() };
 }
 
 function viewMap() {
@@ -1590,9 +1615,22 @@ function nutriGoal() {
   if (o && o.until >= ymdNow()) return { ...n.goal, type: o.mode === 'perform' ? 'maintain' : 'maintain', overridden: o };
   return n.goal || { type: 'maintain' };
 }
+// Today's training: the plan, plus regular outside sessions on this weekday, plus one-offs added today.
 function nutriDay() {
   const w = K.buildWeek(S, now());
-  return (w.days[w.today]?.items || []).filter(x => !x.sick);
+  const logged = S.history.filter(x => x.kind === 'activity' && E.dayKey(x.ts) === ymdNow()).map(x => x.item);
+  const planned = (w.days[w.today]?.items || []).filter(x => !x.sick && !x.activity);
+  // A regular outside session (e.g. gym on Mondays) logged today isn't counted twice.
+  const regular = otherItems(S.otherTraining, w.today).filter(r => !logged.some(l => l.kind === r.kind));
+  return [...planned, ...regular, ...logged];
+}
+// Same as collectOb, for the "My other training" pop-up.
+function collectOther() {
+  const f = document.getElementById('other-form');
+  if (!f || !ui.modal?.a) return;
+  const a = {};
+  for (const el of f.elements) { if (!el.name) continue; if (el.type === 'checkbox') { if (el.checked) a[el.name] = true; } else if (el.type === 'radio') { if (el.checked) a[el.name] = el.value; } else a[el.name] = el.value; }
+  ui.modal.a = a;
 }
 function nutriToday() {
   const p = nutriProfile();
@@ -1642,7 +1680,7 @@ function viewNutrition() {
       <li><b>2 days before</b> ${h(rf.load)}</li><li><b>Race morning</b> ${h(rf.breakfast)}</li><li><b>During</b> ${h(rf.during)}</li>${rf.rules.map(r => `<li>✅ ${h(r)}</li>`).join('')}</ul></section>` : '';
   // This week's carb level per day.
   const p = x.p, R = NU.rmr(p).kcal, wk = K.buildWeek(S, now());
-  const week = `<section class="card"><h3>📅 Carbs this week</h3><div class="carb-week">${wk.days.map((d, i) => { const L = NU.dayLoad(d.items.filter(it => !it.sick), p, R).load; const lvl = { rest: 1, light: 1, moderate: 2, hard: 3, very: 3 }[L];
+  const week = `<section class="card"><h3>📅 Carbs this week</h3><div class="carb-week">${wk.days.map((d, i) => { const L = NU.dayLoad([...d.items.filter(it => !it.sick), ...otherItems(S.otherTraining, i)], p, R).load; const lvl = { rest: 1, light: 1, moderate: 2, hard: 3, very: 3 }[L];
       return `<div class="${i === wk.today ? 'today' : ''}"><span>${K.DAY_NAMES[i].slice(0, 3)}</span><i class="lv${lvl}"></i><em>${['', 'low', 'medium', 'high'][lvl]}</em></div>`; }).join('')}</div><p class="hint">Eat more carbs on long and hard days, fewer on rest days: "fuel for the work".</p></section>`;
   // Goal progress from weigh-ins.
   const rate = NU.weeklyRate(own, p), gc = NU.goalCheck(p, own, now());
@@ -1653,6 +1691,7 @@ function viewNutrition() {
   const reds = `<section class="card"><h3>🩺 Monthly check-in</h3><p class="hint">Four quick questions that catch under-fuelling early (REDs). ${due ? 'Due now.' : `Last done ${new Date(n.reds.ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}.`}</p><button class="btn small ${due ? 'primary' : 'ghost'}" data-act="nutri-reds">${due ? 'Do it now' : 'Do it again'}</button></section>`;
   return `<section class="card nutri-today"><p class="eyebrow">🍽️ Today · ${why}</p>${nums}
       ${goalLine}${t.raised ? '<p class="hint">Calories nudged up so fat stays at a healthy minimum.</p>' : ''}
+      ${day.sessions.filter(se => se.met).length ? `<p class="hint">Counted: ${day.sessions.filter(se => se.met).map(se => h(se.title)).join(', ')}. Log other activities on Today.</p>` : ''}
       <label class="switch-row small"><input type="checkbox" data-act="nutri-hide" ${hide ? 'checked' : ''}> <span>Show portions instead of numbers</span></label></section>
     ${list.map(bubble).join('')}${race}${fuel}${week}${progress}${reds}
     <details class="card how"><summary>How are these worked out?</summary><p class="hint">Resting energy: ${h(t.method)} formula (the most accurate for athletes in a 2023 review; uses your body fat when known), about ±10%. Plus your daily life, plus today's sessions (running ≈ 1 kcal per kg per km). Carbs by the day's training load (g per kg), protein 1.6–2.2 g/kg (more in a deficit), fat at least 20% of energy. A goal never pushes you below the energy your body needs to stay healthy (energy availability, IOC 2023). Estimates: trust your weigh-in trend over the formula. Not medical advice.</p></details>`;
@@ -1832,6 +1871,8 @@ function viewMe() {
     <section class="card"><h3>Recent activity</h3>${hist.length ? `<ul class="history">${hist.map(x =>
       `<li><span>${new Date(x.ts).toLocaleDateString()}</span>${h(x.title)}${x.pain != null ? ` <em>pain ${x.pain}/10</em>` : ''}<b>${x.xp ? `+${x.xp}` : ''}</b></li>`).join('')}</ul>` : '<p class="hint">Nothing yet. Your first step is on the Today tab.</p>'}</section>
     ${installCard('me')}
+    <section class="card"><h3>🏋️ My other training</h3>${(S.otherTraining || []).length ? `<ul class="ot-list">${S.otherTraining.map(o => `<li>${h(otherLine(o))}</li>`).join('')}</ul>` : '<p class="hint">Gym, football, padel…? Add it so your plan keeps hard runs off heavy-leg days and your nutrition counts it.</p>'}
+      <button class="btn small" data-act="other-edit">${(S.otherTraining || []).length ? 'Edit' : 'Add other training'}</button></section>
     <section class="card"><h3>❓ Help</h3><p class="hint">How everything in the app works, with "Show me" buttons. Also under ❓ Help at the top of every screen.</p><button class="btn" data-act="help">Open Help</button></section>
     <section class="card"><h3>Your data</h3>
       <p class="hint">Progress is saved in this browser only. Export it to move to another device.</p>
@@ -1882,6 +1923,17 @@ function painButtons() {
 }
 
 const MODALS = {
+  otherTraining(m) {
+    return `<form id="other-form"><h2>🏋️ My other training</h2><p class="why">💡 Training outside Stride Quest. Your plan keeps hard runs off heavy-leg days (and the day after), and Nutrition counts it.</p>
+      ${otherBlock(m.a)}<div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`;
+  },
+  extraSession() {
+    return `<form id="extra-form"><h2>➕ Log another activity</h2><p class="why">💡 Training that isn't in your Stride Quest plan: gym, football, padel… It shows in your week, counts toward your training load, and Nutrition includes it.</p>
+      <label class="field"><span>What</span>${select('xKind', OTHER.map(o => [o.k, o.label]), 'weights')}</label>
+      <label class="field"><span>Minutes</span><span class="with-unit"><input type="number" inputmode="numeric" name="xMin" value="60" min="5" max="400"><em>min</em></span></label>
+      <p class="q">How hard?</p>${radio('xEffort', EFFORT, 'moderate')}
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Add</button></div></form>`;
+  },
   nutriSetup() {
     const n = S.nutrition || {}, p = nutriProfile(), g = n.goal || {};
     const num = (name, label, v, unit, step = '1') => `<label class="field"><span>${label}</span><span class="with-unit"><input type="number" inputmode="decimal" name="${name}" value="${v ?? ''}" step="${step}" min="0">${unit ? `<em>${unit}</em>` : ''}</span></label>`;
@@ -1941,17 +1993,17 @@ const MODALS = {
   },
   // A logged session: when, how it went, the athlete's own words (and the exercises, if it's this level's).
   logInfo(m) {
-    const x = S.history.find(e => e.ts === m.ts && (e.kind === 'session' || e.kind === 'attempt'));
+    const x = S.history.find(e => e.ts === m.ts && (e.kind === 'session' || e.kind === 'attempt' || e.kind === 'activity'));
     if (!x) return '<p>That log is no longer here.</p><div class="row end"><button class="btn ghost" data-act="close">Close</button></div>';
     const steps = x.idx != null ? E.trackSteps(S, x.track) : [], st = steps[x.idx];
     const same = st && st.title === x.title;
     const when = new Date(x.ts).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' });
-    const how = x.kind === 'attempt' ? '✗ Tried, but couldn\'t do it' : x.partial ? '◐ Partly done' : '✅ Done';
+    const how = x.kind === 'activity' ? `✅ Other activity · ${h(x.item?.effort || '')}` : x.kind === 'attempt' ? '✗ Tried, but couldn\'t do it' : x.partial ? '◐ Partly done' : '✅ Done';
     return `<div class="step-info"><p class="eyebrow">${h(trackTitle(x.track) || '')}</p><h2>${h(x.title)}</h2>
       <p class="si-status">${how} · ${h(when)}${x.pain != null ? ` · pain ${x.pain}/10` : ''}${x.xp ? ` · +${x.xp} XP` : ''}</p>
       ${x.actual ? `<p><strong>What you did:</strong> ${h(x.actual)}</p>` : ''}${x.note ? `<p><strong>Notes:</strong> ${h(x.note)}</p>` : ''}
       ${same && st.detail ? `<p class="hint">${h(st.detail)}</p>` : ''}${same && st.ex?.length ? `<ul class="exercises">${exHtml(st)}</ul>` : ''}
-      <div class="row end"><button type="button" class="btn ghost" data-act="close">Close</button></div></div>`;
+      <div class="row end">${x.kind === 'activity' ? `<button type="button" class="btn ghost" data-act="activity-del" data-ts="${x.ts}">Remove</button>` : ''}<button type="button" class="btn ghost" data-act="close">Close</button></div></div>`;
   },
   stepInfo(m) {
     const st = E.trackSteps(S, m.track)[m.idx];
@@ -2309,6 +2361,7 @@ const actions = {
     state = K.setSchedule(state, a.days || K.defaultDays(3), +(a.longDay ?? 5));
     const tracks = a.tracks?.length ? a.tracks : ['run'];
     state.profile.tracks = tracks;
+    state.otherTraining = otherFrom(ui.ob.a);
     state.profile.primary = tracks.includes(a.primary) ? a.primary : tracks[0];
     state.profile.view = a.view === 'full' ? 'full' : 'simple';
     state.tri = tracks.includes('tri') ? TRI.placeTri(state, a) : state.tri || null;
@@ -2406,6 +2459,9 @@ const actions = {
   'dismiss-banner'(el) { ui.dismissed.add(el.dataset.key); render(); },
   'coach-open'() { ui.prevTab = ui.tab === 'coach' ? ui.prevTab : ui.tab; ui.coachUnread = false; ui.tab = 'coach'; render(); },
   'coach-back'() { ui.tab = ui.prevTab || 'today'; render(); },
+  'other-edit'() { ui.modal = { type: 'otherTraining', a: otherToAnswers(S.otherTraining) }; renderModal(); },
+  'extra-add'() { ui.modal = { type: 'extraSession' }; renderModal(); },
+  'activity-del'(el) { const i = S.history.findIndex(x => x.kind === 'activity' && x.ts === +el.dataset.ts); if (i >= 0) { S.history.splice(i, 1); ui.modal = null; commit(S); toast('Removed.'); } },
   'nutri-setup'() { ui.modal = { type: 'nutriSetup' }; renderModal(); },
   'nutri-weigh'() { ui.modal = { type: 'nutriWeigh' }; renderModal(); },
   'nutri-reds'() { ui.modal = { type: 'nutriReds' }; renderModal(); },
@@ -2811,6 +2867,7 @@ document.addEventListener('change', async e => {
   }
   if (el.closest('#nc-form') && el.name !== 'msg' && el.name !== 'myName') { readDraft(); renderModal(); return; }
   if (el.closest('#bg-form') && el.name?.startsWith('bg_')) { ui.modal.a = { ...ui.modal.a, ...Object.fromEntries(new FormData(el.form).entries()), [el.name]: el.checked }; BG.SPORTS.forEach(([k]) => { if (!el.form.querySelector(`[name=bg_${k}]`)?.checked) delete ui.modal.a[`bg_${k}`]; }); renderModal(); return; }
+  if (el.closest('#ob-form, #other-form') && /^ot_/.test(el.name || '')) { if (el.closest('#other-form')) { collectOther(); renderModal(); } else { collectOb(); renderOnboarding(); } return; }
   if (el.closest('#ob-form') && (el.name?.startsWith('bg_') || el.name?.startsWith('tr_') || el.name?.startsWith('hx_') || /Mode$/.test(el.name || '') || el.name === 'swimDist' || el.name === 'bikeAccess' || el.name === 'liftMode' || el.name === 'liftUnit')) { collectOb(); renderOnboarding(); return; }
   if (el.closest('#tri-form') && (el.name === 'swimDist' || el.name === 'bikeAccess')) { ui.modal.a = { ...ui.modal.a, ...readTriForm(el.closest('form')) }; renderModal(); return; }
   if (el.dataset.act === 'speak-toggle') ui.speakReplies = el.checked;
@@ -2876,6 +2933,21 @@ document.addEventListener('submit', e => {
     commit(S);
     toast(`Welcome to ${HYB.hybWorld(S).emoji} ${HYB.hybWorld(S).name}!`);
     if (ui.pendingRace) { ui.modal = { type: 'race', k: ui.pendingRace }; ui.pendingRace = null; renderModal(); }
+    return;
+  }
+  if (f.id === 'other-form') {
+    collectOther();
+    S.otherTraining = otherFrom(ui.modal.a);
+    S.answers = { ...(S.answers || {}), ...otherToAnswers(S.otherTraining) };
+    ui.modal = null; commit(S); toast(S.otherTraining.length ? '🏋️ Saved. Your plan and nutrition count it now.' : 'Saved.');
+    return;
+  }
+  if (f.id === 'extra-form') {
+    const minutes = +f.xMin.value;
+    if (!(minutes >= 5 && minutes <= 400)) return toast('Add the minutes, e.g. 60.');
+    const item = sessionItem({ kind: f.xKind.value, minutes, effort: f.querySelector('[name=xEffort]:checked')?.value || 'moderate' });
+    S.history.push({ ts: now(), kind: 'activity', title: `${(otherOf(item.kind) || otherOf('other')).label.split(' ')[0]} ${item.title}`, xp: 0, item });
+    ui.modal = null; commit(S); toast('✅ Logged. It counts toward your week and nutrition.');
     return;
   }
   if (f.id === 'nutri-form') {
@@ -3049,7 +3121,7 @@ window.addEventListener('hashchange', () => {
   if (!ui.modal) render();
 });
 
-$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help', 'prepStage', 'stepInfo', 'logInfo', 'target', 'raceResult', 'nutriSetup', 'nutriWeigh', 'nutriReds'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help', 'prepStage', 'stepInfo', 'logInfo', 'target', 'raceResult', 'nutriSetup', 'nutriWeigh', 'nutriReds', 'otherTraining', 'extraSession'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
 
 // ---------- installable app ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
