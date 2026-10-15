@@ -9,9 +9,15 @@ export const AI_TROUBLE = {
   slow: 'The AI took too long to answer. Try again in a moment.',
   down: "The AI can't be reached right now. Check your connection, or try again in a minute.",
 };
-// "gemini-3.8-flash" -> "Gemini 3.8 Flash", for the "via … · free tier" label.
-export const prettyModel = m => String(m || 'AI').split('/').pop().replace(/-latest$/, '').replace(/-versatile$|-instruct(:free)?$/, '').split(/[-/]/)
-  .map(w => (/^\d/.test(w) ? w.toUpperCase() : w[0]?.toUpperCase() + w.slice(1))).join(' ').replace(/\bGpt\b/, 'GPT');
+// "gemini-3.8-flash" -> "Gemini 3.8 Flash", "openai/gpt-oss-120b" -> "GPT-OSS 120B", for the "via …" label.
+export const prettyModel = m => {
+  const id = String(m || 'AI').split('/').pop().replace(/-latest$/, '').replace(/-versatile$|-instruct(:free)?$/, '');
+  if (/^gpt-oss-(\d+b)$/i.test(id)) return `GPT-OSS ${id.split('-').pop().toUpperCase()}`;
+  return id.split('-').map(w => (/^\d/.test(w) ? w.toUpperCase() : w[0]?.toUpperCase() + w.slice(1))).join(' ').replace(/\bGpt\b/, 'GPT');
+};
+// Who runs the model, for the same label.
+const HOST = { gemini: 'by Google', 'gemini-smart': 'by Google', groq: 'on Groq', xai: 'by xAI', openrouter: 'via OpenRouter' };
+export const aiLabel = (model, provider, tier) => `via ${prettyModel(model)}${HOST[provider] ? ` ${HOST[provider]}` : ''} · ${tier === 'paid' ? 'paid' : 'free'} tier`;
 
 // fetch with a time limit, joined to an optional outside signal (the Stop button).
 async function timedFetch(url, init, ms, outer) {
@@ -67,7 +73,7 @@ export async function understandChat(task, messages) {
       body: JSON.stringify({ mode: 'understand', task, messages }),
     }, 75000);
     const data = await res.json().catch(() => ({}));
-    return res.ok && data.result ? { result: data.result, model: data.model, tier: data.tier } : { result: null, reason: res.status === 429 ? 'busy' : data.reason || 'down' };
+    return res.ok && data.result ? { result: data.result, model: data.model, tier: data.tier, provider: data.provider } : { result: null, reason: res.status === 429 ? 'busy' : data.reason || 'down' };
   } catch (e) { return { result: null, reason: e?.message === 'timeout' ? 'slow' : 'down' }; }
 }
 
