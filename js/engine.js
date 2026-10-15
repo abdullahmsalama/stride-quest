@@ -912,6 +912,12 @@ export function coachContext(s, now) {
     const d = Math.floor((new Date(`${s.target.date}T12:00:00`) - new Date(new Date(now).toDateString())) / DAY);
     lines.push(`TARGET RACE: ${s.target.name} (${s.target.distance}, goal: ${s.target.goal}) on ${s.target.date}, ${d >= 0 ? `in ${d} days` : `${-d} days ago`}${s.target.result ? `; finished in ${Math.floor(s.target.result.time)} min` : ''}. Phases: build > race prep (last 4 weeks) > taper (last 2) > race week > recovery. Be honest about readiness but always encouraging.`);
   }
+  // Training paces worked out by the app from the best 5K, so the coach never invents them.
+  const b5 = s.bests?.run5k || s.answers?.best5k;
+  if (b5 > 0) {
+    const p = b5 / 5, f = m => `${Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, '0')}`;
+    lines.push(`TRAINING PACES (computed by the app from the 5K best of ${f(b5)}; use these exactly, never invent paces): 5K race pace ${f(p)}/km; easy ${f(p + 1)}-${f(p + 1.5)}/km; long run ${f(p + 1.1)}-${f(p + 1.6)}/km; tempo (comfortably hard) ${f(p + 0.35)}-${f(p + 0.5)}/km; intervals ${f(p - 0.05)}-${f(p + 0.1)}/km.`);
+  } else lines.push('TRAINING PACES: no 5K best on file; give paces by effort (easy = can hold a conversation), not numbers.');
   if (s.hybrid?.race?.event) lines.push(`Preparing for: ${s.hybrid.race.event === 'alphax' ? 'Alpha X' : 'Hyrox'} ${s.hybrid.race.division} (simulations follow that race's format).`);
   if (s.bests) {
     const t = m => (m ? `${Math.floor(m / 60) ? `${Math.floor(m / 60)}:${String(Math.floor(m % 60)).padStart(2, '0')}` : Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, '0')}` : null);

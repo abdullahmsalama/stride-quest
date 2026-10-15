@@ -446,6 +446,12 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: ok ? 204 : 403, headers });
     const url = new URL(request.url);
     if (url.pathname === '/health') return json({ ok: true }, 200, headers);
+    if (url.pathname === '/models' && ok && url.searchParams.get('p') === 'groq' && env.GROQ_API_KEY) {
+      // Which Groq models this key can use (names only).
+      const r = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${env.GROQ_API_KEY}` } });
+      const d = await r.json().catch(() => ({}));
+      return json({ status: r.status, models: (d.data || []).map(m => m.id) }, 200, headers);
+    }
     if (url.pathname === '/models' && ok && env.GEMINI_API_KEY) {
       // Which Gemini models this key can use (names only), to configure the smart coach.
       const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': env.GEMINI_API_KEY } });
@@ -486,7 +492,8 @@ export default {
       const text = String(body.text || '').slice(0, check ? 3000 : 700).trim();
       if (!text && !convo?.length) return json({ error: 'no text' }, 400, headers);
       const sys = check ? CHECK : lifts ? UNDERSTAND_LIFTS : UNDERSTAND.replace('TODAY', new Date().toISOString().slice(0, 10));
-      const chain = check ? [['gemini-smart', geminiSmart], ...PROVIDERS] : PROVIDERS; // the check: careful model first (~10 s), fast ones as backup
+      let chain = check ? [['gemini-smart', geminiSmart], ...PROVIDERS] : PROVIDERS; // the check: careful model first (~10 s), fast ones as backup
+      if (body.debug && body.only) chain = chain.filter(([n]) => n === body.only); // testing one provider
       const tried = [];
       for (const [name, call] of chain) {
         try {
@@ -508,7 +515,8 @@ export default {
     const system = SYSTEM + String(body.context || '').slice(0, 3000) + (app ? `\n\nHOW THE APP WORKS (use this to answer questions about the app itself and say which tab or button to use; never invent features that are not listed):\n${app}` : '');
 
     const errors = [];
-    const chain = body.smart ? [['gemini-smart', geminiSmart], ...PROVIDERS] : PROVIDERS;
+    let chain = body.smart ? [['gemini-smart', geminiSmart], ...PROVIDERS] : PROVIDERS;
+    if (body.debug && body.only) chain = chain.filter(([n]) => n === body.only); // testing one provider
     for (const [name, call] of chain) {
       try {
         const raw = await call(env, system, messages, CHAT_SCHEMA);
