@@ -38,15 +38,21 @@ export function sessionOf(it, easyPace) {
   const xm = /(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*min/i.exec(t);
   if (xm) minutes = +xm[1] * +xm[2] * 1.4; // reps plus the easy bits between them
   else if (mins.length) minutes = +mins[0][1];
-  const k = /(\d+(?:\.\d+)?)\s*km/i.exec(t);
-  if (k) km = +k[1];
+  const xk = /(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*km/i.exec(t), k = /(\d+(?:\.\d+)?)\s*km/i.exec(t);
+  if (xk) km = +xk[1] * +xk[2] * 1.15; // reps plus the jogs between them
+  else if (k) km = +k[1];
   const run = it.track === 'run' && RUN_CLS.has(it.cls) || RUN_CLS.has(it.cls) && !it.track;
-  const pace = it.cls === 'hard' || it.cls === 'test' ? easyPace * 0.85 : easyPace;
+  const quality = it.cls === 'hard' || it.cls === 'test';
+  const pace = quality ? easyPace * 0.85 : easyPace;
   if (minutes == null && km != null && run) minutes = km * pace;
-  if (it.minutes > 0) minutes = +it.minutes;
+  const logged = it.minutes > 0;
+  if (logged) minutes = +it.minutes;
   if (minutes == null) minutes = DEFAULT_MIN[it.cls] ?? (it.cls === 'rest' ? 0 : 30);
   if (run && km == null) km = minutes / pace;
-  return { minutes: Math.round(minutes), km: run ? Math.round(km * 10) / 10 : null, run, cls: it.cls, title: it.title, met: it.met, effort: it.effort };
+  // A planned quality run also has a warm-up and cool-down (~20 min easy) that its title leaves out.
+  if (run && quality && !logged) { minutes += 20; km += 20 / easyPace; }
+  const mobility = it.track === 'prep' || /mobility|stretch/i.test(t) && it.cls === 'strength';
+  return { minutes: Math.round(minutes), km: run ? Math.round(km * 10) / 10 : null, run, cls: it.cls, title: it.title, met: it.met || (mobility ? 3 : undefined), effort: it.effort, mobility, done: !!it.doneActivity };
 }
 export const LOADS = {
   rest: { label: 'Rest day', carbs: [3, 4] },
@@ -61,10 +67,16 @@ export function dayLoad(items, p, rmrKcal) {
   const perMin = rmrKcal / 1440;
   let exKcal = 0;
   for (const s of sessions) exKcal += s.run ? Math.max(0, p.kg * s.km * 1.0 - perMin * s.minutes) : Math.max(0, ((s.met || MET[s.cls] || 6) - 1) * p.kg * (s.minutes / 60));
-  const minutes = sessions.reduce((a, s) => a + s.minutes, 0), longest = Math.max(0, ...sessions.map(s => s.minutes));
+  // Gentle sessions (walks, yoga, mobility: MET under 4) count half towards the day's load.
+  const light = s => (s.met || MET[s.cls] || 6) < 4 && !s.run;
+  const minutes = Math.round(sessions.reduce((a, s) => a + s.minutes * (light(s) ? 0.5 : 1), 0)), longest = Math.max(0, ...sessions.filter(s => !light(s)).map(s => s.minutes));
+  // Load = how long, and how hard: 20-45 min of quality work is a moderate day (Burke 2011: 6-10 g/kg
+  // is for 1-3 h of moderate-to-high work), a long run or 60+ min of quality is a hard one.
   const intense = sessions.some(s => s.cls === 'hard' || s.cls === 'test' || s.cls === 'long' || s.effort === 'hard');
-  const load = !sessions.length ? 'rest' : minutes > 150 ? 'very' : intense || minutes > 75 ? 'hard' : minutes > 45 ? 'moderate' : 'light';
-  return { sessions, minutes, longest, exKcal: Math.round(exKcal), load, strength: sessions.some(s => s.cls === 'strength') };
+  const load = !sessions.length ? 'rest' : minutes > 150 ? 'very' : minutes > 75 || (intense && minutes >= 60) || sessions.some(s => s.cls === 'long') ? 'hard' : minutes > 45 || intense ? 'moderate' : 'light';
+  const strength = sessions.some(s => s.cls === 'strength' && !s.mobility);
+  const label = strength && (load === 'light' || load === 'moderate') ? 'Strength day' : LOADS[load].label;
+  return { sessions, minutes, longest, exKcal: Math.round(exKcal), load, label, strength };
 }
 
 // ---------- goals ----------
@@ -84,20 +96,24 @@ export function goalCheck(p, goal, now) {
   if (Math.abs(diff) < 0.3) return { ok: true, weeks };
   const losing = diff < 0, max = losing ? (p.bodyFat > 0 && p.bodyFat < (p.sex === 'f' ? 23 : 15) ? 0.7 : 1.0) : 0.5;
   const needRate = (Math.abs(diff) / p.kg) * 100 / Math.max(weeks, 0.1);
-  const safeWeeks = (Math.abs(diff) / p.kg) * 100 / (losing ? Math.min(max, 0.75) : 0.35);
+  // The realistic date at the pace they picked (if it goes their way), else a middle safe pace.
+  const own = weeklyRate(goal, p), pace = own > 0 && (goal.type === 'cut') === losing ? own : losing ? Math.min(max, 0.75) : 0.35;
+  const safeWeeks = (Math.abs(diff) / p.kg) * 100 / pace;
   const realistic = new Date(now + safeWeeks * 7 * 864e5).toISOString().slice(0, 10);
-  return { ok: weeks > 0 && needRate <= max, needRate: Math.round(needRate * 100) / 100, max, weeks: Math.round(weeks), realistic, losing };
+  return { ok: weeks > 0 && needRate <= max, past: weeks <= 0, needRate: Math.round(needRate * 100) / 100, max, pace, weeks: Math.round(weeks), realistic, losing };
 }
 
 // ---------- daily targets ----------
-const PAL = { sit: 1.4, feet: 1.5, physical: 1.6 };
+const PAL = { sit: 1.4, feet: 1.55, physical: 1.8 }; // FAO/WHO/UNU 2004: sedentary 1.4-1.69, active 1.7-1.99
 const RED = { f: 30, m: 25, x: 30 }; // kcal per kg FFM: the IOC "low EA" guide (lower and less certain in men)
 export function targets(p, day, goal, opts = {}) {
   const R = rmr(p), ffm = ffmOf(p);
   // Daily-life PAL (from doubly labelled water studies) already includes digesting food; the extra food
   // eaten for training costs ~10% more to digest, so exercise energy is divided by 0.9.
   const tdee = R.kcal * (PAL[p.life] || 1.45) + day.exKcal / 0.9;
-  const type = goal?.type || 'maintain', rate = weeklyRate(goal, p);
+  // No deliberate deficit for under-18s (growth) or after REDs warning signs: held at maintenance.
+  const held = goal?.type === 'cut' && (p.age < 18 ? 'young' : opts.reds ? 'reds' : null);
+  const type = held ? 'maintain' : goal?.type || 'maintain', rate = held ? 0 : weeklyRate(goal, p);
   let kcal = type === 'cut' ? tdee - (rate / 100) * p.kg * 1100 : type === 'gain' ? tdee * (rate >= 0.5 ? 1.15 : 1.10) : tdee;
   const notes = [];
   // Never below the low-EA guide: a goal can't push the athlete into the REDs red zone.
@@ -118,7 +134,7 @@ export function targets(p, day, goal, opts = {}) {
   const fatMin = Math.max((0.2 * kcal) / 9, 0.6 * p.kg);
   // In a deficit, make room by trimming carbs a little first (never below 3 g/kg on a training day,
   // 2.5 on a rest day), so the deficit survives; only then eat more.
-  if (fat < fatMin && type === 'cut') {
+  if (fat < fatMin && type !== 'gain' && !opts.raceLoad) {
     const minCarbs = (day.load === 'rest' ? 2.5 : 3) * p.kg;
     carbs = Math.max(minCarbs, carbs - ((fatMin - fat) * 9) / 4);
     fat = (kcal - 4 * protein - 4 * carbs) / 9;
@@ -128,14 +144,18 @@ export function targets(p, day, goal, opts = {}) {
   // ...and at most 35% of energy (ACSM range 20-35%): anything above goes to carbs.
   const fatMax = (0.35 * kcal) / 9;
   let carbsG = carbs;
-  if (fat > fatMax) { carbsG += ((fat - fatMax) * 9) / 4; fat = fatMax; }
+  if (fat > fatMax) {
+    let spare = (fat - fatMax) * 9; fat = fatMax;
+    if (type === 'gain') { const add = Math.min(spare, (2.2 * p.kg - protein) * 4); if (add > 0) { protein += add / 4; spare -= add; } }
+    carbsG += spare / 4;
+  }
   const ea = (kcal - day.exKcal) / ffm;
   const dose = (p.age >= 50 ? 0.4 : 0.3) * p.kg;
   return {
     kcal: round(kcal, 10), range: [round(kcal * 0.9, 10), round(kcal * 1.1, 10)], protein: round(protein), carbs: round(carbsG), fat: round(fat),
-    carbsPerKg: Math.round((carbsG / p.kg) * 10) / 10, proteinDoses: Math.max(4, Math.ceil(protein / dose)), doseG: round(dose, 5),
+    carbsPerKg: Math.round((carbsG / p.kg) * 10) / 10, proteinDoses: clamp(Math.ceil(protein / dose), 4, 5), doseG: round(protein / clamp(Math.ceil(protein / dose), 4, 5), 5),
     tdee: round(tdee, 10), rmr: round(R.kcal, 10), method: R.method, ea: Math.round(ea), ffmEstimated: !(p.bodyFat > 0),
-    floorApplied, raised, deficit: round(tdee - kcal, 10), rate, type, notes,
+    floorApplied, raised, deficit: round(tdee - kcal, 10), rate, type, notes, held,
   };
 }
 
@@ -163,9 +183,15 @@ export function checks(c) {
   else if (cutting && c.t.ea < 30) out.push({ id: 'ea-amber', level: 'warn', title: 'Low energy left after training', why: 'This deficit leaves little energy for your body after training. Fine for a short cut; keep it brief, watch for tiredness, poor sleep or missed periods.' });
   else if (!cutting && c.t.ea < 45 && ['hard', 'very'].includes(c.load)) out.push({ id: 'ea-low', level: 'info', title: 'Big day: eat up', why: 'On heavy days it\'s easy to under-eat without noticing. Hit your carbs and add a snack after training.' });
   if (c.goal?.type === 'gain' && racePhase) out.push({ id: 'gain-race', level: 'info', title: 'Gaining weight right before a race', why: 'A surplus now adds weight you carry on race day. Eating at maintenance until the race usually serves you better.', apply: { mode: 'perform', label: 'Maintain until the race' } });
-  if (c.goalCheck && !c.goalCheck.ok) out.push({ id: 'goal-date', level: 'warn', title: 'That goal date is too fast',
-    why: `It needs about ${c.goalCheck.needRate}% of your bodyweight a week; a safe pace is up to ${c.goalCheck.max}%. At a safe pace you'd get there around ${c.goalCheck.realistic}. Slower loss keeps your muscle and performance.` });
-  if (c.reds) out.push({ id: 'reds', level: 'danger', title: 'Signs worth checking with a professional', why: 'You ticked signs that can come from not eating enough for your training (REDs). Please talk to a sports doctor or dietitian. This app can\'t diagnose anything.' });
+  if (c.goalCheck && !c.goalCheck.ok) {
+    const g = c.goalCheck, when = new Date(`${g.realistic}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    out.push({ id: 'goal-date', level: 'warn', title: g.past ? 'That goal date has passed' : 'That goal date is too fast',
+      why: g.past ? `Pick a new date. At your pace (about ${g.pace}% of bodyweight a week) you'd get there around ${when}.`
+        : `It needs about ${g.needRate}% of your bodyweight a week; a safe pace is up to ${g.max}%. At your pace (about ${g.pace}% a week) you'd get there around ${when}. ${g.losing ? 'Slower loss keeps your muscle and performance.' : 'Gaining slower keeps it mostly muscle, not fat.'}` });
+  }
+  if (c.t.held === 'young') out.push({ id: 'young', level: 'warn', title: 'No dieting while you\'re still growing',
+    why: 'Under 18, your body needs extra energy to grow, and dieting raises the risk of injuries and health problems. Your targets are set to fuel you at your current weight. If weight matters for you, talk to a sports doctor or dietitian.' });
+  if (c.reds) out.push({ id: 'reds', level: 'danger', title: 'Signs worth checking with a professional', why: `You ticked signs that can come from not eating enough for your training (REDs).${c.t.held === 'reds' ? ' Your fat-loss deficit is paused: targets are at maintenance until a check-in comes back clear.' : ''} Please talk to a sports doctor or dietitian. This app can't diagnose anything.` });
   return out;
 }
 

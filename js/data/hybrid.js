@@ -14,12 +14,12 @@ export const STRENGTH_STAGES = [
     { type: 'lift', title: 'Upper: push-ups, DB rows, DB press', ex: ['pushup', 'db_row', 'db_press'] },
     { type: 'lift', title: 'Full body + farmers carry', ex: ['goblet_squat', 'db_row', 'farmers_carry'] },
     { type: 'gate', title: 'Gate: 3 x 10 goblet squat, 3 x 10 DB RDL, 10 push-ups', ex: ['goblet_squat', 'pushup'] }] },
-  { n: 2, name: 'Barbell Basics', target: 'Squat 0.75 x bodyweight', steps: [
+  { n: 2, name: 'Barbell Basics', target: 'Squat 0.75 x bodyweight', parts: { squat: ['Back squat 4 x 6', 'back_squat'], hinge: ['Deadlift 4 x 5', 'deadlift'], hingeLight: ['Romanian deadlift 3 x 8', 'rdl'], single: ['Split squat 3 x 8 each', 'split_squat'], push: ['Overhead press 4 x 6', 'ohp'], bench: ['Bench press 3 x 8', 'db_bench'], pull: ['Pull-up progression 3 x 5', 'pullup'], row: ['DB row 3 x 10 each', 'db_row'], carry: ['Farmers carry 3 x 30 m', 'farmers_carry'] }, steps: [
     { type: 'lift', title: 'Back squat 4 x 6, split squat 3 x 8', ex: ['back_squat', 'split_squat'] },
     { type: 'lift', title: 'Deadlift 4 x 5, rows, plank', ex: ['deadlift', 'db_row'] },
     { type: 'lift', title: 'Overhead press 4 x 6, pull-up progression', ex: ['ohp', 'pullup'] },
     { type: 'gate', title: 'Gate: back squat 5 reps at 0.75 x bodyweight, deadlift 5 reps at 1 x bodyweight', ex: ['back_squat', 'deadlift'] }] },
-  { n: 3, name: 'Strong Base', target: 'Squat 1 x bodyweight', steps: [
+  { n: 3, name: 'Strong Base', target: 'Squat 1 x bodyweight', parts: { squat: ['Squat 5 x 5', 'back_squat'], hinge: ['Deadlift 5 x 5', 'deadlift'], hingeLight: ['Romanian deadlift 3 x 8', 'rdl'], single: ['Walking lunges 3 x 20 m', 'walking_lunge'], push: ['Overhead press 4 x 5', 'ohp'], bench: ['Bench press 4 x 6', 'db_bench'], pull: ['Pull-ups 4 x max', 'pullup'], row: ['DB row 3 x 10 each', 'db_row'], carry: ['Farmers carry 4 x 40 m', 'farmers_carry'] }, steps: [
     { type: 'lift', title: 'Squat 5 x 5, walking lunges', ex: ['back_squat', 'walking_lunge'] },
     { type: 'lift', title: 'Deadlift 5 x 5, pull-ups', ex: ['deadlift', 'pullup'] },
     { type: 'lift', title: 'Press + rows + carries', ex: ['ohp', 'db_row', 'farmers_carry'] },
@@ -29,17 +29,17 @@ export const STRENGTH_STAGES = [
     { type: 'lift', title: 'Sandbag lunges 4 x 25 m + wall balls 4 x 15', ex: ['sandbag_lunge', 'wall_ball'] },
     { type: 'lift', title: 'Sled push / pull 6 x 15 m (or swaps)', ex: ['sled_push', 'sled_pull'] },
     { type: 'gate', title: 'Gate: 100 m farmers carry unbroken (~40% bodyweight total) + 50 m lunges unbroken', ex: ['farmers_carry', 'sandbag_lunge'] }] },
-  { n: 5, name: 'Strong Hybrid', target: 'Squat 1.25 x bodyweight', steps: [
+  { n: 5, name: 'Strong Hybrid', target: 'Squat 1.25 x bodyweight', parts: { squat: ['Squat 5 x 3 heavy', 'back_squat'], hinge: ['Deadlift 5 x 3 heavy', 'deadlift'], hingeLight: ['Romanian deadlift 3 x 6', 'rdl'], single: ['Split squat 3 x 6 each', 'split_squat'], push: ['Overhead press 4 x 5', 'ohp'], bench: ['Bench press 4 x 5', 'db_bench'], pull: ['Weighted pull-ups 4 x 4', 'pullup'], row: ['Rows 3 x 8', 'db_row'], carry: ['Heavy sled push + pull 6 x 15 m', 'sled_push'] }, steps: [
     { type: 'lift', title: 'Squat 5 x 3 heavy, split squat', ex: ['back_squat', 'split_squat'] },
     { type: 'lift', title: 'Deadlift 5 x 3 heavy, pull-ups weighted', ex: ['deadlift', 'pullup'] },
     { type: 'lift', title: 'Heavy sled push and pull', ex: ['sled_push', 'sled_pull'] },
     { type: 'gate', title: 'Gate: squat 1.25 x bodyweight for 3, deadlift 1.5 x for 3', ex: ['back_squat', 'deadlift'] }] },
-  { n: 6, name: 'Pro Strength', target: 'Deadlift 1.75 x bodyweight', steps: [
+  { n: 6, name: 'Pro Strength', target: 'Deadlift 1.75 x bodyweight', parts: { squat: ['Squat 6 x 2 heavy', 'back_squat'], hinge: ['Deadlift 6 x 2 heavy', 'deadlift'], hingeLight: ['Romanian deadlift 3 x 6', 'rdl'], single: ['Split squat 3 x 6 each', 'split_squat'], push: ['Overhead press 5 x 3', 'ohp'], bench: ['Bench press 5 x 3', 'db_bench'], pull: ['Weighted pull-ups 5 x 3', 'pullup'], row: ['Rows 4 x 8', 'db_row'], carry: ['Pro-weight sled + wall balls', 'sled_push'] }, steps: [
     { type: 'lift', title: 'Squat 6 x 2 heavy', ex: ['back_squat'] },
     { type: 'lift', title: 'Deadlift 6 x 2 heavy', ex: ['deadlift'] },
     { type: 'lift', title: 'Pro-weight sled + wall balls', ex: ['sled_push', 'wall_ball'] },
     { type: 'gate', title: 'Gate: deadlift 1.75 x bodyweight for 3, squat 1.5 x for 3, 8 strict pull-ups', ex: ['deadlift', 'back_squat', 'pullup'] }] },
-  { n: 7, name: 'Elite Strength', target: 'Deadlift 2 x bodyweight', steps: [
+  { n: 7, name: 'Elite Strength', target: 'Deadlift 2 x bodyweight', parts: { squat: ['Squat wave 3-2-1 heavy, then 3 x 3 back-off', 'back_squat'], hinge: ['Deadlift 5 x 2 heavy', 'deadlift'], hingeLight: ['Romanian deadlift 3 x 5', 'rdl'], single: ['Heavy sandbag lunges 4 x 25 m', 'sandbag_lunge'], push: ['Overhead press 5 x 3', 'ohp'], bench: ['Bench press 5 x 3', 'db_bench'], pull: ['Weighted pull-ups 4 x 5', 'pullup'], row: ['Rows 4 x 8', 'db_row'], carry: ['Elite-weight sled push / pull', 'sled_push'] }, steps: [
     { type: 'lift', title: 'Squat wave: 3-2-1 heavy, then 3 x 3 back-off', ex: ['back_squat'] },
     { type: 'lift', title: 'Deadlift 5 x 2 heavy + weighted pull-ups 4 x 5', ex: ['deadlift', 'pullup'] },
     { type: 'lift', title: 'Elite-weight sled push / pull + heavy sandbag lunges', ex: ['sled_push', 'sled_pull', 'sandbag_lunge'] },
@@ -150,9 +150,12 @@ export const HYBRID_EXERCISES = {
   db_row: { name: 'Dumbbell row', dose: '3 x 10 each side', cues: ['Flat back', 'Pull elbow to hip', 'Control the lowering'], search: 'one arm dumbbell row form' },
   db_press: { name: 'Dumbbell press', dose: '3 x 10', cues: ['Ribs down', 'Press straight up', 'Control down'], search: 'dumbbell shoulder press form' },
   farmers_carry: { name: 'Farmers carry', dose: 'as set', cues: ['Tall posture, shoulders down', 'Short quick steps', 'Grip hard, breathe'], search: 'farmers carry technique hyrox' },
-  back_squat: { name: 'Back squat', dose: 'as set', cues: ['Brace before each rep', 'Depth you can control', 'Knees out, chest proud'], search: 'back squat form beginner' },
-  deadlift: { name: 'Deadlift', dose: 'as set', cues: ['Bar over mid-foot', 'Lats tight, push the floor away', 'Hips and shoulders rise together'], search: 'deadlift form beginner' },
-  ohp: { name: 'Overhead press', dose: 'as set', cues: ['Squeeze glutes', 'Bar close to the face', 'Head through at the top'], search: 'overhead press form' },
+  back_squat: { name: 'Back squat', dose: 'as set', cues: ['Brace before each rep', 'Depth you can control', 'Knees out, chest proud'], search: 'back squat form beginner', alt: 'No barbell? Goblet squat or a heavy dumbbell front squat, or a split squat holding dumbbells. No weights: a slow tempo split squat with a loaded backpack.' },
+  deadlift: { name: 'Deadlift', dose: 'as set', cues: ['Bar over mid-foot', 'Lats tight, push the floor away', 'Hips and shoulders rise together'], search: 'deadlift form beginner', alt: 'No barbell? Dumbbell or kettlebell Romanian deadlift, or single-leg RDL. No weights: backpack RDL and hip thrusts.' },
+  db_bench: { name: 'Bench press (barbell or dumbbells)', dose: 'as set', cues: ['Shoulder blades squeezed back', 'Feet planted', 'Lower to the chest with control'], search: 'bench press form', alt: 'No bench? Floor press with dumbbells, or push-ups.' },
+  rdl: { name: 'Romanian deadlift', dose: 'as set', cues: ['Soft knees, hips back', 'Bar slides down the thighs', 'Stop when the hamstrings stretch'], search: 'romanian deadlift form', alt: 'Dumbbells or a kettlebell work the same.' },
+  arms: { name: 'Curls + triceps extensions', dose: '3 x 10-12 each', cues: ['Elbows still', 'Slow on the way down', 'Stop 1-2 reps before failure'], search: 'dumbbell curl triceps extension form' },
+  ohp: { name: 'Overhead press', dose: 'as set', cues: ['Squeeze glutes', 'Bar close to the face', 'Head through at the top'], search: 'overhead press form', alt: 'No barbell? Dumbbell or kettlebell press, or pike push-ups.' },
   pullup: { name: 'Pull-up (or progression)', dose: 'as set', cues: ['Bands or negatives if needed', 'Full hang to chin over bar', 'No swinging'], search: 'pull up progression beginner' },
   walking_lunge: { name: 'Walking lunge', dose: 'as set', cues: ['Long step, back knee near the floor', 'Torso tall', 'Push through the front heel'], search: 'walking lunge form' },
   sandbag_lunge: { name: 'Sandbag lunge', dose: 'as set', cues: ['Bag high on the shoulders', 'Back knee touches lightly', 'Steady rhythm'], search: 'sandbag lunges hyrox technique', alt: 'No sandbag? Dumbbells or a loaded backpack.' },

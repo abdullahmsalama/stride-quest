@@ -5,6 +5,9 @@ import { RUN_LEVELS } from './data/tracks.js';
 import { TRI_WORLDS } from './data/tri.js';
 import { HYBRID_WORLDS } from './data/hybrid.js';
 import { bestFor } from './background.js';
+import { lanesReady as triReady } from './tri.js';
+import { lanesReady as hybReady } from './hybrid.js';
+import { raceAgeBlock } from './age.js';
 
 const DAY = 864e5;
 
@@ -85,7 +88,7 @@ const BASE = { '5k': [35, 45], '10k': [70, 85], half: [150, 180], marathon: [300
 export function finishRange(distance, best5kMin, mode = 'finish') {
   const n = NEEDS[distance];
   if (!n) return null;
-  if (best5kMin > 0 && mode !== 'runwalk') { const t = best5kMin * Math.pow(n.km / 5, 1.06); return [Math.round(t * 1.03), Math.round(t * 1.12)]; }
+  if (best5kMin > 0) { const t = best5kMin * Math.pow(n.km / 5, 1.06); return mode === 'runwalk' ? [Math.round(t * 1.1), Math.round(t * 1.25)] : [Math.round(t * 1.03), Math.round(t * 1.12)]; }
   const [a, b] = BASE[distance];
   return mode === 'runwalk' ? [Math.round(a * 1.25), Math.round(b * 1.3)] : [a, b];
 }
@@ -115,7 +118,16 @@ export function verdict(s, race, now, events = []) {
   const days = daysUntil(race.date, now), weeksLeft = days / 7;
   const n = NEEDS[race.distance];
   const best5k = s.bests?.run5k || s.answers?.best5k || null;
+  const ageNeed = raceAgeBlock(s, race.distance);
+  if (ageNeed) return { kind: 'age', need: ageNeed, days, weeksLeft };
   if (!n) return otherVerdict(s, race, weeksLeft);
+  // Racing for a time is never judged more harshly than finishing: when finishing isn't comfortable yet
+  // (or the time asked is slower than they'd finish anyway), the finish verdict is the answer.
+  if (race.goal === 'time') {
+    const fin = verdict(s, { ...race, goal: 'finish' }, now, events);
+    const t = judgeTime(race.distance, race.goalTime, { run5k: best5k, run10k: s.bests?.run10k });
+    if (fin.kind !== 'ok' || t?.kind === 'easy') return { ...fin, time: t, mode: fin.kind === 'ok' ? 'time' : fin.mode };
+  }
   // The distance itself needs the running history (finish level); racing it for a time adds the next
   // level's sessions on top, but no extra months: that history is about the distance, not the speed.
   const goal = race.goal === 'time' ? n.time : n.finish;
@@ -145,26 +157,35 @@ export function verdict(s, race, now, events = []) {
 // Triathlon and Hybrid: worlds on their map instead of run levels (about six weeks a world).
 function otherVerdict(s, race, weeksLeft) {
   let need = 0, label = '';
+  // Ready = in the race's world with all its lanes built (its boss IS the race). Each world to cross
+  // takes ~6 weeks, and building the race world's lanes another ~6 (fewer if they're nearly there).
+  const worlds = (want, world, ready) => (world > want ? 0 : world === want ? (ready ? 0 : 6) : (want - world + 1) * 6);
   if (['70.3', 'full', 'tri'].includes(race.distance) && s.tri) {
     const want = race.distance === 'full' ? TRI_WORLDS.length - 1 : race.distance === '70.3' ? TRI_WORLDS.findIndex(w => /70\.3|half/i.test(`${w.race} ${w.name}`)) : 1;
-    need = Math.max(0, want - (s.tri.world || 0)) * 6; label = 'triathlon';
+    need = worlds(want, s.tri.world || 0, triReady(s)); label = 'triathlon';
   } else if (['hyrox', 'alphax'].includes(race.distance) && s.hybrid) {
     const want = HYBRID_WORLDS.findIndex(w => w.id === 'solo');
-    need = Math.max(0, want - (s.hybrid.world || 0)) * 6; label = 'hybrid';
+    need = worlds(want, s.hybrid.world || 0, hybReady(s)); label = 'hybrid';
   } else return { kind: 'unknown', days: Math.round(weeksLeft * 7), weeksLeft };
-  const kind = need + 1 <= weeksLeft ? 'ok' : need <= weeksLeft + 2 ? 'tight' : 'no';
+  const kind = need + 1 <= weeksLeft ? 'ok' : need <= weeksLeft ? 'tight' : 'no';
   return { kind, mode: kind === 'tight' ? 'finish' : 'finish', days: Math.round(weeksLeft * 7), weeksLeft, need, label, other: true };
 }
 
 // Where in the run-up the athlete is, and this week's focus.
 export function phase(race, now) {
   const d = daysUntil(race.date, now);
+  const tri = ['70.3', 'full', 'tri'].includes(race.distance), hyb = ['hyrox', 'alphax'].includes(race.distance);
   if (d < -7) return { id: 'done', d };
-  if (d < 0) return { id: 'recover', d, title: 'Recovery week', focus: ['Easy movement only: walks, an easy spin or swim', 'No hard sessions until you feel fresh', 'Pick your next goal when you\'re ready'] };
+  if (d < 0) return { id: 'recover', d, title: 'Recovery week', focus: ['Easy movement only: walks, an easy spin or swim', 'No hard sessions or heavy lifting until you feel fresh', 'Pick your next goal when you\'re ready'] };
   if (d === 0) return { id: 'race', d, title: 'Race day!', focus: ['Start slower than you want to', 'Eat and drink what you practised', 'Enjoy it: you earned this'] };
-  if (d <= 7) return { id: 'raceweek', d, title: 'Race week', focus: ['Easy runs only, plus a few short strides', 'Sleep, eat well, drink water', 'Check your kit, travel and start time'] };
-  if (d <= 14) return { id: 'taper', d, title: 'Taper', focus: ['Cut your volume by about a third', 'Keep one short session at race pace', 'Your long run is shorter this week'] };
-  if (d <= 28) return { id: 'peak', d, title: 'Race prep', focus: ['One session at your race pace', 'A long run close to race effort', 'Practise race-day food and kit'] };
+  if (d <= 7) return { id: 'raceweek', d, title: 'Race week', focus: [
+    tri ? 'Short, easy swim, bike and run, each with a few minutes at race effort' : hyb ? 'Easy runs, plus one light station practice early in the week' : 'Easy runs only, plus a few short strides',
+    'No heavy lifting: the last heavy legs were 7-10 days out', 'Sleep, eat well, drink water',
+    tri ? 'Check your bike, wetsuit, transition bag and start time' : 'Check your kit, travel and start time'] };
+  if (d <= 14) return { id: 'taper', d, title: 'Taper', focus: ['Cut your volume by about a third, keep the intensity', tri ? 'One short race-pace session in each sport' : hyb ? 'One short session at race pace with stations' : 'Keep one short session at race pace',
+    'Strength: one session, half the sets, same weight', tri ? 'Your long ride and run are shorter this week' : 'Your long session is shorter this week'] };
+  if (d <= 28) return { id: 'peak', d, title: 'Race prep', focus: [tri ? 'A brick (ride then run) at race effort' : hyb ? 'Race-pace runs with stations in between' : 'One session at your race pace',
+    tri ? 'Long ride and run close to race effort; practise open water' : 'A long session close to race effort', 'Strength: 2 short, heavy full-body sessions', 'Practise race-day food and kit'] };
   return { id: 'build', d, title: 'Build', focus: ['Follow your level as usual: it builds you towards the race', 'Consistency beats big days'] };
 }
 

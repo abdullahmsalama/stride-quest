@@ -35,13 +35,14 @@ export function limiter(s) {
 }
 
 export function laneTarget(lane, need) {
-  if (lane === 'swim') return need > 0 ? SWIM_STAGES[need - 1].target : 'start';
-  if (lane === 'bike') return need > 0 ? BIKE_STAGES[need - 1].target : 'start';
+  if (lane === 'swim') return need > SWIM_MAX ? 'all done ✅' : need > 0 ? SWIM_STAGES[need - 1].target : 'start';
+  if (lane === 'bike') return need > BIKE_MAX ? 'all done ✅' : need > 0 ? BIKE_STAGES[need - 1].target : 'start';
   return `Run Level ${need}`;
 }
 
-export const swimSteps = s => (s.tri.swim.stage < SWIM_MAX ? SWIM_STAGES[s.tri.swim.stage].steps : []);
-export const bikeSteps = s => (s.tri.bike.stage < BIKE_MAX ? BIKE_STAGES[s.tri.bike.stage].steps : []);
+// A finished ladder keeps going with the top stage's sessions (no gate), so the sport stays in the week.
+export const swimSteps = s => (s.tri.swim.stage < SWIM_MAX ? SWIM_STAGES[s.tri.swim.stage].steps : SWIM_STAGES[SWIM_MAX - 1].steps.filter(st => st.type !== 'gate'));
+export const bikeSteps = s => (s.tri.bike.stage < BIKE_MAX ? BIKE_STAGES[s.tri.bike.stage].steps : BIKE_STAGES[BIKE_MAX - 1].steps.filter(st => st.type !== 'gate'));
 export function gateSteps(s) {
   if (s.tri.finished) return [];
   const w = triWorld(s);

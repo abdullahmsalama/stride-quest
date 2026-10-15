@@ -110,4 +110,4 @@ export function featured(events, track, todayYmd) {
 }
 
 // Days from today to a race (negative = passed).
-export const daysTo = (dateYmd, now) => Math.round((new Date(`${dateYmd}T12:00:00`) - new Date(new Date(now).toDateString())) / 864e5);
+export const daysTo = (dateYmd, now) => Math.round((new Date(`${dateYmd}T00:00:00`) - new Date(new Date(now).toDateString())) / 864e5); // midnight to midnight

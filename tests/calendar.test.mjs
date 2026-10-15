@@ -150,3 +150,37 @@ test('a logged session (or a failed attempt) uses the day: nothing else is plann
     assert.equal(today.filter(i => i.done).length, 1, result);
   }
 });
+
+test('classify: easy runs stay easy even when the hint mentions pace or hills', () => {
+  assert.equal(K.classify({ type: 'run', title: 'Walk 20 min', detail: 'Easy, conversational pace.' }), 'easy');
+  assert.equal(K.classify({ type: 'run', title: '6 x (2 min jog / 2 min walk)', detail: 'Easy pace. Walk breaks are part of it.' }), 'easy');
+  assert.equal(K.classify({ type: 'run', title: 'Easy 35 min on a rolling route', detail: 'Hill repeats unlock at Prep stage P4' }), 'easy');
+  assert.equal(K.classify({ type: 'run', title: 'Run 8 x 1 km at goal race pace' }), 'hard');
+  assert.equal(K.classify({ type: 'run', title: '3 x 3 km at half-marathon pace' }), 'hard');
+  assert.equal(K.classify({ type: 'run', title: 'Tempo 20 min comfortably hard' }), 'hard');
+});
+
+test('week: when Run leads, the other chosen sports still get sessions', async () => {
+  const H = await import('../js/hybrid.js');
+  let s = placed(5);
+  s.profile.tracks = ['run', 'hybrid']; s.profile.primary = 'run';
+  s.hybrid = H.placeHybrid(s, { liftExp: 'y1_3', gym: 'full' }, MON);
+  s = K.setSchedule(s, [0, 2, 4, 5], 5);
+  const pattern = K.weekPattern(s);
+  assert.ok(pattern.some(k => k !== 'run'), pattern.join());
+  const tracks = K.buildWeek(s, MON).days.flatMap(d => d.items).map(i => i.track);
+  assert.ok(tracks.some(t => t === 'strength' || t === 'engine' || t === 'hyMaint'), tracks.join());
+});
+
+test('race week: only easy sessions, a race-pace touch, and the race on its day', () => {
+  let s = placed(7);
+  s = K.setSchedule(s, [0, 1, 3, 5, 6], 5);
+  s.target = { name: 'Test Half', date: '2026-10-17', distance: 'half', goal: 'finish' }; // Saturday
+  const w = K.buildWeek(s, MON);
+  const items = w.days.flatMap(d => d.items.map(it => ({ ...it, day: d.i })));
+  assert.ok(items.some(it => it.race && it.day === 5), 'race on Saturday');
+  assert.ok(!items.some(it => !it.race && (it.cls === 'long' || it.cls === 'test' || it.cls === 'impact' || it.track === 'prep')), JSON.stringify(items.map(i => [i.title, i.cls])));
+  assert.ok(items.filter(it => it.cls === 'hard').length === 0);
+  assert.ok(!items.some(it => it.day === 5 && !it.race));
+  assert.ok(w.notes.some(n => /Race week|Race day/.test(n)));
+});

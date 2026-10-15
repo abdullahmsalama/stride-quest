@@ -872,3 +872,18 @@ header.top { gap: 10px; }
 .strava-match { margin-top: 12px; padding: 10px 12px; border-radius: 12px; border-left: 4px solid #fc4c02; background: rgba(252, 76, 2, .07); }
 .strava-match p { margin: 0 0 8px; }
 .strava-link { color: #fc4c02; font-weight: 700; }
+
+.phase-note { margin: 2px 0 4px; font-size: 13px; font-weight: 600; color: var(--brand); }
+.wk-item .phase-note { font-weight: 500; font-size: 12px; }
+.split-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0; }
+.split-table th, .split-table td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); }
+.split-table tr.on td { background: var(--brand-soft); font-weight: 700; }
+.kid-hero h2 { margin: 0 0 6px; }
+.kid-stats { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
+.kid-stats span { background: var(--brand-soft); border-radius: 999px; padding: 4px 10px; font-weight: 700; font-size: 14px; }
+.kid-mission h2 { font-size: 24px; margin: 4px 0 8px; }
+.kid-mission.done { opacity: .85; }
+.kid-yay { font-weight: 800; color: var(--brand); }
+.stickers { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 8px; }
+.stickers span { font-size: 28px; text-align: center; padding: 6px 0; border-radius: 10px; background: var(--surface-2); filter: grayscale(1); opacity: .35; }
+.stickers span.on { filter: none; opacity: 1; background: var(--brand-soft); }

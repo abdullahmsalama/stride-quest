@@ -7,6 +7,7 @@ import * as ST from './standards.js';
 import * as BG from './background.js';
 import { TRI_WORLDS } from './data/tri.js';
 import { HYBRID_WORLDS } from './data/hybrid.js';
+import * as AGE from './age.js';
 
 export const DAY = 864e5;
 export const XP = { run: 30, swim: 30, bike: 30, lift: 30, engine: 30, maint: 25, prep: 20, slot: 20, rest: 10, gate: 100, proveit: 30, painCheck: 5, daily: 5, restDay: 10, weekBonus: 50 };
@@ -94,7 +95,9 @@ export function prepCredit(a, q = qualifyingLevel(a)) {
   const byLevel = runLevel(Math.min(Math.max(q, 1), RUN_LEVELS.length)).needsPrep;
   const st = a.selfTest || {};
   const failed = ['t0', 't1', 't2', 't3'].findIndex(k => st[k] === false);
-  let p = failed >= 0 ? Math.min(byLevel, failed) : Math.max(byLevel, prepFromSelfTest(st));
+  // Nothing ticked at all usually means "skipped", not "failed everything": one stage below their level.
+  const skipped = ['t0', 't1', 't2', 't3'].every(k => st[k] === false);
+  let p = skipped ? Math.max(0, byLevel - 1) : failed >= 0 ? Math.min(byLevel, failed) : Math.max(byLevel, prepFromSelfTest(st));
   if (a.pain === 'mild' || a.pain === 'more' || (a.redFlags || []).length) p = Math.min(p, 2);
   return Math.max(0, Math.min(p, PREP_STAGES.length - 1));
 }
@@ -153,6 +156,7 @@ export function trackSteps(s, track) {
     let why = null;
     const lock = reason => { status = 'locked'; why = reason; };
     if (status === 'open' && st.type === 'gate' && !gateOpen) lock(gateWhy(s, track));
+    if (status === 'open' && st.type === 'gate' && track === 'run' && AGE.runCap(s) && s.run.level >= AGE.runCap(s)) lock(`Under ${AGE.ageOf(s) < 16 ? 16 : 18}, the run levels stop here (${AGE.ageOf(s) < 16 ? '10K' : 'half marathon'} distance): longer races wait until you're older. Keep getting faster here!`);
     if (status === 'open' && track === 'run' && st.type === 'slot') status = 'slot';
     if (track === 'rebuild' && s.rebuild.redFlag && status === 'open' && !(s.rebuild.stage === 0 && idx === 1)) lock(WHY.redFlag);
     if ((track === 'swim' || track === 'bike') && s.rebuild.redFlag && status === 'open') lock(WHY.redFlag);
@@ -223,7 +227,7 @@ export function applyBackground(state, background) {
     s.hybrid.strength.stage = Math.max(s.hybrid.strength.stage, BG.skillFloor(s.background, 'strength'));
     s.hybrid.engine.stage = Math.max(s.hybrid.engine.stage, BG.skillFloor(s.background, 'engine'));
     const n = HYBRID_WORLDS.length, w = [...Array(n).keys()].findIndex(i => HYB.laneStatus(s, i).some(l => !l.ok));
-    s.hybrid.world = Math.max(s.hybrid.world, w < 0 ? n - 1 : w);
+    s.hybrid.world = Math.max(s.hybrid.world, Math.min(w < 0 ? n - 1 : w, 3)); // race bosses can't be skipped: lanes alone reach Solo Stadium at most
   }
   return s;
 }
@@ -371,6 +375,9 @@ export function completeStep(state, track, idx, opts) {
   }
 
   if (step.type === 'gate' && !provisional) passGate(s, track, now, msgs, opts);
+  // Maintenance at the top of a ladder: once all done, they start over.
+  if ((track === 'swim' || track === 'bike') && s.tri[track].stage >= (track === 'swim' ? TRI.SWIM_MAX : TRI.BIKE_MAX) && trackSteps(s, track).every(st => st.status === 'done')) s.tri[track].done = {};
+  if ((track === 'strength' || track === 'engine') && s.hybrid[track].stage >= (track === 'strength' ? HYB.STR_MAX : HYB.ENG_MAX) && trackSteps(s, track).every(st => st.status === 'done')) s.hybrid[track].done = {};
   if (track === 'refresher') refresherProgress(s, step, opts, now, msgs);
   if (!isRest) afterSession(s, now, msgs);
   return out(provisional ? 'provisional' : 'done');
@@ -867,7 +874,8 @@ export function coachContext(s, now) {
   const prep = PREP_STAGES[s.prep.level];
   const pains = s.history.filter(h => h.pain != null).slice(-3).map(h => `${h.pain}/10`).join(', ') || 'none logged';
   const lines = [
-    `Runner: ${s.profile.name || 'unnamed'}; trains ${s.profile.daysPerWeek} days/week.`,
+    `Runner: ${s.profile.name || 'unnamed'}; trains ${s.profile.daysPerWeek} days/week.${AGE.ageOf(s) != null ? ` Age ${AGE.ageOf(s)}.` : ''}`,
+    ...(AGE.isTeen(s) ? [`TEEN (under 18): keep advice age-appropriate. No max-weight lifting, no dieting or calorie targets (food as portions), Run levels capped at ${AGE.runCap(s)}; suggest a parent or coach for anything medical.`] : []),
     `Dream / goal: ${[s.profile.dream?.text, s.profile.dream?.event, s.profile.dream?.date && `by ${s.profile.dream.date}`].filter(Boolean).join(' · ') || s.profile.goal || 'not set'}.`,
     `Run Track: Level ${lvl.n} "${lvl.name}" in ${worldOf(lvl).name}. Level XP ${levelProgress(s).earned}/${levelProgress(s).target}. Total XP ${s.xp}.`,
     `Prep Track: P${s.prep.level} "${prep.name}" (${prep.focus}).`,

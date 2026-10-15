@@ -2,6 +2,8 @@
 // Blocks: build one lane for BLOCK_WEEKS while maintaining the other, deload a week, switch, repeat.
 import { STRENGTH_STAGES, ENGINE_STAGES, HYBRID_WORLDS, MAINTENANCE, BLOCK_WEEKS } from './data/hybrid.js';
 import { liftFactor, rowFactor } from './standards.js';
+import { activeSplit, splitSessions } from './splits.js';
+import { strengthCap } from './age.js';
 
 export const STR_MAX = STRENGTH_STAGES.length; // 9
 export const ENG_MAX = ENGINE_STAGES.length;
@@ -33,8 +35,8 @@ export function limiter(s) {
   return behind.sort((a, b) => (b.need - b.have) / b.need - (a.need - a.have) / a.need)[0];
 }
 export function laneTarget(lane, need) {
-  if (lane === 'strength') return need > 0 ? STRENGTH_STAGES[need - 1].target : 'start';
-  if (lane === 'engine') return need > 0 ? ENGINE_STAGES[need - 1].target : 'start';
+  if (lane === 'strength') return need > STR_MAX ? 'all done ✅' : need > 0 ? STRENGTH_STAGES[need - 1].target : 'start';
+  if (lane === 'engine') return need > ENG_MAX ? 'all done ✅' : need > 0 ? ENGINE_STAGES[need - 1].target : 'start';
   return `Run Level ${need}`;
 }
 
@@ -84,8 +86,18 @@ export function refreshHybrid(s, now, weekKey) {
   return st;
 }
 
-export const strengthSteps = s => (s.hybrid.strength.stage < STR_MAX ? STRENGTH_STAGES[s.hybrid.strength.stage].steps : []);
-export const engineSteps = s => (s.hybrid.engine.stage < ENG_MAX ? ENGINE_STAGES[s.hybrid.engine.stage].steps : []);
+// Barbell stages are grouped by the athlete's split (full body, upper/lower, PPL…): one rotation, then the gate.
+const trainingDays = s => s.profile?.days?.length || s.profile?.daysPerWeek || 3;
+export function strengthSteps(s) {
+  // Teens stop at Strength Endurance: technique and reps, no max-weight gates until 18.
+  const cap = strengthCap(s), top = s.hybrid.strength.stage >= STR_MAX || (cap != null && s.hybrid.strength.stage >= cap);
+  const stage = STRENGTH_STAGES[Math.min(s.hybrid.strength.stage, STR_MAX - 1, cap ?? 99)];
+  const gate = stage.steps.filter(st => st.type === 'gate');
+  let steps = stage.steps.filter(st => st.type !== 'gate');
+  if (stage.parts) { const sp = activeSplit(s, trainingDays(s)); steps = splitSessions(sp.id, stage.parts, sp.days); }
+  return top ? steps : [...steps, ...gate];
+}
+export const engineSteps = s => (s.hybrid.engine.stage < ENG_MAX ? ENGINE_STAGES[s.hybrid.engine.stage].steps : ENGINE_STAGES[ENG_MAX - 1].steps.filter(st => st.type !== 'gate'));
 export function gateSteps(s) {
   if (s.hybrid.finished) return [];
   const w = hybWorld(s);
@@ -106,7 +118,7 @@ export function placeHybrid(s, a, now) {
   // Engine: from a 1000 m row, finished races and the running level.
   const row = +a.row1000; // minutes
   const rf = rowFactor(a.sex || s.profile.sex);
-  let eng = row ? (row < 3.83 * rf ? 5 : row < 4.25 * rf ? 4 : row < 4.75 * rf ? 3 : 2) : 1;
+  let eng = row ? (row < 3.58 * rf ? 5 : row < 3.83 * rf ? 4 : row < 4.25 * rf ? 3 : 2) : 1;
   // Alpha X Base (10 x 400 m, lighter) counts less than a Hyrox or Alpha X Open.
   const races = a.hybridRaces || [];
   const big = races.filter(r => !(r.event === 'Alpha X' && r.category === 'base'));
@@ -114,9 +126,12 @@ export function placeHybrid(s, a, now) {
   else if (big.length) eng = Math.max(eng, 4);
   else if (races.length) eng = Math.max(eng, 3);
   eng = Math.max(eng, Math.min(4, Math.floor(s.run.level / 2)));
+  // Engine sessions include real running (km repeats, race-pace runs): without a hybrid race on record,
+  // a fast row can't put someone into running their legs aren't ready for.
+  if (!races.length) eng = Math.min(eng, Math.max(2, Math.ceil(s.run.level / 2) + 1));
   if (big.some(r => r.format === 'solo' || r.format === 'pair')) str = Math.max(str, 4);
   // What the athlete can already do counts in full (no step back for lanes).
-  h.strength.stage = Math.min(STR_MAX, str);
+  h.strength.stage = Math.min(STR_MAX, str, strengthCap(s) ?? 99);
   h.engine.stage = Math.min(ENG_MAX, eng);
   // World: the first one whose targets are not all met, nudged up by races already finished.
   const probe = { ...s, hybrid: h };

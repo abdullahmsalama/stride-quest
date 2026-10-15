@@ -47,7 +47,7 @@ export async function askCoach(messages, context, state, smart = false, app = ''
     } catch (e) { if (e?.name === 'AbortError') return { aborted: true }; reason = e?.message === 'timeout' ? 'slow' : 'down'; }
   }
   const last = messages.at(-1)?.content || '';
-  return { reply: offlineReply(last, state), actions: offlineActions(last, state), provider: 'offline', reason };
+  return { reply: offlineReply(last, state, context), actions: offlineActions(last, state), provider: 'offline', reason };
 }
 
 // Ask the AI to read free text (e.g. the dream). Resolves to null when offline or unsure.
@@ -78,7 +78,7 @@ export async function understandChat(task, messages) {
 }
 
 // Rule-based answers so the app is useful with no LLM at all.
-function offlineReply(text, s) {
+function offlineReply(text, s, context = '') {
   const t = text.toLowerCase();
   const track = activeTrack(s);
   const next = nextStep(s, track);
@@ -95,6 +95,10 @@ function offlineReply(text, s) {
   }
   if (/(level|xp|star|gate|unlock)/.test(t)) {
     return `You are on Level ${lvl.n}, ${lvl.name}. Earn 70% of the level's XP to open the gate test. Pass the gate (pain 2/10 or less the next morning) to move up. All steps = 2 stars; no week missed = 3 stars.`;
+  }
+  if (/\b(eat|food|meal|carb|protein|calor|kcal|diet|fuel|snack|breakfast|drink|hydrat|gel)/.test(t)) {
+    const n = /NUTRITION TODAY[^:]*: (.*)/.exec(context || '')?.[1];
+    return n ? `Today: ${n.replace(/^([^,]+), goal \w+[^.]*\./, '$1.')} Before a session of an hour or more, a carb-rich meal 2-4 h before; after, protein with carbs. The Nutrition tab has the details.` : 'Set up the Nutrition tab (about a minute) and I can give you your numbers. In short: carbs around long and hard sessions, protein at every meal, and drink to thirst.';
   }
   if (/(pace|easy|slow|fast|speed)/.test(t)) {
     return 'Most runs should feel easy: you can speak in full sentences. Speed work unlocks as your Prep stage grows, because fast running needs strong landing and take-off first.';
