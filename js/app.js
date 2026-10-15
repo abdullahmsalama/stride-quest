@@ -1585,9 +1585,15 @@ const STRAVA_KEY = 'stride-quest:strava';
 const stravaState = () => { try { return JSON.parse(localStorage.getItem(STRAVA_KEY)) || {}; } catch { return {}; } };
 const setStrava = v => { try { localStorage.setItem(STRAVA_KEY, JSON.stringify(v)); } catch { /* ignore */ } };
 const STRAVA_RETURN = () => location.origin + location.pathname;
+const stravaApi = async (path, body) => { try { const r = await fetch(`${WORKER_URL.replace(/\/$/, '')}/strava/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: stravaDevice(), ...body }) }); return await r.json(); } catch { return { error: 'offline' }; } };
+const stravaDevice = () => { const st = stravaState(); if (st.device) return st.device; const d = crypto.randomUUID(); setStrava({ ...st, device: d }); return d; };
+async function stravaRefreshStatus() {
+  const d = await stravaApi('status', {});
+  if (!d.error) { ui.stravaStatus = d; if (d.admin && !ui.stravaAdmin) ui.stravaAdmin = await stravaApi('admin', { action: 'list' }); }
+  if (ui.tab === 'me') render();
+}
 function stravaConnect() {
-  const st = stravaState(), device = st.device || crypto.randomUUID();
-  setStrava({ ...st, device });
+  const device = stravaDevice();
   location.href = `${WORKER_URL.replace(/\/$/, '')}/strava/connect?device=${device}&return=${encodeURIComponent(STRAVA_RETURN())}`;
 }
 // Back from Strava: ?strava=connected|denied|scope|limit|error
@@ -1596,7 +1602,8 @@ function stravaReturn() {
   if (!r) return;
   history.replaceState(null, '', location.pathname + location.hash);
   const msg = { connected: '🔗 Strava connected! Your activities are coming in.', denied: 'Strava wasn\'t connected (you cancelled).', scope: 'Please allow "View data about your activities" so the app can read your runs.',
-    limit: 'Strava only lets this app connect a limited number of athletes for now. Ask Abdullah to raise the limit.', error: 'Strava couldn\'t be connected. Try again in a minute.' }[r];
+    limit: 'The shared Strava app is full right now. Ask Abdullah, or use your own Strava app.', error: 'Strava couldn\'t be connected. Try again in a minute.',
+    'not-approved': 'Your Strava request isn\'t approved yet. You\'ll be able to connect once Abdullah approves it.' }[r];
   if (r === 'connected') { setStrava({ ...stravaState(), connected: true, since: Date.now() }); setTimeout(() => stravaSync(true), 300); }
   if (msg) setTimeout(() => toast(msg), 600);
 }
@@ -1616,10 +1623,10 @@ async function stravaSync(force = false) {
   if (!force && st.lastSync && Date.now() - st.lastSync < 20 * 60000) return;
   ui.stravaSyncing = true;
   try {
-    const r = await fetch(`${WORKER_URL.replace(/\/$/, '')}/strava/activities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: st.device, after: st.lastSeen ? st.lastSeen / 1000 - 3600 : null }) });
+    const r = await fetch(`${WORKER_URL.replace(/\/$/, '')}/strava/activities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: st.device, after: st.lastSeen ? st.lastSeen / 1000 - 3600 : null, ...(st.byo?.secret ? { secret: st.byo.secret } : {}) }) });
     const d = await r.json();
     if (!d.connected) { setStrava({ ...st, connected: false }); if (d.error) toast(d.error); return; }
-    if (d.error) { if (force) toast(d.error === 'busy' ? 'Strava is busy right now. Try again soon.' : "Strava couldn't be read right now."); return; }
+    if (d.error) { if (force || d.error === 'own-app-secret') toast(d.error === 'busy' ? 'Strava is busy right now. Try again soon.' : d.error === 'own-app-secret' ? 'Your own Strava app\'s secret is missing on this phone: connect again.' : "Strava couldn't be read right now."); return; }
     const known = new Set(S.history.filter(x => x.strava).map(x => x.strava.id));
     const fresh = (d.activities || []).filter(a => !known.has(a.id)).map(fromStrava);
     if (fresh.length) { S.history.push(...fresh.map(({ run, ...x }) => x)); S.history.sort((a, b) => a.ts - b.ts); store.save(S); }
@@ -1636,14 +1643,23 @@ function stravaMatches() {
   return S.history.filter(x => x.kind === 'activity' && x.strava && STRAVA_RUN.has(x.strava.type) && !x.linked && !x.dismissed && E.dayKey(x.ts) === ymdNow()).map(x => ({ act: x, step: open[0] }));
 }
 function stravaCard() {
-  const st = stravaState();
-  const btn = '<button class="strava-btn" data-act="strava-connect">Connect with Strava</button>';
-  return `<section class="card strava-card"><h3>🔗 Strava</h3>
-      ${st.connected ? `<p>Connected${st.name ? ` as <strong>${h(st.name)}</strong>` : ''}. ${st.lastSync ? `Last synced ${new Date(st.lastSync).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.` : ''}</p>
+  const st = stravaState(), ss = ui.stravaStatus;
+  if (!st.connected && !ss && !ui.stravaStatusLoading) { ui.stravaStatusLoading = true; stravaRefreshStatus().finally(() => { ui.stravaStatusLoading = false; }); }
+  const own = '<button class="linkish small" data-act="strava-own">Have your own Strava API app (paid Strava)? Use it</button>';
+  let body;
+  if (st.connected) body = `<p>Connected${st.name ? ` as <strong>${h(st.name)}</strong>` : ''}${st.byo ? ' (your own Strava app)' : ''}. ${st.lastSync ? `Last synced ${new Date(st.lastSync).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.` : ''}</p>
         <p class="hint">Runs, rides, gym sessions and more come in by themselves: they show in your week, count in Nutrition, and a run can count as your planned session with one tap.</p>
-        <div class="row wrap"><button class="btn small" data-act="strava-sync">${ui.stravaSyncing ? 'Syncing…' : '↻ Sync now'}</button><button class="btn ghost small" data-act="strava-disconnect">Disconnect</button></div>`
-      : `<p class="hint">Connect once and your workouts come in by themselves, from any watch or app that syncs to Strava (Garmin, Apple Watch, COROS, Runna…). Read-only: the app never posts to Strava.</p>${btn}`}
-      <p class="powered">Powered by Strava</p></section>`;
+        <div class="row wrap"><button class="btn small" data-act="strava-sync">${ui.stravaSyncing ? 'Syncing…' : '↻ Sync now'}</button><button class="btn ghost small" data-act="strava-disconnect">Disconnect</button></div>`;
+  else if (!ss) body = '<p class="hint">Checking…</p>';
+  else if (ss.status === 'approved') body = `<p class="hint">You're approved. Connect once and your workouts come in by themselves, from any watch or app that syncs to Strava (Garmin, Apple Watch, COROS, Runna…). Read-only: the app never posts to Strava.</p><button class="strava-btn" data-act="strava-connect">Connect with Strava</button>`;
+  else if (ss.status === 'pending') body = `<p>⏳ <strong>Request sent.</strong> You can connect as soon as Abdullah approves it.</p><div class="row wrap"><button class="btn small ghost" data-act="strava-check">Check again</button></div><p class="hint">${own}</p>`;
+  else body = `<p class="hint">Bring your workouts in automatically from any watch or app that syncs to Strava. Strava limits how many people can share this app, so ask for access first${ss.status === 'declined' ? ' (your last request wasn\'t approved)' : ''}.</p>
+        <div class="row wrap"><button class="btn small primary" data-act="strava-request">Request Strava access</button></div><p class="hint">${own}</p>`;
+  const ad = ss?.admin && ui.stravaAdmin && !ui.stravaAdmin.error ? ui.stravaAdmin : null;
+  const admin = ad ? `<div class="strava-admin"><p class="q">👑 Requests <span class="hint">· ${ad.used} of 10 shared slots in use</span></p>${ad.requests.length ? `<ul>${ad.requests.map(r => `<li><div><strong>${h(r.name)}</strong> <span class="hint">${h(r.status)}${r.strava ? ` · connected as ${h(r.strava)}` : ''}</span>${r.msg ? `<br><span class="hint">“${h(r.msg)}”</span>` : ''}</div>
+        <div class="row">${r.status !== 'approved' ? `<button class="btn small primary" data-act="strava-decide" data-v="approve" data-d="${h(r.device)}">Approve</button>` : `<button class="btn small ghost" data-act="strava-decide" data-v="revoke" data-d="${h(r.device)}">Remove</button>`}${r.status === 'pending' ? `<button class="btn small ghost" data-act="strava-decide" data-v="decline" data-d="${h(r.device)}">Decline</button>` : ''}</div></li>`).join('')}</ul>` : '<p class="hint">No requests yet.</p>'}</div>` : '';
+  return `<section class="card strava-card"><h3>🔗 Strava${ss?.admin && ss.pending ? ` <span class="count-badge">${ss.pending}</span>` : ''}</h3>${body}${admin}
+      <p class="powered">Powered by Strava</p>${ss && !ss.admin ? '<p class="hint owner-link"><button class="linkish" data-act="strava-claim">App owner?</button></p>' : ''}</section>`;
 }
 
 // ---------- floating coach ----------
@@ -1993,6 +2009,20 @@ function painButtons() {
 }
 
 const MODALS = {
+  stravaRequest() {
+    return `<form id="strava-req-form"><h2>🔗 Request Strava access</h2><p class="why">💡 Abdullah gets your request and approves it. Then you connect your own Strava account: only you see your activities.</p>
+      <label class="field"><span>Your name</span><input type="text" name="rName" maxlength="60" value="${h(S.profile.name || '')}" placeholder="So Abdullah knows who you are"></label>
+      <label class="field"><span>Message <em class="hint">optional</em></span><input type="text" name="rMsg" maxlength="300" placeholder="e.g. Hi, it's Ahmed from the running group"></label>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Send request</button></div></form>`;
+  },
+  stravaOwn() {
+    return `<form id="strava-own-form"><h2>🔗 Use your own Strava app</h2><p class="why">💡 For people with a paid Strava subscription: connect through your own Strava API app instead of the shared one, no waiting.</p>
+      <ol class="hint own-steps"><li>Go to <strong>strava.com/settings/api</strong> and create an app.</li><li>Set <strong>Authorization Callback Domain</strong> to <code>stride-quest-coach.stridequest.workers.dev</code>.</li><li>Copy your <strong>Client ID</strong> and <strong>Client Secret</strong> below.</li></ol>
+      <label class="field"><span>Client ID</span><input type="text" name="oCid" inputmode="numeric" autocomplete="off"></label>
+      <label class="field"><span>Client Secret</span><input type="password" name="oSecret" autocomplete="off"></label>
+      <p class="hint">🔒 Your secret stays on this phone. It's sent over an encrypted connection only to connect and to sync, and is never stored on our server (it's deleted right after connecting).</p>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Connect</button></div></form>`;
+  },
   otherTraining(m) {
     return `<form id="other-form"><h2>🏋️ My other training</h2><p class="why">💡 Training outside Stride Quest. Your plan keeps hard runs off heavy-leg days (and the day after), and Nutrition counts it.</p>
       ${otherBlock(m.a)}<div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`;
@@ -2531,6 +2561,16 @@ const actions = {
   'coach-open'() { ui.prevTab = ui.tab === 'coach' ? ui.prevTab : ui.tab; ui.coachUnread = false; ui.tab = 'coach'; render(); },
   'coach-back'() { ui.tab = ui.prevTab || 'today'; render(); },
   'strava-connect'() { stravaConnect(); },
+  'strava-request'() { ui.modal = { type: 'stravaRequest' }; renderModal(); },
+  'strava-own'() { ui.modal = { type: 'stravaOwn' }; renderModal(); },
+  'strava-check'() { ui.stravaStatus = null; stravaRefreshStatus(); },
+  async 'strava-decide'(el) { ui.stravaAdmin = await stravaApi('admin', { action: el.dataset.v, target: el.dataset.d }); ui.stravaStatus = await stravaApi('status', {}); render(); toast(el.dataset.v === 'approve' ? '✅ Approved. They can connect now.' : el.dataset.v === 'revoke' ? 'Removed.' : 'Declined.'); },
+  async 'strava-claim'() {
+    const code = prompt('Owner code (the one you set on the Worker):');
+    if (!code) return;
+    const d = await stravaApi('claim', { code });
+    if (d.admin) { ui.stravaStatus = null; ui.stravaAdmin = null; stravaRefreshStatus(); toast('👑 This phone is now the admin.'); } else toast(d.error || 'Not right.');
+  },
   'strava-sync'() { stravaSync(true); render(); },
   async 'strava-disconnect'() {
     const st = stravaState();
@@ -3022,6 +3062,27 @@ document.addEventListener('submit', e => {
     if (ui.pendingRace) { ui.modal = { type: 'race', k: ui.pendingRace }; ui.pendingRace = null; renderModal(); }
     return;
   }
+  if (f.id === 'strava-req-form') {
+    const name = f.rName.value.trim(), msg = f.rMsg.value.trim();
+    if (!name) return toast('Add your name.');
+    (async () => {
+      const d = await stravaApi('request', { name, msg });
+      if (d.error) return toast(d.error === 'offline' ? 'No connection right now.' : d.error);
+      ui.modal = null; renderModal(); ui.stravaStatus = { status: d.status || 'pending' }; render(); toast('📨 Request sent to Abdullah.');
+    })();
+    return;
+  }
+  if (f.id === 'strava-own-form') {
+    const cid = f.oCid.value.trim(), secret = f.oSecret.value.trim();
+    if (!/^\d+$/.test(cid) || secret.length < 20) return toast('Check the Client ID (a number) and the Client Secret.');
+    (async () => {
+      const d = await stravaApi('byo', { cid, secret });
+      if (d.error) return toast(d.error === 'offline' ? 'No connection right now.' : d.error);
+      setStrava({ ...stravaState(), byo: { cid, secret } });
+      stravaConnect();
+    })();
+    return;
+  }
   if (f.id === 'other-form') {
     collectOther();
     S.otherTraining = otherFrom(ui.modal.a);
@@ -3209,7 +3270,7 @@ window.addEventListener('hashchange', () => {
   if (!ui.modal) render();
 });
 
-$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help', 'prepStage', 'stepInfo', 'logInfo', 'target', 'raceResult', 'nutriSetup', 'nutriWeigh', 'nutriReds', 'otherTraining', 'extraSession'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help', 'prepStage', 'stepInfo', 'logInfo', 'target', 'raceResult', 'nutriSetup', 'nutriWeigh', 'nutriReds', 'otherTraining', 'extraSession', 'stravaRequest', 'stravaOwn'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
 
 // ---------- installable app ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;

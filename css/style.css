@@ -855,6 +855,15 @@ header.top { gap: 10px; }
 /* Strava (brand: "Connect with Strava" in Strava orange, "Powered by Strava") */
 .strava-btn { background: #fc4c02; color: #fff; border: 0; border-radius: 8px; padding: 10px 16px; font: 700 14px var(--body); cursor: pointer; }
 .strava-btn:hover { background: #e34402; }
+.count-badge { display: inline-block; min-width: 20px; padding: 1px 6px; border-radius: 10px; background: #fc4c02; color: #fff; font: 700 12px var(--body); text-align: center; vertical-align: middle; }
+.strava-admin { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line, rgba(0,0,0,.1)); }
+.strava-admin ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
+.strava-admin li { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
+.strava-card .owner-link { margin: 4px 0 0; font-size: 12px; text-align: right; }
+.strava-card .owner-link .linkish { color: var(--ink-2); }
+.own-steps { padding-left: 20px; margin: 8px 0 12px; }
+.own-steps li { margin: 4px 0; }
+.own-steps code { font-size: 12px; word-break: break-all; }
 .strava-card .powered { margin: 10px 0 0; font: 700 11px var(--body); letter-spacing: .04em; text-transform: uppercase; color: #fc4c02; }
 .strava-match { margin-top: 12px; padding: 10px 12px; border-radius: 12px; border-left: 4px solid #fc4c02; background: rgba(252, 76, 2, .07); }
 .strava-match p { margin: 0 0 8px; }

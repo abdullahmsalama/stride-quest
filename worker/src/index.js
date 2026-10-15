@@ -442,17 +442,23 @@ async function videos(request, env, headers) {
 // ---------- Strava (opt-in): log in with Strava, then read the athlete's own activities ----------
 const STRAVA = 'https://www.strava.com';
 const isDevice = d => /^[0-9a-f-]{36}$/.test(String(d || ''));
-async function stravaToken(env, body) {
-  const r = await fetch(`${STRAVA}/oauth/token`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: env.STRAVA_CLIENT_ID, client_secret: env.STRAVA_CLIENT_SECRET, ...body }) });
+async function stravaToken(env, body, creds = null) {
+  const r = await fetch(`${STRAVA}/oauth/token`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: creds?.cid || env.STRAVA_CLIENT_ID, client_secret: creds?.secret || env.STRAVA_CLIENT_SECRET, ...body }) });
   if (!r.ok) throw new Error(`strava ${r.status}`);
   return r.json();
 }
+// Shared app: only devices Abdullah approved (or his own admin devices).
+async function stravaAllowed(env, device) {
+  if (await env.DB.prepare('SELECT 1 FROM strava_admins WHERE device = ?1').bind(device).first()) return true;
+  return (await env.DB.prepare("SELECT status FROM strava_access WHERE device = ?1").bind(device).first())?.status === 'approved';
+}
 // A valid access token for this device (refreshed when it's about to expire).
-async function stravaAccess(env, device) {
+async function stravaAccess(env, device, secret = null) {
   const row = await env.DB.prepare('SELECT * FROM strava WHERE device = ?1').bind(device).first();
   if (!row) return null;
   if (row.expires * 1000 > Date.now() + 120000) return row;
-  const t = await stravaToken(env, { grant_type: 'refresh_token', refresh_token: row.refresh });
+  if (row.cid && !secret) throw new Error('own app: secret needed');
+  const t = await stravaToken(env, { grant_type: 'refresh_token', refresh_token: row.refresh }, row.cid ? { cid: row.cid, secret } : null);
   await env.DB.prepare('UPDATE strava SET access = ?2, refresh = ?3, expires = ?4 WHERE device = ?1').bind(device, t.access_token, t.refresh_token, t.expires_at).run();
   return { ...row, access: t.access_token, refresh: t.refresh_token, expires: t.expires_at };
 }
@@ -464,9 +470,12 @@ async function strava(request, env, url, headers, ok) {
   if (url.pathname === '/strava/connect') {
     const device = url.searchParams.get('device'), back = url.searchParams.get('return') || '';
     if (!isDevice(device) || !allowedReturn(back)) return new Response('Bad request', { status: 400 });
+    // Own Strava app (credentials parked a moment ago), or the shared app (approved people only).
+    const byo = await env.DB.prepare('SELECT cid FROM strava_byo WHERE device = ?1 AND ts > ?2').bind(device, Date.now() - 15 * 60000).first();
+    if (!byo && !(await stravaAllowed(env, device))) { const b = new URL(back); b.searchParams.set('strava', 'not-approved'); return Response.redirect(b.toString(), 302); }
     const state = btoa(JSON.stringify({ device, back }));
     const go = new URL(`${STRAVA}/oauth/authorize`);
-    Object.entries({ client_id: env.STRAVA_CLIENT_ID, redirect_uri: self, response_type: 'code', approval_prompt: 'auto', scope: 'read,activity:read_all', state }).forEach(([k, v]) => go.searchParams.set(k, v));
+    Object.entries({ client_id: byo?.cid || env.STRAVA_CLIENT_ID, redirect_uri: self, response_type: 'code', approval_prompt: 'auto', scope: 'read,activity:read_all', state }).forEach(([k, v]) => go.searchParams.set(k, v));
     return Response.redirect(go.toString(), 302);
   }
   // 2) Strava sends them back with a code: swap it for tokens, then return to the app.
@@ -478,10 +487,16 @@ async function strava(request, env, url, headers, ok) {
     if (url.searchParams.get('error') || !url.searchParams.get('code')) { back.searchParams.set('strava', 'denied'); return Response.redirect(back.toString(), 302); }
     if (!/activity:read/.test(url.searchParams.get('scope') || '')) { back.searchParams.set('strava', 'scope'); return Response.redirect(back.toString(), 302); }
     try {
-      const t = await stravaToken(env, { code: url.searchParams.get('code'), grant_type: 'authorization_code' });
+      const byo = await env.DB.prepare('SELECT cid, secret FROM strava_byo WHERE device = ?1').bind(st.device).first();
+      const t = await stravaToken(env, { code: url.searchParams.get('code'), grant_type: 'authorization_code' }, byo);
+      await env.DB.prepare('DELETE FROM strava_byo WHERE device = ?1').bind(st.device).run(); // their secret: gone
+      if (!byo && !(await stravaAllowed(env, st.device))) { // went round the button: not approved for the shared app
+        try { await fetch(`${STRAVA}/oauth/deauthorize`, { method: 'POST', headers: { Authorization: `Bearer ${t.access_token}` } }); } catch { /* ignore */ }
+        back.searchParams.set('strava', 'not-approved'); return Response.redirect(back.toString(), 302);
+      }
       const name = [t.athlete?.firstname, t.athlete?.lastname?.[0]].filter(Boolean).join(' ');
-      await env.DB.prepare('INSERT INTO strava (device, athlete, name, access, refresh, expires, scope, ts) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT (device) DO UPDATE SET athlete = ?2, name = ?3, access = ?4, refresh = ?5, expires = ?6, scope = ?7, ts = ?8')
-        .bind(st.device, t.athlete?.id || null, name, t.access_token, t.refresh_token, t.expires_at, url.searchParams.get('scope'), Date.now()).run();
+      await env.DB.prepare('INSERT INTO strava (device, athlete, name, access, refresh, expires, scope, ts, cid) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT (device) DO UPDATE SET athlete = ?2, name = ?3, access = ?4, refresh = ?5, expires = ?6, scope = ?7, ts = ?8, cid = ?9')
+        .bind(st.device, t.athlete?.id || null, name, t.access_token, t.refresh_token, t.expires_at, url.searchParams.get('scope'), Date.now(), byo?.cid || null).run();
       back.searchParams.set('strava', 'connected');
     } catch (e) { back.searchParams.set('strava', /403|limit/i.test(e.message) ? 'limit' : 'error'); }
     return Response.redirect(back.toString(), 302);
@@ -492,6 +507,44 @@ async function strava(request, env, url, headers, ok) {
   let body;
   try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400, headers); }
   if (!isDevice(body.device)) return json({ error: 'bad device' }, 400, headers);
+  const isAdmin = async d => !!(await env.DB.prepare('SELECT 1 FROM strava_admins WHERE device = ?1').bind(d).first());
+  if (url.pathname === '/strava/status') {
+    const a = await env.DB.prepare('SELECT status FROM strava_access WHERE device = ?1').bind(body.device).first();
+    const admin = await isAdmin(body.device);
+    const pending = admin ? (await env.DB.prepare("SELECT COUNT(*) AS n FROM strava_access WHERE status = 'pending'").first()).n : 0;
+    return json({ status: admin ? 'approved' : a?.status || 'none', admin, pending }, 200, headers);
+  }
+  if (url.pathname === '/strava/request') {
+    const name = String(body.name || '').trim().slice(0, 60), msg = String(body.msg || '').trim().slice(0, 300);
+    if (!name) return json({ error: 'Add your name so Abdullah knows who you are.' }, 400, headers);
+    const cur = await env.DB.prepare('SELECT status FROM strava_access WHERE device = ?1').bind(body.device).first();
+    if (cur?.status === 'approved') return json({ status: 'approved' }, 200, headers);
+    await env.DB.prepare("INSERT INTO strava_access (device, name, msg, status, ts) VALUES (?1, ?2, ?3, 'pending', ?4) ON CONFLICT (device) DO UPDATE SET name = ?2, msg = ?3, status = 'pending', ts = ?4").bind(body.device, name, msg, Date.now()).run();
+    if (env.NTFY_TOPIC) { try { await fetch(`https://ntfy.sh/${env.NTFY_TOPIC}`, { method: 'POST', body: `${name}${msg ? `: ${msg}` : ''}`, headers: { Title: 'Stride Quest: Strava access request', Tags: 'runner', Click: env.SITE_URL || '' } }); } catch { /* the in-app list still has it */ } }
+    return json({ status: 'pending' }, 200, headers);
+  }
+  if (url.pathname === '/strava/claim') { // the owner, once, with the code they set as a Worker secret
+    if (!env.ADMIN_CLAIM || String(body.code || '') !== env.ADMIN_CLAIM) return json({ error: 'That code is not right.' }, 403, headers);
+    await env.DB.prepare('INSERT INTO strava_admins (device, ts) VALUES (?1, ?2) ON CONFLICT (device) DO NOTHING').bind(body.device, Date.now()).run();
+    return json({ admin: true }, 200, headers);
+  }
+  if (url.pathname === '/strava/admin') {
+    if (!(await isAdmin(body.device))) return json({ error: 'not admin' }, 403, headers);
+    if (['approve', 'decline', 'revoke'].includes(body.action) && isDevice(body.target)) {
+      await env.DB.prepare('UPDATE strava_access SET status = ?2, decided = ?3 WHERE device = ?1').bind(body.target, body.action === 'approve' ? 'approved' : 'declined', Date.now()).run();
+      if (body.action === 'revoke') await env.DB.prepare('DELETE FROM strava WHERE device = ?1 AND cid IS NULL').bind(body.target).run();
+    }
+    const list = (await env.DB.prepare('SELECT a.device, a.name, a.msg, a.status, a.ts, s.name AS strava FROM strava_access a LEFT JOIN strava s ON s.device = a.device ORDER BY a.ts DESC LIMIT 50').all()).results || [];
+    const used = (await env.DB.prepare('SELECT COUNT(*) AS n FROM strava WHERE cid IS NULL').first()).n;
+    return json({ requests: list, used }, 200, headers);
+  }
+  if (url.pathname === '/strava/byo') { // park their own app's credentials for the few minutes of connecting
+    const cid = String(body.cid || '').trim(), secret = String(body.secret || '').trim();
+    if (!/^\d{3,12}$/.test(cid) || !/^[0-9a-f]{20,64}$/i.test(secret)) return json({ error: 'That doesn\'t look like a Strava Client ID and Secret.' }, 400, headers);
+    await env.DB.batch([env.DB.prepare('DELETE FROM strava_byo WHERE ts < ?1').bind(Date.now() - 15 * 60000),
+      env.DB.prepare('INSERT INTO strava_byo (device, cid, secret, ts) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (device) DO UPDATE SET cid = ?2, secret = ?3, ts = ?4').bind(body.device, cid, secret, Date.now())]);
+    return json({ ok: true }, 200, headers);
+  }
   if (url.pathname === '/strava/disconnect') {
     const row = await env.DB.prepare('SELECT access FROM strava WHERE device = ?1').bind(body.device).first();
     if (row) { try { await fetch(`${STRAVA}/oauth/deauthorize`, { method: 'POST', headers: { Authorization: `Bearer ${row.access}` } }); } catch { /* still delete */ } }
@@ -499,7 +552,8 @@ async function strava(request, env, url, headers, ok) {
     return json({ disconnected: true }, 200, headers);
   }
   if (url.pathname === '/strava/activities') {
-    const row = await stravaAccess(env, body.device).catch(() => null);
+    let row;
+    try { row = await stravaAccess(env, body.device, body.secret || null); } catch (e) { return json({ connected: true, error: /secret/.test(e.message) ? 'own-app-secret' : 'refresh' }, 200, headers); }
     if (!row) return json({ connected: false }, 200, headers);
     const after = Math.max(0, Math.floor(+body.after || (Date.now() / 1000 - 14 * 86400)));
     const r = await fetch(`${STRAVA}/api/v3/athlete/activities?after=${after}&per_page=60`, { headers: { Authorization: `Bearer ${row.access}` } });
