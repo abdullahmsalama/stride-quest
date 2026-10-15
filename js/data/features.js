@@ -62,9 +62,11 @@ export const FEATURES = [
     show: { tab: 'stats', sel: '[data-act=share-toggle]' } },
 
   // ---------- Coach ----------
-  { id: 'coach', group: 'coach', title: 'Your AI coach', text: 'Ask what to do today, how a drill works, or tell it about pain. It can suggest changes, but nothing changes until you tap Apply.',
+  { id: 'coach', group: 'coach', title: 'Your AI coach', text: 'Tap the little coach in the corner of any screen. Ask what to do today, how a drill works, what to eat, or tell it about pain. It can suggest changes, but nothing changes until you tap Apply.',
     show: { tab: 'coach', sel: '.chat-input' }, quest: { label: 'Ask the coach a question', done: (s, f) => f.coach_asked } },
 
+  { id: 'nutrition', group: 'today', title: 'Nutrition', text: 'Daily calories and macros that follow your training: more carbs on long and hard days, protein spread over the day, fuelling for long sessions and races. If your goal clashes with your training (dieting in race week, while injured), a clear warning explains why, with a safer option you can apply.',
+    show: { tab: 'nutrition', sel: '.nutri-today, .nutri-hero' }, quest: { label: 'Set up your nutrition', done: s => !!s.nutrition?.setup } },
   // ---------- Me and safety ----------
   { id: 'numbers', group: 'me', title: 'My numbers', text: 'Your bodyweight, lifts and pull-ups (and body fat, if you like). Updating them re-places your Strength lane.',
     when: hyb, show: { tab: 'me', sel: '[data-act=edit-numbers]' }, quest: { label: 'Check My numbers', done: s => (s.bodyLog || []).length > 0, when: hyb } },

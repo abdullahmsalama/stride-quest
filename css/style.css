@@ -812,3 +812,42 @@ header.top { gap: 10px; }
 .ev { flex-wrap: wrap; }
 .ev > div { flex: 1 1 220px; }
 @media (max-width: 520px) { .ev-btns { width: 100%; justify-content: flex-start; } }
+
+/* Floating coach */
+.coach-fab { position: fixed; right: 14px; bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 30; border: 0; padding: 0; background: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .28)); }
+.coach-fab svg { display: block; border-radius: 50%; transition: transform .2s; }
+.coach-fab:hover svg { transform: scale(1.06) rotate(-4deg); }
+.coach-fab .fab-label { margin-top: -6px; background: var(--ink); color: var(--bg); font: 800 10px var(--body); letter-spacing: .04em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; }
+.coach-fab .fab-dot { position: absolute; top: 2px; right: 2px; width: 14px; height: 14px; border-radius: 50%; background: #e53935; border: 2px solid #fff; animation: pulse 1.6s infinite; }
+.fab-hand { transform-box: fill-box; transform-origin: 0% 100%; animation: fabwave 30s ease-in-out infinite; }
+@keyframes fabwave { 0%, 92%, 100% { transform: rotate(0); } 94% { transform: rotate(-28deg); } 96% { transform: rotate(10deg); } 98% { transform: rotate(-22deg); } }
+@media (min-width: 1000px) { .coach-fab { bottom: 24px; right: 24px; } }
+@media (prefers-reduced-motion: reduce) { .fab-hand, .coach-fab .fab-dot { animation: none; } }
+.coach-back { margin-bottom: 8px; }
+
+/* Nutrition */
+.nutri-kcal { margin: 6px 0 10px; font-size: 15px; }
+.nutri-kcal b { font: 800 34px var(--display); }
+.nutri-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.nutri-grid div { padding: 10px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.nutri-grid b { font: 800 20px var(--display); }
+.nutri-grid span { font-size: 12px; color: var(--ink-2); }
+.switch-row.small { font-weight: 600; font-size: 13px; margin-top: 10px; }
+.nutri-paused { padding: 8px 10px; border-radius: 10px; background: rgba(127, 127, 127, .08); }
+.nutri-check { padding: 0; margin: 0 0 12px; border-radius: 14px; overflow: hidden; }
+.nutri-check summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 12px 14px; }
+.nutri-check summary::-webkit-details-marker { display: none; }
+.nutri-check > p, .nutri-check > .row { padding: 0 14px; }
+.nutri-check > .row { padding-bottom: 12px; align-items: center; }
+.nutri-check.warn { background: var(--warn-soft, #fff3cd); border-left: 5px solid #f2a400; }
+.nutri-check.danger { background: rgba(229, 57, 53, .12); border-left: 5px solid #e53935; }
+.nutri-check.info { background: rgba(30, 136, 229, .1); border-left: 5px solid #1e88e5; }
+.fuel { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 6px; font-size: 14px; }
+.fuel b { display: inline-block; min-width: 96px; }
+.carb-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; font-size: 11px; }
+.carb-week div { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 0; border-radius: 8px; }
+.carb-week div.today { background: var(--brand-soft); }
+.carb-week i { display: block; width: 14px; border-radius: 4px; background: var(--brand); }
+.carb-week i.lv1 { height: 12px; opacity: .45; } .carb-week i.lv2 { height: 22px; opacity: .7; } .carb-week i.lv3 { height: 32px; }
+.carb-week em { font-style: normal; color: var(--ink-2); }
+@media (max-width: 350px) { .tabs button { font-size: 9.5px; letter-spacing: -.02em; } .tabs button span { font-size: 17px; } }

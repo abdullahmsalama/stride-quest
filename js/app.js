@@ -27,6 +27,7 @@ import { WORKER_URL } from './config.js';
 import { RACES } from './data/races.js';
 import * as EV from './events.js';
 import * as TG from './target.js';
+import * as NU from './nutrition.js';
 import { FEATURES, GROUPS, FEATURE_BRIEF } from './data/features.js';
 
 // ---------- state ----------
@@ -516,15 +517,16 @@ function render() {
   const frame = document.querySelector('.worldmap');
   if (frame) ui.frameTop = frame.scrollTop; // keep the framed map's scroll across redraws
   const t = now();
-  const views = { today: viewToday, map: viewMap, challenge: viewChallenge, events: viewCompetitions, stats: viewStats, coach: viewCoach, me: viewMe };
+  const views = { today: viewToday, map: viewMap, challenge: viewChallenge, events: viewCompetitions, stats: viewStats, nutrition: viewNutrition, coach: viewCoach, me: viewMe };
   $('#app').innerHTML = `
     <header class="top">
       <button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest">🏃 Stride Quest</button>
       <div class="chips"><button class="chip help-btn" data-act="help" title="How the app works" aria-label="Help">❓<span class="help-word"> Help</span></button><span class="chip" title="Total XP: ${S.xp}">⚡ ${S.xp >= 10000 ? `${(S.xp / 1000).toFixed(1).replace(/\.0$/, '')}k` : S.xp}<span class="xp-word"> XP</span></span><span class="chip" title="Day streak">🔥 ${E.dayStreak(S, t)}</span></div>
     </header>
     <main class="view view-${ui.tab}">${views[ui.tab]()}</main>
-    <nav class="tabs">${[['today', '🏠', 'Today'], ['map', '🗺️', 'Map'], ['challenge', '🏆', 'Challenge'], ['events', '🗓️', '<em class="long">Competitions </em>Calendar'], ['stats', '📊', 'Stats'], ['coach', '💬', 'Coach'], ['me', '👤', 'Me']].map(([k, i, l]) =>
-      `<button class="${ui.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}"${k === 'events' ? ' aria-label="Competitions Calendar"' : ''}><span>${i}</span><b class="lbl">${l}</b></button>`).join('')}</nav>`;
+    <nav class="tabs">${[['today', '🏠', 'Today'], ['map', '🗺️', 'Map'], ['challenge', '🏆', 'Challenge'], ['events', '🗓️', '<em class="long">Competitions </em>Calendar'], ['stats', '📊', 'Stats'], ['nutrition', '🍽️', 'Nutrition'], ['me', '👤', 'Me']].map(([k, i, l]) =>
+      `<button class="${ui.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}"${k === 'events' ? ' aria-label="Competitions Calendar"' : ''}><span>${i}</span><b class="lbl">${l}</b></button>`).join('')}</nav>
+    ${ui.tab === 'coach' ? '' : coachFab()}`;
   queueModals();
   renderModal();
   if (ui.tab === 'coach') { const log = $('.chat-log'); if (log) log.scrollTop = log.scrollHeight; }
@@ -727,7 +729,7 @@ function gettingStarted(style = '') {
     </details>`;
 }
 // The guided tour: one stop per key feature, a bar at the bottom with Back / Next / End.
-const TOUR = ['today-next', 'views', 'map', 'fog', 'lanes', 'sled', 'race-prep', 'calendar', 'challenge', 'stats', 'coach', 'numbers', 'dream'];
+const TOUR = ['today-next', 'views', 'map', 'fog', 'lanes', 'sled', 'race-prep', 'calendar', 'challenge', 'stats', 'nutrition', 'coach', 'numbers', 'dream'];
 const tourStops = () => TOUR.map(id => FEATURES.find(f => f.id === id)).filter(f => f && applies(f));
 function startTour(i = 0) { document.querySelector('.tip-bubble')?.remove(); ui.tour = { i }; ui.helpReturn = false; tourGo(); }
 function tourGo() {
@@ -1505,7 +1507,7 @@ function viewCoach() {
   const msgs = ui.chat.length ? ui.chat : [{ role: 'assistant', content: `Hey${S.profile.name ? ' ' + S.profile.name : ''}! I'm your coach. Ask me what to do today, how a drill works, or how you're feeling. I run on a free AI model, so give me a few seconds if I'm busy 🙂` }];
   const modeSeg = `<div class="seg coach-seg">${[[false, '⚡ Quick'], [true, '🧠 Smart · slower']].map(([v, l]) => `<button class="${!!ui.smartCoach === v ? 'on' : ''}" data-act="coach-mode" data-v="${v ? 1 : 0}">${l}</button>`).join('')}</div>
     <p class="hint coach-mode-hint">${ui.smartCoach ? '🧠 Smart coach thinks longer and is better at tricky questions like a wrong placement. Replies take about 5-30 seconds.' : '⚡ Quick coach answers in a couple of seconds. Switch to Smart for tricky questions.'}</p>`;
-  return `${modeSeg}<section class="chat">
+  return `<button class="btn ghost small coach-back" data-act="coach-back">◂ Back</button>${modeSeg}<section class="chat">
       <div class="chat-log">${msgs.map((m, mi) => `<div class="msg ${m.role}">${md(m.content)}${m.provider === 'offline' ? `<span class="tag warn">${m.reason ? `⚠️ ${h(AI_TROUBLE[m.reason] || AI_TROUBLE.down)} Meanwhile, this answer is from the built-in coach.` : 'built-in coach'}</span>` : m.role === 'assistant' && m.model ? `<span class="tag">${h(aiLabel(m.model, m.provider, m.tier))}</span>` : ''}</div>${m.role === 'user' && ui.chat.length && !(ui.thinking && mi === ui.chat.length - 1) ? `<div class="msg-tools"><button class="linkish" data-act="msg-edit" data-m="${mi}">✏️ Edit</button><button class="linkish" data-act="msg-del" data-m="${mi}">🗑 Delete</button></div>` : ''}${suggestionCards(m, mi)}`).join('')}
         ${ui.thinking ? `<div class="msg assistant typing"><span></span><span></span><span></span>${ui.smartCoach ? '<em class="slow-note">🧠 Thinking it through…</em>' : ''}${ui.slow ? `<em class="slow-note">${ui.smartCoach ? 'Still thinking… smart answers take a bit longer' : 'Still thinking… the AI is busy, a few more seconds'}</em>` : ''}</div>` : ''}</div>
       <div class="quick">${['What should I do today?', 'I feel sore', 'Explain my level', 'How fast should easy runs be?'].map(q => `<button class="pill" data-act="quick" data-q="${h(q)}">${h(q)}</button>`).join('')}</div>
@@ -1550,6 +1552,110 @@ function numbersCard() {
         <br>Strength now: ${cleared ? `cleared ${h(cleared.name)}, ` : ''}working on <strong>${h(working.name)}</strong> (${h(ST.sexText(working.target, S.profile.sex))}).</p>
       <button class="btn" data-act="edit-numbers">Update my numbers</button>
     </section>`;
+}
+
+// ---------- floating coach ----------
+// A little coach in the corner of every screen (cap, whistle, friendly face). Waves now and then; a dot
+// when the coach has said something you haven't seen.
+function coachFab() {
+  return `<button class="coach-fab ${ui.coachUnread ? 'unread' : ''}" data-act="coach-open" aria-label="Open your coach">
+    <svg viewBox="0 0 64 64" width="58" height="58" aria-hidden="true">
+      <circle cx="32" cy="32" r="31" fill="#ff6b35"/><circle cx="32" cy="32" r="31" fill="none" stroke="#fff" stroke-width="2.5"/>
+      <path d="M14,60 Q32,44 50,60Z" fill="#1e88e5"/>
+      <path d="M26,44 L32,52 L38,44" fill="none" stroke="#fff" stroke-width="1.6"/>
+      <circle cx="32" cy="32" r="12" fill="#f1c49b"/>
+      <path d="M19,28 Q32,12 45,28 Z" fill="#14213d"/><rect x="18" y="26.5" width="28" height="4" rx="2" fill="#14213d"/><path d="M44,28.5 L52,29.5 L44,31" fill="#14213d"/>
+      <circle cx="27.5" cy="33" r="1.7" fill="#14213d"/><circle cx="36.5" cy="33" r="1.7" fill="#14213d"/>
+      <path d="M27,38 Q32,42 37,38" fill="none" stroke="#14213d" stroke-width="1.8" stroke-linecap="round"/>
+      <circle cx="24.5" cy="37" r="2" fill="#ff8a65" opacity=".6"/><circle cx="39.5" cy="37" r="2" fill="#ff8a65" opacity=".6"/>
+      <path d="M25,44 Q32,50 39,44" fill="none" stroke="#ffd23f" stroke-width="1.4"/><rect x="36" y="45.5" width="7" height="3.6" rx="1.8" fill="#ffd23f" stroke="#c9a400" stroke-width=".6"/>
+      <g class="fab-hand"><path d="M50,48 L55,38" stroke="#f1c49b" stroke-width="4" stroke-linecap="round"/><circle cx="55.5" cy="36.5" r="3" fill="#f1c49b"/></g>
+    </svg>${ui.coachUnread ? '<i class="fab-dot"></i>' : ''}<span class="fab-label">Coach</span></button>`;
+}
+
+// ---------- nutrition ----------
+// Who the athlete is, for the nutrition maths (weight from the latest weigh-in, then My numbers).
+function nutriProfile() {
+  const n = S.nutrition || {}, a = S.answers || {}, last = (S.bodyLog || []).at(-1);
+  const toKg = (v, u) => (+v > 0 ? +v * (u === 'lb' ? 0.4536 : 1) : null);
+  const kg = toKg(last?.bw, last?.unit) || toKg(a.bodyweight, a.liftUnit) || n.kg || null;
+  const b5 = S.bests?.run5k || a.best5k;
+  return { sex: S.profile.sex || 'x', age: +n.age || 30, heightCm: +n.heightCm || null, kg, bodyFat: +(last?.bf || a.bodyFat) || null,
+    life: n.life || 'sit', easyPace: b5 > 0 ? b5 / 5 + 1.25 : 6.5, trains: true, strengthBlock: S.hybrid?.block?.type === 'strength' };
+}
+const ymdNow = () => E.dayKey(now());
+// The goal in force today: the athlete's own, unless they applied a safer option for a while.
+function nutriGoal() {
+  const n = S.nutrition || {}, o = n.override;
+  if (o && o.until >= ymdNow()) return { ...n.goal, type: o.mode === 'perform' ? 'maintain' : 'maintain', overridden: o };
+  return n.goal || { type: 'maintain' };
+}
+function nutriDay() {
+  const w = K.buildWeek(S, now());
+  return (w.days[w.today]?.items || []).filter(x => !x.sick);
+}
+function nutriToday() {
+  const p = nutriProfile();
+  if (!p.kg || !p.heightCm) return null;
+  const R = NU.rmr(p).kcal, items = nutriDay(), day = NU.dayLoad(items, p, R);
+  const t = S.target, ph = t ? TG.phase(t, now()) : null;
+  // Carb-loading the 2 days before a race over ~90 minutes.
+  const v = t ? TG.verdict(S, t, now(), ui.events || []) : null, expected = v?.range ? (v.range[0] + v.range[1]) / 2 : null;
+  const raceLoad = ph && (ph.d === 1 || ph.d === 2) && (expected || 0) > 90 ? 9 : 0;
+  const goal = nutriGoal(), tg = NU.targets(p, day, goal, { raceLoad });
+  const own = S.nutrition?.goal || { type: 'maintain' };
+  const tired = S.history.filter(h => h.ts > now() - 3 * E.DAY && (h.pain >= 3 || h.kind === 'attempt')).length > 0;
+  const list = NU.checks({ goal: own.type === goal.type ? goal : own, phase: ph?.id, rebuild: S.rebuild?.active, sick: S.mode?.type === 'sick', spike: TG.loadSpike(S.history, now()), tired, t: tg, load: day.load,
+    goalCheck: NU.goalCheck(p, own, now()), reds: S.nutrition?.reds?.flags?.length > 0 }).filter(x => !(goal.overridden && x.apply));
+  return { p, day, t: tg, goal, own, list, ph, expected, raceLoad };
+}
+// Short line for the coach: today's targets and anything that clashes.
+function nutritionContext() {
+  const x = nutriToday();
+  if (!x) return 'NUTRITION: not set up yet.';
+  return `NUTRITION TODAY (computed by the app; use these numbers): ${NU.LOADS[x.day.load].label}, goal ${x.goal.type}${x.goal.overridden ? ' (paused deficit)' : ''}. About ${x.t.kcal} kcal, protein ${x.t.protein} g, carbs ${x.t.carbs} g (${x.t.carbsPerKg} g/kg), fat ${x.t.fat} g.${x.raceLoad ? ' Carb-loading for the race.' : ''}${x.list.length ? ` Notes: ${x.list.map(c => c.title).join('; ')}.` : ''}`;
+}
+const LIFE = [['sit', 'Mostly sitting (desk job, study)'], ['feet', 'On my feet a lot (teaching, retail, walking)'], ['physical', 'Physical work']];
+const GOALS_N = [['perform', '⚡ Fuel my training and races'], ['maintain', '⚖️ Stay at my weight'], ['cut', '🔥 Lose fat'], ['gain', '💪 Build muscle']];
+function viewNutrition() {
+  const n = S.nutrition;
+  if (!n?.setup) return `<section class="card nutri-hero"><p class="eyebrow">🍽️ Nutrition</p><h2>Eat for your training</h2>
+      <p>Daily targets that follow your plan: more carbs on long and hard days, steady protein, fuelling for long sessions and races, and a heads-up when your goal and your training clash.</p>
+      <p class="hint">A one-minute setup. It's separate from the questionnaire and you can change it any time.</p>
+      <button class="btn primary" data-act="nutri-setup">Set up my nutrition</button></section>`;
+  const x = nutriToday();
+  if (!x) return `<section class="card"><p>Add your height and weight to see your targets.</p><button class="btn primary" data-act="nutri-setup">Complete setup</button></section>`;
+  const { t, day, list, own, goal } = x, hide = n.hideNumbers, pt = NU.portions(t);
+  const nums = hide
+    ? `<p class="q">Per meal <span class="hint">(${pt.meals} meals a day)</span></p><div class="nutri-grid"><div><b>🥩 ${pt.protein}</b><span>palm${pt.protein > 1 ? 's' : ''} of protein</span></div><div><b>🍚 ${pt.carbs}</b><span>cupped hand${pt.carbs > 1 ? 's' : ''} of carbs</span></div><div><b>🥑 ${pt.fat}</b><span>thumb${pt.fat > 1 ? 's' : ''} of fats</span></div></div><p class="hint">Hands make good portion guides: palm = meat, fish, eggs; cupped hand = rice, pasta, bread, fruit; thumb = oil, nuts, butter.${day.load === 'hard' || day.load === 'very' ? ' Big day: add a carb snack or a sports drink around your session.' : ''}</p>`
+    : `<p class="nutri-kcal"><b>${t.kcal.toLocaleString()}</b> kcal <span class="hint">(likely ${t.range[0].toLocaleString()}–${t.range[1].toLocaleString()})</span></p>
+       <div class="nutri-grid"><div><b>${t.protein} g</b><span>protein · ${t.proteinDoses} × ~${t.doseG} g</span></div><div><b>${t.carbs} g</b><span>carbs · ${t.carbsPerKg} g/kg</span></div><div><b>${t.fat} g</b><span>fat</span></div></div>`;
+  const why = `${NU.LOADS[day.load].label}${day.sessions.length ? `: ${day.sessions.map(se => h(se.title)).join(' + ')}` : ''}${x.raceLoad ? ' · <strong>carb-loading for your race</strong>' : ''}`;
+  const goalLine = goal.overridden ? `<p class="nutri-paused">⏸️ Your ${GOALS_N.find(g => g[0] === own.type)?.[1].replace(/^\S+\s/, '').toLowerCase()} goal is paused until ${new Date(`${goal.overridden.until}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}. <button class="linkish" data-act="nutri-undo">Resume it now</button></p>` : '';
+  const bubble = c => `<details class="nutri-check ${c.level}"><summary><span>${c.level === 'danger' ? '⛔' : c.level === 'warn' ? '⚠️' : '💡'} <strong>${h(c.title)}</strong></span><span class="hint">ⓘ why</span></summary>
+      <p>${h(c.why)}</p>${c.apply ? `<div class="row wrap"><button class="btn small primary" data-act="nutri-apply" data-mode="${c.apply.mode}" data-today="${c.apply.today ? 1 : ''}">${h(c.apply.label)}</button><span class="hint">or keep your goal: your choice.</span></div>` : ''}</details>`;
+  const long = day.longest >= 60 ? NU.sessionFuel(day.longest, x.p.kg, false) : null;
+  const fuel = long ? `<section class="card"><h3>🔋 Fuel today's session <span class="hint">(${day.longest} min)</span></h3><ul class="fuel">
+      <li><b>Before</b> ${h(long.before)}</li><li><b>During</b> ${h(long.during.text)}</li><li><b>Fluids</b> ${h(long.fluids)}</li><li><b>After</b> ${h(long.after)}</li></ul></section>` : '';
+  const ph = x.ph, rf = S.target && ph && ph.d >= 0 && ph.d <= 14 ? NU.raceFuel(x.expected, x.p.kg) : null;
+  const race = rf ? `<section class="card race-fuel"><h3>🏁 Race fuelling · ${h(S.target.name)} <span class="hint">in ${ph.d} day${ph.d === 1 ? '' : 's'}</span></h3><ul class="fuel">
+      <li><b>2 days before</b> ${h(rf.load)}</li><li><b>Race morning</b> ${h(rf.breakfast)}</li><li><b>During</b> ${h(rf.during)}</li>${rf.rules.map(r => `<li>✅ ${h(r)}</li>`).join('')}</ul></section>` : '';
+  // This week's carb level per day.
+  const p = x.p, R = NU.rmr(p).kcal, wk = K.buildWeek(S, now());
+  const week = `<section class="card"><h3>📅 Carbs this week</h3><div class="carb-week">${wk.days.map((d, i) => { const L = NU.dayLoad(d.items.filter(it => !it.sick), p, R).load; const lvl = { rest: 1, light: 1, moderate: 2, hard: 3, very: 3 }[L];
+      return `<div class="${i === wk.today ? 'today' : ''}"><span>${K.DAY_NAMES[i].slice(0, 3)}</span><i class="lv${lvl}"></i><em>${['', 'low', 'medium', 'high'][lvl]}</em></div>`; }).join('')}</div><p class="hint">Eat more carbs on long and hard days, fewer on rest days: "fuel for the work".</p></section>`;
+  // Goal progress from weigh-ins.
+  const rate = NU.weeklyRate(own, p), gc = NU.goalCheck(p, own, now());
+  const progress = `<section class="card"><h3>🎯 Your goal</h3><p>${GOALS_N.find(g => g[0] === own.type)?.[1] || ''}${rate ? ` · about ${rate}% of bodyweight a week (≈ ${(p.kg * rate / 100).toFixed(2)} kg)` : ''}${own.weight ? ` · goal ${own.weight} kg${own.date ? ` by ${new Date(`${own.date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}` : ''}` : ''}</p>
+      ${gc && gc.ok ? '<p class="hint">✅ That goal date is realistic at a safe pace.</p>' : ''}<p class="hint">${bodyTrend().replace('<br>', '') || 'Weigh in once a week, same time and conditions: the app adjusts if the trend says the estimate is off.'}</p>
+      <div class="row wrap"><button class="btn small" data-act="nutri-weigh">⚖️ Log weight</button><button class="btn ghost small" data-act="nutri-setup">Edit my nutrition</button></div></section>`;
+  const due = !n.reds || now() - n.reds.ts > 30 * E.DAY;
+  const reds = `<section class="card"><h3>🩺 Monthly check-in</h3><p class="hint">Four quick questions that catch under-fuelling early (REDs). ${due ? 'Due now.' : `Last done ${new Date(n.reds.ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}.`}</p><button class="btn small ${due ? 'primary' : 'ghost'}" data-act="nutri-reds">${due ? 'Do it now' : 'Do it again'}</button></section>`;
+  return `<section class="card nutri-today"><p class="eyebrow">🍽️ Today · ${why}</p>${nums}
+      ${goalLine}${t.raised ? '<p class="hint">Calories nudged up so fat stays at a healthy minimum.</p>' : ''}
+      <label class="switch-row small"><input type="checkbox" data-act="nutri-hide" ${hide ? 'checked' : ''}> <span>Show portions instead of numbers</span></label></section>
+    ${list.map(bubble).join('')}${race}${fuel}${week}${progress}${reds}
+    <details class="card how"><summary>How are these worked out?</summary><p class="hint">Resting energy: ${h(t.method)} formula (the most accurate for athletes in a 2023 review; uses your body fat when known), about ±10%. Plus your daily life, plus today's sessions (running ≈ 1 kcal per kg per km). Carbs by the day's training load (g per kg), protein 1.6–2.2 g/kg (more in a deficit), fat at least 20% of energy. A goal never pushes you below the energy your body needs to stay healthy (energy availability, IOC 2023). Estimates: trust your weigh-in trend over the formula. Not medical advice.</p></details>`;
 }
 
 // ---------- stats ----------
@@ -1776,6 +1882,33 @@ function painButtons() {
 }
 
 const MODALS = {
+  nutriSetup() {
+    const n = S.nutrition || {}, p = nutriProfile(), g = n.goal || {};
+    const num = (name, label, v, unit, step = '1') => `<label class="field"><span>${label}</span><span class="with-unit"><input type="number" inputmode="decimal" name="${name}" value="${v ?? ''}" step="${step}" min="0">${unit ? `<em>${unit}</em>` : ''}</span></label>`;
+    return `<form id="nutri-form"><h2>🍽️ Your nutrition</h2><p class="why">💡 About a minute. Your training, races and recovery are already known: this is just you and your goal.</p>
+      <p class="q">Your goal</p>${radio('nGoal', GOALS_N, g.type || 'perform')}
+      <div class="nutri-pace" ${['cut', 'gain'].includes(g.type) ? '' : 'hidden'}><p class="q">Pace</p>${radio('nPace', [['slow', 'Slowly (keeps the most muscle and performance)'], ['steady', 'Steadily']], g.pace || 'slow')}
+        <div class="row wrap">${num('nGoalKg', 'Goal weight (optional)', g.weight, 'kg', '0.1')}<label class="field"><span>By (optional)</span><input type="date" name="nGoalDate" value="${g.date || ''}"></label></div></div>
+      <div class="row wrap">${num('nHeight', 'Height', n.heightCm, 'cm')}${num('nAge', 'Age', n.age, 'years')}${num('nKg', 'Weight', p.kg ? Math.round(p.kg * 10) / 10 : '', 'kg', '0.1')}</div>
+      <p class="q">Outside training, your day is…</p>${radio('nLife', LIFE, n.life || 'sit')}
+      ${num('nBf', 'Body fat % (optional, makes it more accurate)', p.bodyFat || '', '%', '0.1')}
+      <p class="hint">Calories follow your training each day. Nothing here changes your plan.</p>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`;
+  },
+  nutriWeigh() {
+    const p = nutriProfile();
+    return `<form id="weigh-form"><h2>⚖️ Log weight</h2><p class="why">💡 Same time of day, same conditions (e.g. morning, after the toilet). The weekly trend matters, not single days.</p>
+      <label class="field"><span>Weight</span><span class="with-unit"><input type="number" inputmode="decimal" name="wKg" value="${p.kg ? Math.round(p.kg * 10) / 10 : ''}" step="0.1" min="20"><em>kg</em></span></label>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`;
+  },
+  nutriReds() {
+    const qs = [['fatigue', 'Tired most days, even after rest days'], ['injury', 'A stress fracture or repeated bone/tendon injuries this year'],
+      ...(S.profile.sex === 'm' ? [['libido', 'Much lower sex drive or fewer morning erections than usual']] : [['periods', 'Missed or irregular periods (not on hormonal contraception)']]),
+      ['ill', 'Getting ill more often than usual']];
+    return `<form id="reds-form"><h2>🩺 Monthly check-in</h2><p class="why">💡 Tick anything that's true for you lately. These can be signs of eating too little for your training. Private: stays on your phone.</p>
+      ${qs.map(([k, l]) => `<label class="choice"><input type="checkbox" name="r_${k}"><span>${h(l)}</span></label>`).join('')}
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Done</button></div></form>`;
+  },
   target(m) {
     const e = raceFrom(m.uid);
     if (!e) return '<p>That race is no longer in the calendar.</p><div class="row end"><button class="btn ghost" data-act="close">Close</button></div>';
@@ -2271,6 +2404,19 @@ const actions = {
   'msg-del'(el) { chatRemove(+el.dataset.m); toast('Message deleted. The coach won\'t see it.'); },
   'msg-edit'(el) { const i = +el.dataset.m; ui.chatDraft = ui.chat[i]?.content || ''; chatRemove(i); },
   'dismiss-banner'(el) { ui.dismissed.add(el.dataset.key); render(); },
+  'coach-open'() { ui.prevTab = ui.tab === 'coach' ? ui.prevTab : ui.tab; ui.coachUnread = false; ui.tab = 'coach'; render(); },
+  'coach-back'() { ui.tab = ui.prevTab || 'today'; render(); },
+  'nutri-setup'() { ui.modal = { type: 'nutriSetup' }; renderModal(); },
+  'nutri-weigh'() { ui.modal = { type: 'nutriWeigh' }; renderModal(); },
+  'nutri-reds'() { ui.modal = { type: 'nutriReds' }; renderModal(); },
+  'nutri-hide'(el) { S.nutrition = { ...(S.nutrition || {}), hideNumbers: el.checked }; commit(S); },
+  'nutri-apply'(el) {
+    // Until the clash is over: the race (+2 days), the end of Rebuild / illness (re-checked daily), or just today.
+    const until = el.dataset.today ? ymdNow() : el.dataset.mode === 'perform' && S.target ? E.dayKey(new Date(`${S.target.date}T12:00:00`).getTime() + 2 * E.DAY) : E.dayKey(now() + 7 * E.DAY);
+    S.nutrition = { ...S.nutrition, override: { mode: el.dataset.mode, until, set: now() } }; commit(S);
+    toast(el.dataset.mode === 'perform' ? '⚡ Fuelling for performance. Your goal resumes afterwards.' : '⏸️ Deficit paused. Your goal resumes afterwards.');
+  },
+  'nutri-undo'() { S.nutrition = { ...S.nutrition, override: null }; commit(S); toast('Your goal is back on.'); },
   'target-pick'(el) { ui.modal = { type: 'target', uid: el.dataset.uid }; renderModal(); },
   'target-set'(el) {
     const f = document.getElementById('target-form'), e = raceFrom(el.dataset.uid);
@@ -2588,12 +2734,13 @@ async function sendChat(text) {
   const slowTimer = setTimeout(() => { if (ui.thinking) { ui.slow = true; if (ui.tab === 'coach') render(); } }, ui.smartCoach ? 9000 : 4000);
   const history = ui.chat.slice(-12).map(({ role, content }) => ({ role, content }));
   ui.chatAbort = new AbortController();
-  const res = await askCoach(history, `${E.coachContext(S, now())}\n${ACT.weekContext(S, now())}`, S, ui.smartCoach, FEATURE_BRIEF, ui.chatAbort.signal);
+  const res = await askCoach(history, `${E.coachContext(S, now())}\n${ACT.weekContext(S, now())}\n${nutritionContext()}`, S, ui.smartCoach, FEATURE_BRIEF, ui.chatAbort.signal);
   ui.chatAbort = null;
   if (res.aborted) { clearTimeout(slowTimer); ui.thinking = false; ui.slow = false; saveChat(); render(); return; } // stopped: the message is already back in the box
   const { reply, provider, actions = [], model, tier, reason } = res;
   const valid = actions.filter(a => ACT.describe(S, a, now()));
   ui.chat.push({ role: 'assistant', content: reply, provider, model, tier, reason, actions: valid.map(a => ({ ...a, status: 'pending' })) });
+  if (ui.tab !== 'coach') ui.coachUnread = true;
   clearTimeout(slowTimer);
   ui.thinking = false; ui.slow = false; saveChat(); render();
   if (ui.speakReplies) speak(reply);
@@ -2647,6 +2794,7 @@ document.addEventListener('click', e => {
 
 document.addEventListener('change', async e => {
   const el = e.target;
+  if (el.closest('#nutri-form') && el.name === 'nGoal') { el.form.querySelector('.nutri-pace')?.toggleAttribute('hidden', !['cut', 'gain'].includes(el.value)); return; }
   if (el.closest('#target-form') && el.name === 'tTimeMode' && ui.modal?.type === 'target') { ui.modal.timeMode = el.value; renderModal(); return; }
   if (el.closest('#target-form') && ['tDist', 'tGoal', 'tTime'].includes(el.name) && ui.modal?.type === 'target') {
     if (el.name === 'tDist') ui.modal.distance = el.value || null;
@@ -2728,6 +2876,38 @@ document.addEventListener('submit', e => {
     commit(S);
     toast(`Welcome to ${HYB.hybWorld(S).emoji} ${HYB.hybWorld(S).name}!`);
     if (ui.pendingRace) { ui.modal = { type: 'race', k: ui.pendingRace }; ui.pendingRace = null; renderModal(); }
+    return;
+  }
+  if (f.id === 'nutri-form') {
+    const v = n => f[n]?.value?.trim(), num = n => (v(n) ? +v(n) : null);
+    const type = f.querySelector('[name=nGoal]:checked')?.value || 'perform', kg = num('nKg'), heightCm = num('nHeight'), age = num('nAge');
+    if (!(heightCm > 120 && heightCm < 230)) return toast('Add your height in cm, e.g. 175.');
+    if (!(age >= 14 && age <= 90)) return toast('Add your age.');
+    if (!(kg > 30 && kg < 250)) return toast('Add your weight in kg, e.g. 72.5.');
+    const bf = num('nBf');
+    if (bf != null && !(bf >= 3 && bf <= 60)) return toast('Body fat should be a percentage between 3 and 60, or empty.');
+    const goal = { type: type === 'perform' ? 'perform' : type, pace: f.querySelector('[name=nPace]:checked')?.value || 'slow', weight: num('nGoalKg'), date: v('nGoalDate') || null };
+    S.nutrition = { ...(S.nutrition || {}), setup: true, heightCm, age, kg, life: f.querySelector('[name=nLife]:checked')?.value || 'sit', goal };
+    const last = (S.bodyLog || []).at(-1);
+    if (!last || Math.abs((last.unit === 'lb' ? last.bw * 0.4536 : last.bw) - kg) > 0.05 || (bf && last.bf !== bf)) S.bodyLog = [...(S.bodyLog || []), { ts: now(), bw: kg, unit: 'kg', bf: bf || last?.bf || null, method: last?.method || '' }].slice(-60);
+    if (bf) S.answers = { ...(S.answers || {}), bodyFat: bf };
+    ui.modal = null; commit(S); toast('🍽️ Your nutrition follows your training now.');
+    return;
+  }
+  if (f.id === 'weigh-form') {
+    const kg = +f.wKg.value;
+    if (!(kg > 30 && kg < 250)) return toast('Add your weight in kg.');
+    const last = (S.bodyLog || []).at(-1);
+    S.bodyLog = [...(S.bodyLog || []), { ts: now(), bw: kg, unit: 'kg', bf: last?.bf || null, method: last?.method || '' }].slice(-60);
+    S.nutrition = { ...(S.nutrition || {}), kg };
+    ui.modal = null; commit(S); toast('⚖️ Logged. The weekly trend is what counts.');
+    return;
+  }
+  if (f.id === 'reds-form') {
+    const flags = [...f.querySelectorAll('input[type=checkbox]:checked')].map(x => x.name.slice(2));
+    S.nutrition = { ...(S.nutrition || {}), reds: { ts: now(), flags } };
+    ui.modal = null; commit(S);
+    toast(flags.length ? 'Thanks for being honest. Please read the note at the top of Nutrition.' : '✅ All clear. See you next month.');
     return;
   }
   if (f.id === 'result-form') {
@@ -2869,7 +3049,7 @@ window.addEventListener('hashchange', () => {
   if (!ui.modal) render();
 });
 
-$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help', 'prepStage', 'stepInfo', 'logInfo', 'target', 'raceResult'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help', 'prepStage', 'stepInfo', 'logInfo', 'target', 'raceResult', 'nutriSetup', 'nutriWeigh', 'nutriReds'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
 
 // ---------- installable app ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
