@@ -1,4 +1,5 @@
 // Real races from the Egypt Fitness Calendar (its .ics feed), shown per sport the athlete trains for.
+// A race drops off on its own day: too late to enter or prepare for.
 // Cached on the device for 12 hours; works offline with the last copy.
 const ICS_URL = 'https://abdullahmsalama.github.io/egypt-fitness-calendar/egypt-fitness.ics';
 const KEY = 'stride-quest:events';
@@ -72,11 +73,11 @@ export function upcoming(events, tracks, todayYmd, perTrack = 5) {
   const out = {};
   for (const tr of tracks) {
     const mine = events.filter(e => e.track === tr);
-    const next = mine.filter(e => e.date >= todayYmd).sort((a, b) => a.date.localeCompare(b.date));
+    const next = mine.filter(e => e.date > todayYmd).sort((a, b) => a.date.localeCompare(b.date));
     const soon = next.filter(e => e.date < soonEnd);
     const later = next.filter(e => e.date >= soonEnd).sort((a, b) => (isMajor(b) - isMajor(a)) || a.date.localeCompare(b.date));
     const announced = new Set(next.map(e => base(e.name)));
-    const expected = mine.filter(e => e.date < todayYmd && !announced.has(base(e.name)) && isMajor(e))
+    const expected = mine.filter(e => e.date <= todayYmd && !announced.has(base(e.name)) && isMajor(e))
       .map(e => ({ ...e, expected: `${+e.date.slice(0, 4) + 1}-${e.date.slice(5, 7)}` }));
     out[tr] = { soon, main: [...later, ...expected].slice(0, perTrack), more: Math.max(0, later.length + expected.length - perTrack) };
   }
@@ -98,14 +99,14 @@ export function featured(events, track, todayYmd) {
     let e;
     if (rule instanceof RegExp) {
       const all = mine.filter(x => rule.test(x.name));
-      e = all.filter(x => x.date >= todayYmd).sort((a, b) => a.date.localeCompare(b.date))[0];
-      if (!e) { const last = all.sort((a, b) => b.date.localeCompare(a.date))[0]; if (last) e = { ...last, expected: `${+last.date.slice(0, 4) + 1}-${last.date.slice(5, 7)}` }; }
+      e = all.filter(x => x.date > todayYmd).sort((a, b) => a.date.localeCompare(b.date))[0];
+      if (!e) { const last = all.filter(x => x.date <= todayYmd).sort((a, b) => b.date.localeCompare(a.date))[0]; if (last) e = { ...last, expected: `${+last.date.slice(0, 4) + 1}-${last.date.slice(5, 7)}` }; }
     } else {
-      e = mine.filter(x => x.distance === rule.next && x.date >= todayYmd && !picks.some(p => p.uid === x.uid)).sort((a, b) => a.date.localeCompare(b.date))[0];
+      e = mine.filter(x => x.distance === rule.next && x.date > todayYmd && !picks.some(p => p.uid === x.uid)).sort((a, b) => a.date.localeCompare(b.date))[0];
     }
     if (e && !picks.some(p => p.uid === e.uid)) picks.push(e);
   }
-  const others = mine.filter(x => x.date >= todayYmd && !picks.some(p => p.uid === x.uid)).sort((a, b) => a.date.localeCompare(b.date));
+  const others = mine.filter(x => x.date > todayYmd && !picks.some(p => p.uid === x.uid)).sort((a, b) => a.date.localeCompare(b.date));
   return { picks, others };
 }
 
