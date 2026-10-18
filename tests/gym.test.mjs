@@ -149,3 +149,21 @@ test('gym: coach context carries the split and next weights, and no run levels f
   assert.match(c, /NEXT GYM SESSION/);
   assert.doesNotMatch(c, /Run Track: Level/);
 });
+
+test('gym: cardio warm-up every session; finishers by goal; none for runners; 150 min a week', () => {
+  const s = gymState({ days: [0, 2, 4] });
+  s.gym.goal = 'muscle'; s.gym.split = 'ulf';
+  let st = G.gymSteps(s);
+  assert.ok(st.every(x => /Warm-up: 5 min easy cardio/.test(x.warm)));
+  assert.equal(st.filter(x => x.finish).length, 2);
+  assert.ok(!st.find(x => x.title === 'Lower').finish, 'not after leg day');
+  s.gym.goal = 'fit'; st = G.gymSteps(s);
+  assert.ok(st.every(x => x.finish));
+  assert.match(st[0].finish.text, /intervals/);
+  const c = G.weeklyCardio(s);
+  assert.ok(c.walks >= 1 && c.inSessions > 0);
+  const r = gymState({ tracks: ['run', 'gym'] });
+  assert.ok(G.gymSteps(r).every(x => !x.finish));
+  const w = gymState({ sex: 'f' });
+  assert.equal(w.gym.focus, 'lower');
+});

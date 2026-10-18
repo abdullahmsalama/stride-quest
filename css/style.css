@@ -910,3 +910,13 @@ header.top { gap: 10px; }
 .lift-row { gap: 8px; }
 .lift-row .field { flex: 1 1 140px; }
 .lifts-table td:nth-child(n+2) { white-space: nowrap; }
+.dob { display: grid; grid-template-columns: 0.8fr 1fr 1.1fr; gap: 6px; width: 100%; max-width: 360px; }
+.dob select { width: 100%; min-width: 0; font-size: 16px; padding: 10px 8px; }
+#bday-form { align-items: center; }
+#bday-form .dob { flex: 1 1 240px; }
+.gym-ex .ex.cardio { background: var(--surface-2); }
+.gym-svg { padding: 0; overflow: hidden; }
+.gym-svg svg { display: block; }
+.gnode { cursor: pointer; }
+.gym-list summary { cursor: pointer; font-weight: 700; }
+.gym-list .gym-map { margin-top: 10px; }

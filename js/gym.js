@@ -128,7 +128,7 @@ export function dayPlan(s, dayId, info = weekInfo(s)) {
   const g = s.gym, day = GYM_DAYS[dayId], pair = PAIRS[g.pair] || PAIRS.classic;
   let slots = day.slots.map(x => x.replace('@push', pair.push).replace('@pull', pair.pull));
   const legDay = slots.slice(0, 2).some(x => LEG_SLOTS.has(x.replace('+', '')));
-  const n = nExercises(g.minutes);
+  const n = nExercises(g.minutes) - (FINISH[g.goal]?.every && !hasRunning(s) && +g.minutes <= 45 ? 1 : 0); // short sessions make room for the cardio finisher
   if (g.focus === 'lower') { slots = slots.filter(x => x !== 'glutes'); if (legDay) slots.splice(1, 0, 'glutes'); else slots.splice(n - 1, 0, 'glutes'); }
   if (g.focus === 'upper' && legDay) slots.splice(n - 1, 0, 'lateral');
   if (g.focus === 'arms' && !legDay) { for (const k of ['triceps', 'biceps']) if (!slots.slice(0, n).some(x => x.startsWith(k))) slots.splice(n - 1, 0, k); }
@@ -145,6 +145,43 @@ export function dayPlan(s, dayId, info = weekInfo(s)) {
   return { name, items, legs: items.some(x => x.legs && x.kind !== 'iso') };
 }
 
+// Cardio, because lifting alone doesn't cover heart health: the WHO advises 150-300 min of moderate
+// cardio a week plus strength twice. Every session starts with a short easy warm-up on a machine;
+// finishers depend on the goal. Easy, low-impact cardio after lifting barely affects strength or muscle
+// gains (Wilson 2012; Schumann 2022), so it goes after the weights, and not after leg days for
+// muscle and strength goals. Athletes who also run get their cardio from running: warm-up only.
+const FINISH = {
+  fit: { every: true, min: 15, text: 'moderate: breathing harder, still able to talk in short sentences', intervals: true },
+  cut: { every: true, min: 20, text: 'easy, steady zone 2: you could hold a conversation' },
+  muscle: { per: 2, min: 12, text: 'easy: you could hold a conversation' },
+  strength: { per: 2, min: 10, text: 'easy: you could hold a conversation' },
+};
+export function cardioFor(s, plans) {
+  const out = plans.map(() => ({ warm: 'Warm-up: 5 min easy cardio (bike, rower, cross-trainer or brisk walk), then 1-2 light sets of the first exercise' }));
+  const f = FINISH[s.gym.goal] || FINISH.muscle;
+  if (hasRunning(s) || s.gym.equip === 'bw' && !f.every) return out;
+  const machine = s.gym.equip === 'gym' ? 'bike, rower, cross-trainer or incline walk' : 'brisk walk, cycling, skipping or stairs';
+  let left = f.per ?? plans.length, first = true;
+  // Muscle and strength goals: after upper-body days first, so legs stay fresh for leg day.
+  const heavy = p => (p.items.some(x => x.legs && x.kind === 'main') ? 2 : p.legs ? 1 : 0); // squat / deadlift day, other leg work, none
+  const order = [...plans.keys()].sort((a, b) => (f.every ? 0 : heavy(plans[a]) - heavy(plans[b])) || a - b);
+  for (const i of order) {
+    if (left-- <= 0) break;
+    const iv = f.intervals && first; first = false;
+    out[i].finish = iv ? { min: 12, text: `Cardio finisher, 12 min intervals: 6 × 30 s hard / 90 s easy (${machine})` }
+      : { min: f.min, text: `Cardio finisher, ${f.min} min ${f.text} (${machine})` };
+  }
+  return out;
+}
+// Cardio minutes in this week's sessions, and what to add on free days to reach 150.
+export function weeklyCardio(s, now = Date.now()) {
+  const steps = gymSteps(s, now).filter(x => x.type === 'lift');
+  const inSessions = steps.reduce((t, x) => t + (x.finish?.min || 0) + 5, 0);
+  const free = Math.max(0, 7 - gymDays(s));
+  const need = Math.max(0, 150 - inSessions), walks = need ? Math.min(free, Math.ceil(need / 30)) : 0;
+  return { inSessions, need, walks, free };
+}
+
 // Steps for the current gym week: the split's next sessions, then (on a world's last stage, in the
 // deload week) the Test Day.
 export function gymSteps(s, now = Date.now()) {
@@ -152,12 +189,14 @@ export function gymSteps(s, now = Date.now()) {
   const w = GYM_WORLDS[GYM_STAGES[Math.min(g.stage, GYM_MAX - 1)].world];
   const testDue = info.deload && !g.finished && g.stage < stageCap(s) && GYM_STAGES[g.stage]?.std && w.stages.at(-1) === g.stage;
   const count = testDue ? Math.max(1, n - 1) : n;
-  const steps = [];
-  for (let i = 0; i < count; i++) {
-    const dayId = days[((g.rot || 0) + i) % days.length], plan = dayPlan(s, dayId, info);
+  const steps = [], plans = [];
+  for (let i = 0; i < count; i++) { const dayId = days[((g.rot || 0) + i) % days.length]; plans.push({ dayId, ...dayPlan(s, dayId, info) }); }
+  const cardio = cardioFor(s, plans);
+  plans.forEach((plan, i) => {
     const tag = info.deload ? 'Deload week: half the sets, same or 10% lighter weights' : info.comeback ? 'Welcome back: an easy week, half the sets, lighter weights' : `Week ${info.week} of ${info.len}: leave ${plan.items[0]?.rir ?? 2} reps in the tank`;
-    steps.push({ type: 'lift', title: plan.name, detail: `${plan.items.length} exercises · about ${g.minutes || 60} min · ${tag}`, ex: plan.items.map(x => x.id), gym: plan.items, legs: plan.legs, minutes: +g.minutes || 60, dayId });
-  }
+    const fin = cardio[i].finish;
+    steps.push({ type: 'lift', title: plan.name, detail: `${plan.items.length} exercises${fin ? ` + ${fin.min} min cardio` : ''} · about ${g.minutes || 60} min · ${tag}`, ex: plan.items.map(x => x.id), gym: plan.items, legs: plan.legs, minutes: +g.minutes || 60, dayId: plan.dayId, warm: cardio[i].warm, finish: fin });
+  });
   if (testDue) {
     const lifts = testLifts(s);
     steps.push({ type: 'gate', boss: true, test: true, title: `🏆 ${w.test}`, detail: `Warm up well, then work up to one heavy set of ${isTeen(s) ? '5-8' : '3-5'} good reps on ${lifts.map(l => l.name).join(', ')}. Log the weight and reps: it clears ${w.name} when you reach the standard (or beat your own numbers by 5%).`, ex: lifts.map(l => l.id), legs: true });
@@ -241,7 +280,7 @@ export function placeGym(s, a, now) {
   const equip = a.gEquip || 'gym', xp = XP_RANK[a.gExp] ?? 1, unit = a.liftUnit || 'kg';
   const gym = {
     goal: a.gGoal || 'muscle', exp: a.gExp || 'lt1', days: +a.gDays || Math.min(4, (a.days || []).length || 3), minutes: +a.gMin || 60,
-    equip, focus: a.gFocus || 'balanced', pair: 'classic', split: 'auto', stage: 0, world: 0, done: {}, rot: 0,
+    equip, focus: a.gFocus || ((a.sex || s.profile?.sex) === 'f' ? 'lower' : 'balanced'), pair: 'classic', split: 'auto', stage: 0, world: 0, done: {}, rot: 0,
     block: { n: 0, week: 1 }, lifts: {}, est: {}, base: {}, stageAt: now, stageBlock: 0, bw: toKg(a.bodyweight, unit) || 0, finished: false,
   };
   // Lifts they told us: estimated 1RMs (seeded as logs so standards and loads use them).
