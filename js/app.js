@@ -30,6 +30,8 @@ import * as TG from './target.js';
 import * as NU from './nutrition.js';
 import * as SPL from './splits.js';
 import * as AGE from './age.js';
+import * as GYM from './gym.js';
+import { GYM_WORLDS, GYM_STAGES, GYM_SPLITS, PAIRS } from './data/gym.js';
 import { KID_LIKES, MISSIONS, KID_TIPS, missionsFor } from './data/kids.js';
 import { OTHER, EFFORT, otherItems, sessionItem, otherOf, STRAVA_RUN, kindOfStrava, effortOf, stravaMet } from './data/other.js';
 import { FEATURES, GROUPS, FEATURE_BRIEF } from './data/features.js';
@@ -82,6 +84,7 @@ function primaryMode() {
   const p = S.profile.primary;
   if (p === 'hybrid' && HYB.hasHybrid(S)) return 'hyb';
   if (p === 'tri' && TRI.hasTri(S)) return 'tri';
+  if ((p === 'gym' || !GYM.hasRunning(S)) && GYM.hasGym(S)) return 'gym';
   return 'world';
 }
 ui.mapMode = primaryMode();
@@ -105,7 +108,9 @@ function toast(messages) {
 
 // ---------- onboarding ----------
 const GOALS = [['fit', 'Get fit and healthy'], ['first5k', 'Run my first 5K'], ['faster', 'Get faster'], ['longer', 'Run longer distances'], ['race', 'Train for a race']];
-const TRACKS = [['run', '🏃 Running'], ['hybrid', '🏃🏋️ Hybrid (Alpha X, Hyrox, Tough Mudder…)'], ['tri', '🏊🚴🏃 Triathlon']];
+const TRACKS = [['run', '🏃 Running'], ['hybrid', '🏃🏋️ Hybrid (Alpha X, Hyrox, Tough Mudder…)'], ['tri', '🏊🚴🏃 Triathlon'], ['gym', '🏋️ Gym (muscle, strength, fitness)']];
+// Running is part of Run, Hybrid and Triathlon: only then do the running questions apply.
+const RUNS = a => (a.tracks?.length ? a.tracks : ['run']).some(t => t !== 'gym');
 const CONTINUOUS = [['none', "I don't run yet"], ['jogwalk20', 'Jog/walk mix for about 20 min'], ['10-15', '10-15 min without stopping'], ['20-30', '20-30 min'], ['30-45', '30-45 min'], ['45-75', '45-75 min'], ['75-120', '75 min - 2 h'], ['120+', 'Over 2 h']];
 const RED_FLAGS = [['sharp', 'Sharp or stabbing pain'], ['swelling', 'Swelling'], ['night', 'Pain at night or at rest'], ['walking', 'Pain while walking'], ['recent', 'Recent fracture or surgery']];
 const SELF_TEST = [
@@ -171,12 +176,12 @@ function obStepsAdult(a) {
         ${(a.tracks || []).length > 1 ? `<p class="q">Which one leads your week?</p>${radio('primary', TRACKS.filter(([k]) => a.tracks.includes(k)), a.primary || a.tracks[0])}` : ''}` },
     { title: 'What do you dream of achieving?', why: 'Your plan works backwards from here. Dream big: we make it step by step.', body: `
         <label class="field"><span>In your own words</span><textarea name="dream" rows="2" maxlength="160" placeholder="e.g. Run a sub-50 10K · Finish my first marathon · Hyrox Pro under 1:15 · Run 30 min without stopping">${h(a.dream || '')}</textarea></label>
-        <p class="q">Which is closest?</p>${radio('goal', GOALS, a.goal)}
+        ${RUNS(a) ? `<p class="q">Which is closest?</p>${radio('goal', GOALS, a.goal)}` : ''}
         <p class="q">A target event or date? <span class="hint">optional</span></p>
         <label class="field"><span>Event</span><input type="text" name="dreamEvent" value="${h(a.dreamEvent || '')}" maxlength="60" placeholder="e.g. Berlin Marathon, Hyrox Dubai"></label>
         <label class="field"><span>Date</span><input type="date" name="dreamDate" value="${h(a.dreamDate || '')}"></label>` },
     { title: 'Your sporting background', why: 'Former athletes keep their technique for life and come back faster: we credit that.', body: backgroundQuestions(a) },
-    { title: 'How many runs a week do you do?', why: 'Recent running tells us more than your best day ever.', body: `
+    ...(RUNS(a) ? [{ title: 'How many runs a week do you do?', why: 'Recent running tells us more than your best day ever.', body: `
         <label class="field"><span>Runs per week, on average over the last 4 weeks</span><span class="with-unit"><input type="number" inputmode="numeric" name="runsPerWeek" min="0" max="14" step="1" value="${a.runsPerWeek ?? (a.runsLast4w != null && a.runsLast4w !== '' ? Math.round(+a.runsLast4w / 4) : '')}" placeholder="e.g. 3"><em>runs / week</em></span></label>
         <p class="hint">0 if you haven't run lately. Count every run, including easy ones.</p>` },
     { title: 'Longest you can run without stopping?', why: 'Sets your first level so it feels doable.', body: radio('continuous', CONTINUOUS, a.continuous) },
@@ -187,18 +192,20 @@ function obStepsAdult(a) {
         ${timeField('best5kText', 'Best 5K', a.best5kText ?? (a.best5k ? formatTime(a.best5k) : ''), (a.best5kMode || 'time') === 'pace' ? 'pace, e.g. 5:30' : 'e.g. 27:30', 'best5kMode', a.best5kMode)}
         ${timeField('best10kText', 'Best 10K', a.best10kText ?? (a.best10k ? formatTime(a.best10k) : ''), (a.best10kMode || 'time') === 'pace' ? 'pace, e.g. 5:45' : 'e.g. 58:00 or 1:02:30', 'best10kMode', a.best10kMode)}
         <div class="choices">${check('halfDone', 'I have finished a half marathon', a.halfDone)}${check('marathonDone', 'I have finished a marathon', a.marathonDone)}${check('ultraDone', 'I have finished an ultra', a.ultraDone)}</div>
-        ${(a.tracks || []).includes('hybrid') ? hybridRaces(a) : ''}` },
+        ${(a.tracks || []).includes('hybrid') ? hybridRaces(a) : ''}` }] : []),
     ...((a.tracks || []).includes('hybrid') ? [{ title: 'Your strength and engine', why: 'Strength and Engine set your two Hybrid lanes. Your running comes from the run questions.', body: hybQuestions(a) }] : []),
+    ...((a.tracks || []).includes('gym') ? [{ title: 'Your gym', why: 'Your split, sessions and weights are built from this.', body: gymQuestions(a) }] : []),
     ...((a.tracks || []).includes('tri') ? [{ title: 'Your swim and bike', why: 'Swim and bike set your two other triathlon lanes. Your running comes from the run questions.', body: triQuestions(a) }] : []),
     { title: 'Any pain or injury right now?', why: 'Safety first: if something hurts, we rebuild before we push.', body: `${radio('pain', [['none', 'No pain'], ['mild', 'Mild or nagging (3/10 or less)'], ['more', 'More than that, or a diagnosed injury']], a.pain)}
         <label class="field"><span>Where? (optional)</span><input type="text" name="painWhere" value="${h(a.painWhere || '')}" maxlength="60" placeholder="e.g. left knee, right Achilles"></label>
         <p class="q">Any of these?</p><div class="choices">${RED_FLAGS.map(([k, l]) => check(`rf_${k}`, h(l), (a.redFlags || []).includes(k))).join('')}</div>` },
     { title: 'Which days can you train?', why: 'We build your week around your life, not the other way round.', body: `<p class="hint">Pick at least 2. You can move sessions any time.</p>
         <div class="day-picker">${K.DAY_NAMES.map((d, i) => `<label class="day-chip"><input type="checkbox" name="d_${i}" ${(a.days || K.defaultDays(3)).includes(i) ? 'checked' : ''}><span>${d}</span></label>`).join('')}</div>
-        <label class="field"><span>Best day for your longest session</span><select name="longDay">${K.DAY_NAMES.map((d, i) => `<option value="${i}" ${(a.longDay ?? 5) === i ? 'selected' : ''}>${d}</option>`).join('')}</select></label>` },
+        ${RUNS(a) ? '' : '<p class="hint">🏋️ These are your gym days: one split day each.</p>'}
+        <label class="field" ${RUNS(a) ? '' : 'hidden'}><span>Best day for your longest session</span><select name="longDay">${K.DAY_NAMES.map((d, i) => `<option value="${i}" ${(a.longDay ?? 5) === i ? 'selected' : ''}>${d}</option>`).join('')}</select></label>` },
     { title: 'Do you train anything else?', why: 'Gym, football or padel count too: we keep your hard runs away from heavy-leg days, and your nutrition counts them.', body: otherBlock(a) }
   ];
-  if (E.qualifyingLevel(normalize(a)) >= 3) {
+  if (RUNS(a) && E.qualifyingLevel(normalize(a)) >= 3) {
     steps.push({ title: 'Quick body check', why: 'Strong landings and ankles come before speed work.', body: `<p class="hint">Tick what you can do today. Not sure? Try it now: each has a demo link. Leave one unticked only if you can't do it: we'll start your Prep just before it.</p>
       <div class="choices">${SELF_TEST.map(([k, l, ex]) => `${check(k, `${h(l)} <a href="${videoLink(ex)}" target="_blank" rel="noopener">demo</a>`, a.selfTest?.[k])}`).join('')}</div>` });
   }
@@ -246,6 +253,23 @@ function backgroundQuestions(a) {
 }
 const backgroundOf = a => BG.SPORTS.map(([k]) => k).filter(k => a[`bg_${k}`]).map(k => ({ sport: k, level: a[`bglvl_${k}`] || 'club', years: a[`bgyrs_${k}`] || '3', since: a[`bgsince_${k}`] || 'now' }));
 
+function gymQuestions(a) {
+  const u = a.liftUnit || 'kg', both = (a.tracks || []).length > 1;
+  const lift = (k, label) => `<div class="row wrap lift-row">${num(k, label, a[k], u)}<label class="field"><span>for how many reps</span><span class="with-unit"><input type="number" inputmode="numeric" name="${k}R" min="1" max="12" step="1" value="${h(a[`${k}R`] ?? '')}" placeholder="5"><em>reps</em></span></label></div>`;
+  return `<p class="q">Your main goal</p>${radio('gGoal', GYM.GOALS, a.gGoal || 'muscle')}
+    <p class="q">Lifting experience</p>${radio('gExp', GYM.EXPERIENCE, a.gExp || 'lt1')}
+    ${both ? `<label class="field"><span>Gym days a week</span>${select('gDays', [1, 2, 3, 4, 5, 6].map(d => [String(d), `${d} day${d > 1 ? 's' : ''}`]), String(a.gDays || 3))}</label><p class="hint">They share your training days with your other sport.</p>` : '<p class="hint">Your gym days are the training days you pick in a moment.</p>'}
+    <p class="q">How long is a session?</p>${radio('gMin', GYM.LENGTHS, String(a.gMin || '60'))}
+    <p class="q">Where do you train?</p>${radio('gEquip', GYM.EQUIPMENT, a.gEquip || 'gym')}
+    <p class="q">Anything you want more of?</p>${radio('gFocus', GYM.FOCUS, a.gFocus || 'balanced')}
+    <p class="q">Your current lifts <span class="hint">optional: places you higher and suggests your first weights</span></p>
+    <div class="seg mini unit-seg">${[['kg', 'kg'], ['lb', 'lb']].map(([v, l]) => `<label class="${u === v ? 'on' : ''}"><input type="radio" name="liftUnit" value="${v}" ${u === v ? 'checked' : ''} hidden>${l}</label>`).join('')}</div>
+    ${num('bodyweight', 'Your bodyweight', a.bodyweight, u)}
+    ${(a.gEquip || 'gym') === 'bw' ? `${num('gPush', 'Push-ups in a row', a.gPush, 'reps')}${num('gPull', 'Strict pull-ups in a row', a.gPull, 'reps')}${num('gLegs', 'Bulgarian split squats, each leg', a.gLegs, 'reps')}`
+      : (a.gEquip || 'gym') === 'home' ? `${lift('gSquat', 'Goblet squat (one dumbbell)')}${lift('gBench', 'Dumbbell bench press (both dumbbells together)')}${lift('gDead', 'Dumbbell Romanian deadlift (both together)')}`
+      : `${lift('gSquat', 'Back squat')}${lift('gBench', 'Bench press')}${lift('gDead', 'Deadlift')}`}
+    <p class="hint">A recent set with good form: weight and reps (up to 12). Don't know? Leave it empty: your first sessions find your weights.</p>`;
+}
 function hybQuestions(a) {
   return `<p class="q">Where do you train?</p>${radio('gym', [['full', 'Gym with sled, rower, SkiErg'], ['gym', 'Gym with barbells, no sled or ergs'], ['home', 'Home: dumbbells / kettlebells'], ['none', 'No equipment yet']], a.gym || 'full')}
     <p class="q">Lifting experience</p>${radio('liftExp', [['none', 'New to lifting'], ['lt1', 'Under 1 year'], ['y1_3', '1-3 years'], ['y3', 'More than 3 years']], a.liftExp || 'lt1')}
@@ -513,6 +537,10 @@ function renderOnboarding() {
   if (st.kid) body = `<div class="result"><div class="result-badge">🌟</div><h2>Hi${ui.ob.a.name ? ` ${h(ui.ob.a.name)}` : ''}! Let's play.</h2>
         <p>Every day you get a fun play mission. Do it with your grown-up, tap <strong>We did it!</strong> and collect a sticker. Collect them all!</p>
         <p class="hint">For grown-ups: no training plans, timing, calorie numbers, AI chat, Strava or sharing in Family mode. At 13 the app moves on to Teen mode.</p></div>`;
+  else if (st.result && !RUNS(ui.ob.a)) body = `<div class="result">${gymPlacedBox(ui.ob.a, true)}
+        ${backgroundOf(ui.ob.a).length ? `<div class="dream-box">🏅 <strong>Welcome back, athlete.</strong><br><span class="hint">${h(BG.describe(backgroundOf(ui.ob.a)).join(' · '))}. Muscle memory is real: you'll climb fast.</span></div>` : ''}
+        ${normalize(ui.ob.a).pain !== 'none' ? '<div class="banner warn"><strong>You mentioned pain.</strong> Train around it: skip or swap any exercise that hurts, and keep pain at 2/10 or less. If it was sharp, swollen or is getting worse, see a physio or doctor first.</div>' : ''}
+        <p class="hint">🔗 Use Strava? After you start, connect it in Me and your workouts come in by themselves.</p></div>`;
   else if (st.result) {
     const preview = E.placeFromAnswers(S, normalize(ui.ob.a), now());
     const lvl = E.runLevel(preview.placed);
@@ -540,6 +568,7 @@ function renderOnboarding() {
               ${!ui.ob.a.liftsAI.accepted ? aiFixBox('lifts', 'Correct it, e.g. "those were in lb" or "bench 100 kg for 3"') : ''}</div>` : ''}`; })() : ''}
         ${(ui.ob.a.tracks || []).includes('tri') ? (() => { const tri = TRI.placeTri(preview.state, normalize(ui.ob.a)); const w = TRI_WORLDS[tri.world];
           return `<div class="dream-box"><strong>🏊🚴🏃 Triathlon: ${w.emoji} ${h(w.name)}</strong><br><span class="hint">Swim: ${h(TRI.laneTarget('swim', tri.swim.stage + 1))} next · Bike: ${h(TRI.laneTarget('bike', tri.bike.stage + 1))} next · Run: your Run level${tri.learnToSwim ? ' · starting with swim lessons' : ''}</span></div>`; })() : ''}
+        ${(ui.ob.a.tracks || []).includes('gym') ? gymPlacedBox(ui.ob.a) : ''}
         ${backgroundOf(ui.ob.a).length ? `<div class="dream-box">🏅 <strong>Welcome back, athlete.</strong><br><span class="hint">${h(BG.describe(backgroundOf(ui.ob.a)).join(' · '))}. Your technique is credited and your gates open early while you climb back: muscle memory is real.</span></div>` : ''}
         <p><strong>Prep Track:</strong> P${ps.n} ${h(ps.name)} (${h(ps.focus)})</p>
         ${normalize(ui.ob.a).longestEstimated ? `<p class="hint">Longest run estimated at about ${normalize(ui.ob.a).longestKm} km from its time.</p>` : ''}
@@ -561,6 +590,22 @@ function renderOnboarding() {
         <div class="row end">${back}${st.result ? '<button type="button" class="btn primary" data-act="ob-finish">Start my journey</button>' : `<button type="submit" class="btn primary">${st.welcome ? "Let's start" : 'Next'}</button>`}</div>
       </form>
     </main>`;
+}
+
+// The gym placement on the result screen: world, stage, split and why.
+function gymPlacedBox(a0, big = false) {
+  const a = normalize(a0), probe = { ...S, profile: { ...S.profile, tracks: a.tracks || ['gym'], sex: a.sex, days: a.days || K.defaultDays(3), birthYear: +a.age > 0 ? new Date(now()).getFullYear() - +a.age : S.profile.birthYear } };
+  probe.gym = GYM.placeGym(probe, a, now());
+  const st = GYM.gymStage(probe), w = GYM.gymWorld(probe), sp = GYM.activeSplit(probe), split = GYM_SPLITS[sp.id];
+  const days = split.days.slice(0, GYM.gymDays(probe)).map(d => GYM.dayPlan(probe, d).name);
+  const next = GYM.standing(probe).filter(x => x.need != null);
+  const inner = `<p class="eyebrow">${w.emoji} ${h(w.name)}</p><h2>${big ? '' : '🏋️ Gym: '}Stage ${st.n} · ${h(st.name)}</h2>
+    <p><strong>Your split: ${h(split.label)}</strong> · ${GYM.gymDays(probe)} day${GYM.gymDays(probe) > 1 ? 's' : ''} a week</p>
+    <p class="hint">${h(days.join(' → '))}</p>
+    <p class="hint">${h(split.why)}</p>${sp.rec.notes.map(n => `<p class="hint">💡 ${h(n)}</p>`).join('')}
+    ${next.length ? `<p class="hint">🎯 To clear this stage: ${h(next.map(x => `${x.name} ${x.text}`).join(' · '))}</p>` : st.n === 0 ? '<p class="hint">🎓 First block: learn the lifts with light weights and good form. Strength targets start after it.</p>' : ''}
+    <p class="hint">📅 ${GYM.blockLength(probe)} build weeks, then a deload week. Main lifts stay; the other exercises change every block.</p>`;
+  return big ? `<div class="result-badge">${w.emoji}</div>${inner}` : `<div class="dream-box">${inner}</div>`;
 }
 
 // ---------- shell ----------
@@ -650,7 +695,7 @@ function queueModals() {
   if (ui.incoming && !ui.mapRunning && !ui.intro) { openIncoming(); if (ui.modal) return; }
   // Busy / travel mode lasts a week, then the normal plan comes back by itself.
   if (S.mode?.type === 'busy' && t - S.mode.since > 7 * E.DAY) { S = E.endMode(S, t).state; store.save(S); setTimeout(() => toast('🧳 Busy week over: your normal plan is back.'), 800); }
-  if (!S.mode && E.returnCheck(S, t).needed && !ui.dismissed.has('return')) ui.modal = { type: 'return', step: 0 };
+  if (!S.mode && GYM.hasRunning(S) && E.returnCheck(S, t).needed && !ui.dismissed.has('return')) ui.modal = { type: 'return', step: 0 };
   else if (E.pendingChecks(S, t).length && !ui.dismissed.has('morning')) ui.modal = { type: 'morning' };
 }
 
@@ -666,8 +711,16 @@ function banners() {
     : `<div class="banner info"><strong>Refresher course.</strong> Welcome back! Start with the Prove It run: hit it and you skip the rest.</div>`);
   // Training days that don't fit the athlete: too many too soon (beginners), 7 days with no rest, or too
   // few to keep progressing (intermediate and advanced).
+  if (GYM.hasGym(S)) {
+    if (S.gym.redFlag && !ui.dismissed.has('gympain')) out.push('<div class="banner danger"><strong>You reported warning signs</strong> (sharp pain, swelling, pain at night or a recent injury). Please see a physio or doctor before lifting heavy. <button class="link" data-act="gym-pain-ok">I\'ve been cleared</button></div>');
+    else if (S.gym.pain && !ui.dismissed.has('gympain')) out.push('<div class="banner warn"><strong>Training around pain?</strong> Skip or swap any exercise that hurts, and keep it at 2/10 or less. Still there after 2 weeks? See a physio. <button class="link" data-act="gym-pain-ok">OK</button></div>');
+    const offer = GYM.rotateOffer(S);
+    if (offer) out.push(`<div class="banner info">🔄 <strong>Fancy a change?</strong> ${S.gym.block.n} blocks on the same split. A new split (<strong>${h(offer.label)}</strong>) gives your muscles a fresh challenge and keeps it fun. Your main lifts and weights stay. <div class="row wrap"><button class="btn small" data-act="gym-rotate" data-id="${offer.id}">Switch</button><button class="btn ghost small" data-act="gym-rotate-keep">Keep mine</button></div></div>`);
+    const stall = GYM.stalled(S), i = GYM.weekInfo(S);
+    if (stall.length >= 2 && !i.deload && i.week >= 3 && !ui.dismissed.has('stall')) out.push(`<div class="banner warn">📉 <strong>Your main lifts have stalled</strong> (${h(stall.map(id => EXERCISES[id]?.name || id).join(', '))}: no new best in 3 sessions). Tired? An early deload week usually gets them moving again. <div class="row wrap"><button class="btn small" data-act="gym-deload">Deload now</button><button class="btn ghost small" data-act="dismiss-banner" data-key="stall">Not now</button></div></div>`);
+  }
   const recent = recentSessions({ ...(S.answers || {}), tracks: S.profile.tracks }, S.otherTraining);
-  const adv = TG.daysAdvice(recent, S.profile.days?.length, S.run.level, S.background);
+  const adv = GYM.hasRunning(S) ? TG.daysAdvice(recent, S.profile.days?.length, S.run.level, S.background) : null;
   if (adv && !ui.dismissed.has('days')) out.push(daysBanner(adv, now() - (S.placedAt || 0) < 28 * E.DAY));
   const spike = TG.loadSpike(S.history, now());
   if (spike && !ui.dismissed.has('spike')) out.push(`<div class="banner warn">⚠️ <strong>Big week!</strong> ${spike.week} sessions in the last 7 days, versus your usual ${spike.usual}. Sudden jumps are when most injuries happen. Make the next day or two easy or rest: the gains come when you recover. <button class="linkish" data-act="dismiss-banner" data-key="spike">OK</button></div>`);
@@ -692,6 +745,27 @@ const STATUS_ICON = { done: '✅', provisional: '⏳', open: '<span class="dot">
 const TYPE_LABEL = { run: 'Run', swim: 'Swim', bike: 'Bike', lift: 'Lift', engine: 'Engine', maint: 'Maintain', prep: 'Prep', slot: 'Prep slot', rest: 'Rest', gate: 'Gate', proveit: 'Prove It' };
 
 // A session's exercises with cues and demo links (the step pop-up and the read-only details share it).
+// A gym session: each exercise with its sets × reps, effort, rest and suggested weight, and boxes to
+// log what was lifted (weight, then reps for each set). The Test Day asks for one heavy set per lift.
+function gymExHtml(st) {
+  const info = GYM.weekInfo(S), bw = S.gym.equip === 'bw';
+  const how = id => EXERCISES[id] ? `<details class="ex-how"><summary>How</summary><ul>${EXERCISES[id].cues.map(c => `<li>${h(c)}</li>`).join('')}</ul>
+      <div class="row wrap"><button type="button" class="btn small" data-act="videos" data-ex="${id}">▶ Watch how</button><a class="hint" href="${videoLink(id)}" target="_blank" rel="noopener">Search YouTube ↗</a></div></details>` : '';
+  const kgBox = (id, v) => (bw ? '' : `<label class="gl-kg"><input type="number" inputmode="decimal" name="gk_${id}" step="0.5" min="0" value="${v ?? ''}" placeholder="kg"><em>kg</em></label>`);
+  if (st.test) {
+    return GYM.testLifts(S).map(l => { const x = GYM.standing(S).find(y => y.id === l.id), last = (S.gym.lifts?.[l.id] || []).at(-1);
+      return `<li class="ex"><div><strong>${h(EXERCISES[l.id]?.name || l.name)}</strong> <span class="dose">one heavy set of ${AGE.isTeen(S) ? '5-8' : '3-5'}</span></div>
+        <p class="hint">🎯 Standard: ${h(x?.text || '')}${last ? ` · last: ${last.kg ? `${last.kg} kg × ` : ''}${last.reps.join('/')}` : ''}</p>
+        <div class="gl-row">${kgBox(l.id)}<label class="gl-r"><input type="number" inputmode="numeric" name="gr_${l.id}_0" min="0" max="50" placeholder="reps"></label></div>${how(l.id)}</li>`; }).join('')
+      + '<p class="hint">Warm up with lighter sets first. Pass or not, the next block starts after the test. <button type="button" class="link small" data-act="gym-skip-test">Not testing this time? Skip it</button></p>';
+  }
+  return (st.gym || []).map(x => {
+    const sug = GYM.suggestLoad(S, x, info), name = EXERCISES[x.id]?.name || x.id;
+    return `<li class="ex"><div><strong>${h(name)}</strong> <span class="dose">${x.sets} × ${h(x.reps)}</span></div>
+      <p class="hint">${x.reps.includes('s') || x.reps.includes('side') ? '' : `Leave ${x.rir} in the tank · `}rest ${h(x.rest)}${sug?.kg ? ` · <strong>try ${sug.kg} kg</strong>` : ''}${sug ? ` <em>${h(sug.why)}</em>` : ''}</p>
+      <div class="gl-row">${kgBox(x.id, sug?.kg)}${Array.from({ length: x.sets }, (_, i) => `<label class="gl-r"><input type="number" inputmode="numeric" name="gr_${x.id}_${i}" min="0" max="100" placeholder="set ${i + 1}"></label>`).join('')}</div>${how(x.id)}</li>`;
+  }).join('') + `<p class="hint">${bw ? 'Log the reps you did in each set. Too easy at the top of the range? Make it harder: slower, a pause, or the harder version.' : 'Log the weight and the reps you did in each set: your next weights come from it.'} Skip the boxes if you just want to tick it off.</p>`;
+}
 function exHtml(st) {
   return (st.ex || []).map(id => EXERCISES[id] && `<li class="ex">
         <div><strong>${h(EXERCISES[id].name)}</strong> <span class="dose">${h(EXERCISES[id].dose)}</span></div>
@@ -755,6 +829,7 @@ function trackTitle(track) {
   if (track === 'swim') return `🏊 Swim · ${h(TRI.swimStage(S).name)} (${h(TRI.swimStage(S).target)})`;
   if (track === 'bike') return `🚴 Bike · ${h(TRI.bikeStage(S).name)} (${h(TRI.bikeStage(S).target)})`;
   if (track === 'triGate') return `🌉 ${h(TRI.triWorld(S).name)} transition gate`;
+  if (track === 'gym') { const i = GYM.weekInfo(S); return `🏋️ Gym · ${h(GYM.gymStage(S).name)} · ${i.deload ? 'deload week' : `block ${i.block}, week ${i.week}/${i.len}`}`; }
   return S.refresher?.reason === 'illness' ? '💛 Recovery plan' : '🔄 Refresher course';
 }
 
@@ -1011,6 +1086,7 @@ function raceCard(style = '') {
   // The sport that leads the week comes first; the others keep their usual order.
   const lead = S.profile.primary || 'run';
   const tracks = (S.profile.tracks || ['run']).filter(t => TRACK_RACES[t]).sort((a, b) => (b === lead) - (a === lead));
+  if (!tracks.length) return ''; // gym only: no races to suggest
   if (ui.events == null && !ui.eventsLoading) { ui.eventsLoading = true; EV.loadEvents().then(ev => { ui.events = ev; ui.eventsLoading = false; if (ui.tab === 'today' || ui.tab === 'map') render(); }); }
   const today = E.dayKey(now());
   const sec = tr => {
@@ -1042,7 +1118,7 @@ function countOnce(key) {
 
 function viewToday() {
   const t = now();
-  const track = E.activeTrack(S);
+  const track = GYM.hasRunning(S) ? E.activeTrack(S) : 'gym';
   const steps = E.trackSteps(S, track);
   const lvl = E.runLevel(S.run.level);
   const prog = E.levelProgress(S);
@@ -1054,7 +1130,10 @@ function viewToday() {
   const p = todayParts(t);
   const o = n => `style="order:${n}"`;
   const mode = primaryMode();
-  const heroMain = mode === 'hyb' ? (() => { const w = HYB.hybWorld(S), b = S.hybrid.block.type, lim = HYB.limiter(S);
+  const heroMain = mode === 'gym' ? (() => { const w = GYM.gymWorld(S), st = GYM.gymStage(S), i = GYM.weekInfo(S, t);
+      return `<p class="eyebrow">${hello} · Gym</p><h2>${w.emoji} ${h(w.name)}</h2>
+        <p class="hint">Stage ${st.n} · ${h(st.name)} · ${i.deload ? '😮‍💨 Deload week' : `Block ${i.block}, week ${i.week} of ${i.len}`}${GYM.hasRunning(S) ? ` · Run Level ${lvl.n}` : ''}</p>${gymBars()}`; })()
+    : mode === 'hyb' ? (() => { const w = HYB.hybWorld(S), b = S.hybrid.block.type, lim = HYB.limiter(S);
       return `<p class="eyebrow">${hello} · Hybrid</p><h2>${w.emoji} ${h(w.name)}</h2>
         <p class="hint">${b === 'deload' ? '😮‍💨 Deload week' : b === 'engine' ? '⚡ Engine block' : '🏋️ Strength block'} · ${lim ? `limiter: ${HYB.LANE_ICON[lim.lane]} ${HYB.LANE_LABEL[lim.lane]}` : S.rebuild.active ? 'race gate locked 🔒 (Rebuild)' : 'race gate open 🏁'} · Run Level ${lvl.n}</p>`; })()
     : mode === 'tri' ? (() => { const w = TRI.triWorld(S), lim = TRI.limiter(S);
@@ -1104,10 +1183,10 @@ const credit = '<p class="byline credit">Developed by <button type="button" clas
       ${prepShort ? `<p class="hint">Your Prep sessions now, P${S.prep.level} · ${h(PREP_STAGES[S.prep.level].name)}:</p><ul class="steps">${prepSteps.map(st => stepRow('prep', st)).join('')}</ul>
         <p class="hint">💡 Prep builds tendons and landing skills so the bigger running loads of Level ${nextLvl.n} don't get you hurt.</p>` : ''}
     </div>` : '';
-  const summary = blockedNow ? `📋 Level ${S.run.level} checklist: done ✓ · 🧱 needs Prep P${nextLvl.needsPrep} for Level ${nextLvl.n}`
+  const summary = track === 'gym' ? `📋 This gym week: ${doneN} of ${steps.length} done` : blockedNow ? `📋 Level ${S.run.level} checklist: done ✓ · 🧱 needs Prep P${nextLvl.needsPrep} for Level ${nextLvl.n}`
     : `📋 ${h(levelName)} checklist: ${doneN} of ${steps.length} done${waitN ? ` · ⏳ ${waitN} confirmed tomorrow` : ''}${prepShort ? ` · 🧱 Level ${nextLvl.n} also needs Prep P${nextLvl.needsPrep}` : ''}`;
   const levelSteps = `<details class="card level-check" ${o(9)} ${blockedNow ? 'open' : ''}>
-      <summary><span class="lc-title">${summary}</span><span class="hint">${trackTitle(track)} · the whole level, spread over your weeks</span></summary>
+      <summary><span class="lc-title">${summary}</span><span class="hint">${trackTitle(track)} · ${track === 'gym' ? 'this week\'s split days' : 'the whole level, spread over your weeks'}</span></summary>
       <ul class="steps">${steps.map(st => stepRow(track, st)).join('')}</ul>
       ${needs}
     </details>`;
@@ -1171,20 +1250,53 @@ function todayParts(t) {
   return { today: todayWithAct, week, nextWeek, tracks: hybridCard() + triCard() };
 }
 
+// Progress towards the stage standard: one bar per test lift.
+function gymBars() {
+  const st = GYM.standing(S).filter(x => x.need != null);
+  if (!st.length) return GYM.gymStage(S).n === 0 ? '<p class="hint">🎓 Learning the lifts: light weights, perfect form. Strength targets start next block.</p>' : '';
+  const bw = S.gym.equip === 'bw';
+  return `<ul class="gym-bars">${st.map(x => { const need = bw ? x.need : x.needKg, pct = need ? Math.min(100, Math.round((x.have / need) * 100)) : 0;
+    return `<li class="${x.ok ? 'ok' : ''}"><span>${h(x.name)}</span><div class="bar"><div style="width:${pct}%"></div></div><b>${x.have ? Math.round(x.have) : '–'}${need ? `/${Math.round(need)}` : ''}${bw ? '' : ' kg'}</b></li>`; }).join('')}</ul>
+    ${!bw && !GYM.bwOf(S) ? '<p class="hint">Add your bodyweight (Nutrition → Log weight) so the standards can be worked out.</p>' : `<p class="hint">${bw ? 'Your best reps' : 'Estimated 1-rep max from your logged sets'} vs this stage's standard.</p>`}`;
+}
+// The Gym map: every world, its stages with their standards, and its Test Day.
+function gymMap() {
+  const g = S.gym, cap = GYM.stageCap(S);
+  const worlds = GYM_WORLDS.map((w, wi) => {
+    const rows = w.stages.map(n => {
+      const st = GYM_STAGES[n], status = g.finished || n < g.stage ? 'done' : n === g.stage ? 'current' : '';
+      const std = GYM.standing(S, n).filter(x => x.need != null);
+      const why = n >= cap ? (AGE.isTeen(S) ? ' · opens at 18' : ' · needs heavier weights (a full gym)') : '';
+      return `<li class="${status}"><strong>${n}</strong> ${h(st.name)}${n === g.stage && !g.finished ? ' 📍' : ''}<span>${std.length ? h(std.map(x => `${x.name} ${x.text}`).join(' · ')) : 'One block of light, perfect reps'}${why}</span></li>`;
+    }).join('');
+    const testDone = g.finished || g.world > wi;
+    return `<section class="card gym-world ${wi === g.world ? 'here' : testDone ? 'cleared' : ''}"><h3>${w.emoji} ${h(w.name)}${wi === g.world && !g.finished ? ' <span class="tag-fit ok">You are here</span>' : testDone ? ' ✅' : ''}</h3>
+      <ol class="ladder">${rows}<li class="${testDone ? 'done' : ''} boss"><strong>🏆</strong> ${h(w.test)}<span>Deload week at the end of ${h(GYM_STAGES[w.stages.at(-1)].name)}: one heavy set on each test lift</span></li></ol></section>`;
+  }).join('');
+  const st = GYM.gymStage(S), i = GYM.weekInfo(S);
+  const side = `<section class="card map-side-info"><p class="eyebrow">Gym · ${GYM.gymWorld(S).emoji} ${h(GYM.gymWorld(S).name)}</p><h3>Stage ${st.n} · ${h(st.name)}</h3>
+      <p class="hint">${i.deload ? '😮‍💨 Deload week' : `Block ${i.block} · week ${i.week} of ${i.len}`}</p>${gymBars()}
+      <p class="hint">Stages clear by themselves when your logged lifts reach the standard${S.gym.goal === 'strength' ? '' : ', or when you beat your own numbers by 5% over a block'}. Each world ends with a Test Day.</p>
+      <button class="btn primary small" data-act="tab" data-tab="today">Today's session</button></section>`;
+  return `<div class="map-cols"><div class="map-main gym-map">${worlds}</div><div class="map-side">${side}${gymCard()}</div></div>`;
+}
+
 function viewMap() {
   if (runIntroPending() && !ui.mapRunning && ui.intro == null) ui.avatarAt = 0;
   // Each Prep stage opens: the current one with its sessions, the others with what they unlock.
   const prep = PREP_STAGES.map(p => `<li class="${p.n < S.prep.level || (p.n === 7 && S.prep.mastered) ? 'done' : p.n === S.prep.level ? 'current' : ''}"><button type="button" class="ladder-btn" data-act="prep-stage" data-n="${p.n}"><strong>P${p.n}</strong> ${h(p.name)}<span>${h(p.focus)}</span></button></li>`).join('');
   const rebuild = S.rebuild.active ? `<section class="card"><h3>🩹 Rebuild Track</h3><ol class="ladder">${REBUILD_STAGES.map((r, i) => `<li class="${i < S.rebuild.stage ? 'done' : i === S.rebuild.stage ? 'current' : ''}"><strong>R${r.n}</strong> ${h(r.name)}<span>${h(r.focus)}</span></li>`).join('')}</ol></section>` : '';
-  if ((ui.mapMode === 'tri' && !TRI.hasTri(S)) || (ui.mapMode === 'hyb' && !HYB.hasHybrid(S))) ui.mapMode = 'world';
-  const multi = TRI.hasTri(S) || HYB.hasHybrid(S);
-  const modes = [['world', multi ? '🏃 Run' : '🗺️ World map'], ...(HYB.hasHybrid(S) ? [['hyb', '🏃🏋️ Hybrid']] : []), ...(TRI.hasTri(S) ? [['tri', '🏊🚴🏃 Triathlon']] : []), ['grid', multi ? '▦ Cards' : '▦ Level cards']];
+  if ((ui.mapMode === 'tri' && !TRI.hasTri(S)) || (ui.mapMode === 'hyb' && !HYB.hasHybrid(S)) || (ui.mapMode === 'gym' && !GYM.hasGym(S))) ui.mapMode = 'world';
+  if (!GYM.hasRunning(S) && GYM.hasGym(S)) ui.mapMode = 'gym';
+  const multi = TRI.hasTri(S) || HYB.hasHybrid(S) || GYM.hasGym(S);
+  const modes = GYM.hasRunning(S) ? [['world', multi ? '🏃 Run' : '🗺️ World map'], ...(HYB.hasHybrid(S) ? [['hyb', '🏃🏋️ Hybrid']] : []), ...(TRI.hasTri(S) ? [['tri', '🏊🚴🏃 Triathlon']] : []), ...(GYM.hasGym(S) ? [['gym', '🏋️ Gym']] : []), ['grid', multi ? '▦ Cards' : '▦ Level cards']] : [];
   const toggle = `<div class="seg" role="tablist">${modes.map(([k, l]) =>
     `<button role="tab" class="${ui.mapMode === k ? 'on' : ''}" data-act="map-mode" data-mode="${k}">${l}</button>`).join('')}</div>`;
   const replayBtn = '<button class="btn ghost small replay-btn" data-act="replay-journey">🔁 Replay my journey</button>';
   const lvl = E.runLevel(S.run.level);
   const sideInfo = `<section class="card map-side-info"><p class="eyebrow">${E.worldOf(lvl).emoji} ${h(E.worldOf(lvl).name)}</p><h3>Level ${lvl.n} · ${h(lvl.name)}</h3>
       ${S.profile.dream ? dreamLine(S.profile.dream, S.run.level, true) : ''}<button class="btn primary small" data-act="open-level">Open level</button></section>`;
+  if (ui.mapMode === 'gym') return `${banners()}${modes.length ? toggle : ''}${gymMap()}`;
   if (ui.mapMode === 'hyb') {
     prepareLaneMap('hyb');
     return `${banners()}${toggle}<div class="map-cols"><div class="map-main">${renderLaneMap(S, ui, 'hyb')}${replayBtn}</div><div class="map-side">${raceCard()}${hybridCard(true)}</div></div>`;
@@ -1753,9 +1865,28 @@ function viewKidMe() {
 // ---------- strength split ----------
 // The best split for the strength days in the week, now and in competition mode. Shown to Hybrid athletes
 // (it shapes their strength sessions) and to anyone who lifts outside the app (as advice for their gym days).
+// Me: the gym track's split, settings and block, with the best split for every number of days.
+function gymCard() {
+  if (!GYM.hasGym(S)) return '';
+  const g = S.gym, sp = GYM.activeSplit(S), split = GYM_SPLITS[sp.id], n = GYM.gymDays(S), info = GYM.weekInfo(S);
+  const days = split.days.slice(0, Math.max(n, split.days.length)).map(d => GYM.dayPlan(S, d).name);
+  const lab = (list, v) => (list.find(([k]) => k === v) || [, v])[1];
+  const rec = d => GYM.recommendGym({ days: d, goal: g.goal, exp: g.exp, age: AGE.ageOf(S) ?? 30, otherSports: GYM.hasRunning(S), teen: AGE.isTeen(S) });
+  return `<section class="card gym-card"><h3>🏋️ My gym</h3>
+      <p><strong>${h(split.label)}</strong> · ${n} day${n > 1 ? 's' : ''} a week${sp.auto ? ' <span class="hint">(recommended)</span>' : ''}</p>
+      <p class="hint">Rotation: ${h([...new Set(days)].join(' → '))}</p>
+      <p class="hint">${h(split.why)}</p>${sp.rec.notes.map(x => `<p class="hint">💡 ${h(x)}</p>`).join('')}
+      ${!sp.auto && sp.id !== sp.rec.id ? `<p class="hint">💡 For you we'd pick <strong>${h(sp.rec.label)}</strong>.</p>` : ''}
+      <p class="hint">${h(lab(GYM.GOALS, g.goal))} · ${h(lab(GYM.LENGTHS, String(g.minutes)))} · ${h(lab(GYM.EQUIPMENT, g.equip))} · ${h(lab(GYM.FOCUS, g.focus))}</p>
+      <p class="hint">📅 Block ${info.block} · ${info.deload ? '😮‍💨 deload week' : `week ${info.week} of ${info.len}, then a deload week`}. Main lifts stay the same; the other exercises change every block.</p>
+      <details class="tip-box"><summary>Best split by gym days, for your goal</summary><table class="split-table"><tr><th>Days</th><th>Split</th></tr>${[1, 2, 3, 4, 5, 6].map(d => `<tr class="${d === n ? 'on' : ''}"><td>${d}</td><td>${h(rec(d).label)}</td></tr>`).join('')}</table>
+        <p class="hint">Bro splits (one or two muscles a day) only come up for muscle goals with 1+ years of lifting and no running: with running, heavy legs twice a week (Upper/Lower) fit better. Every few blocks the app offers a fresh split.</p></details>
+      <div class="row wrap"><button class="btn small" data-act="gym-edit">Change split and settings</button>${info.deload ? '' : '<button class="btn small ghost" data-act="gym-deload">😮‍💨 Deload now</button>'}</div></section>`;
+}
+
 function splitCard() {
   const gym = (S.otherTraining || []).find(o => o.kind === 'weights');
-  if (!HYB.hasHybrid(S) && !gym) return '';
+  if (!HYB.hasHybrid(S) && (!gym || GYM.hasGym(S))) return '';
   const td = K.schedule(S).days.length;
   const n = HYB.hasHybrid(S) ? SPL.strengthDays(S, td) : (gym.days || []).length || 2;
   const stage = S.hybrid?.strength?.stage ?? 3;
@@ -1784,7 +1915,7 @@ function nutriProfile() {
   const kg = toKg(last?.bw, last?.unit) || toKg(a.bodyweight, a.liftUnit) || n.kg || null;
   const b5 = S.bests?.run5k || a.best5k;
   return { sex: S.profile.sex || 'x', age: +n.age || 30, heightCm: +n.heightCm || null, kg, bodyFat: +(last ? last.bf : a.bodyFat) || null,
-    life: n.life || 'sit', easyPace: b5 > 0 ? b5 / 5 + 1.25 : 6.5, trains: true, strengthBlock: S.hybrid?.block?.type === 'strength' };
+    life: n.life || 'sit', easyPace: b5 > 0 ? b5 / 5 + 1.25 : 6.5, trains: true, strengthBlock: S.hybrid?.block?.type === 'strength' || (GYM.hasGym(S) && ['muscle', 'strength', 'cut'].includes(S.gym.goal)) };
 }
 const ymdNow = () => E.dayKey(now());
 // The goal in force today: the athlete's own, unless they applied a safer option for a while.
@@ -1887,6 +2018,20 @@ function viewNutrition() {
 
 // ---------- stats ----------
 // The athlete's own numbers, in the units the norm tables use.
+// Gym lifts logged in the app count for Stats too (barbell lifts only, as estimated 1RM ÷ bodyweight).
+const gymRatio = id => (GYM.hasGym(S) && S.gym.equip === 'gym' && GYM.bwOf(S) > 30 ? GYM.best(S, id) / GYM.bwOf(S) : 0);
+// Stats: the gym lifts, best estimated 1RM, last session and how it has moved.
+function gymStatsCard() {
+  if (!GYM.hasGym(S)) return '';
+  const rows = Object.entries(S.gym.lifts || {}).filter(([, log]) => log.some(x => !x.told)).map(([id, log]) => {
+    const bw = S.gym.equip === 'bw', first = log[0], last = log.at(-1), b = GYM.best(S, id);
+    const e = x => (bw ? Math.max(...x.reps) : Math.max(...x.reps.map(r => GYM.e1rm(x.kg, r))));
+    const d = Math.round(e(last) - e(first));
+    return { id, b, row: `<tr><td>${h(EXERCISES[id]?.name || id)}</td><td>${bw ? `${b} reps` : b > 0 ? `${Math.round(b)} kg` : '–'}</td><td>${last.kg ? `${last.kg} kg × ` : ''}${last.reps.join('/')}</td><td>${log.length > 1 && d ? `${d > 0 ? '+' : ''}${d}${bw ? '' : ' kg'}` : '–'}</td></tr>` };
+  }).sort((x, y) => y.b - x.b);
+  return `<section class="card"><h3>🏋️ My lifts</h3>${rows.length ? `<table class="split-table lifts-table"><tr><th>Exercise</th><th>${S.gym.equip === 'bw' ? 'Best' : 'Best est. 1RM'}</th><th>Last</th><th>Change</th></tr>${rows.map(r => r.row).join('')}</table>
+    <p class="hint">Estimated 1-rep max from your sets (Epley formula, sets of up to 12 reps). Change: first log → latest.</p>` : '<p class="hint">Log weights and reps in your gym sessions and your lifts show up here.</p>'}</section>`;
+}
 function myValues() {
   const a = S.answers || {}, b = S.bests || {};
   const toKg = a.liftUnit === 'lb' ? 0.4536 : 1, bwKg = +a.bodyweight * toKg;
@@ -1895,7 +2040,7 @@ function myValues() {
   const div = b.hyroxDiv === 'pro' ? 'hyrox_pro' : 'hyrox_open';
   return {
     run5k: b.run5k || a.best5k || null, run10k: b.run10k || a.best10k || null, half: b.half || null, marathon: b.marathon || null,
-    squat: oneRm(a.squat5), deadlift: oneRm(a.deadlift5), pullups: a.pullups !== '' && a.pullups != null ? +a.pullups || null : null,
+    squat: Math.max(oneRm(a.squat5) || 0, gymRatio('back_squat')) || null, deadlift: Math.max(oneRm(a.deadlift5) || 0, gymRatio('deadlift')) || null, pullups: a.pullups !== '' && a.pullups != null ? +a.pullups || null : null,
     [div]: b.hyrox || null, ftp: b.ftp && anyKg > 30 ? b.ftp / anyKg : null, bwKg,
   };
 }
@@ -2003,10 +2148,11 @@ function viewStats() {
       ${stats.length ? `<div class="stat-list">${[...shown, ...stats.filter(x => !x.show)].map(card).join('')}</div>` : '<p class="hint">No numbers yet.</p>'}
       <button class="btn" data-act="edit-bests">Add or update my bests</button>
     </section>
+    ${gymStatsCard()}
     ${communityCard()}
     <section class="card"><h3>📈 You vs past you</h3>
       <div class="stats"><div><strong>${history.length}</strong><span>Sessions</span></div><div><strong>${S.xp}</strong><span>XP</span></div><div><strong>${cleared}</strong><span>Levels cleared</span></div></div>
-      <p class="hint">${since ? `Since ${h(since)}: ` : ''}Run Level ${startLevel} → ${S.run.level}${HYB.hasHybrid(S) ? ` · Strength: ${h(HYB.strengthStage(S).name)}` : ''}.${bodyTrend().replace('<br>', ' ')}</p>
+      <p class="hint">${since ? `Since ${h(since)}: ` : ''}${GYM.hasRunning(S) ? `Run Level ${startLevel} → ${S.run.level}` : `Gym stage ${GYM.gymStage(S).name}`}${HYB.hasHybrid(S) ? ` · Strength: ${h(HYB.strengthStage(S).name)}` : ''}${GYM.hasGym(S) && GYM.hasRunning(S) ? ` · Gym: ${h(GYM.gymStage(S).name)}` : ''}.${bodyTrend().replace('<br>', ' ')}</p>
     </section>
     <details class="card how"><summary>How is this calculated?</summary>
       <p class="hint">Your numbers are compared with published results (and, if you switch it on, with other Stride Quest athletes), never by the AI. For each one we use the closest group the source has (your sex and age group when available). Below the middle of a group we show your next milestone instead of a percentage. Lifts are compared as an estimated 1-rep max (5 reps ≈ 86% of a 1-rep max).</p>
@@ -2018,11 +2164,11 @@ function viewMe() {
   const hist = S.history.filter(x => x.kind === 'session' || x.kind === 'event' || x.kind === 'bonus' || x.kind === 'challenge').slice(-15).reverse();
   return `
     <section class="card">
-      <h3>${h(S.profile.name || 'Runner')}</h3>
+      <h3>${h(S.profile.name || (GYM.hasRunning(S) ? 'Runner' : 'Athlete'))}</h3>
       <div class="stats">
         <div><strong>${S.xp}</strong><span>Total XP</span></div>
-        <div><strong>${S.run.level}</strong><span>Run level</span></div>
-        <div><strong>P${S.prep.level}</strong><span>Prep stage</span></div>
+        ${GYM.hasRunning(S) ? `<div><strong>${S.run.level}</strong><span>Run level</span></div>
+        <div><strong>P${S.prep.level}</strong><span>Prep stage</span></div>` : `<div><strong>${S.gym.stage}</strong><span>Gym stage</span></div><div><strong>${GYM.gymWorld(S).emoji}</strong><span>${h(GYM.gymWorld(S).name)}</span></div>`}
         <div><strong>${E.dayStreak(S, now())}</strong><span>Day streak</span></div>
       </div>
       <p class="hint">${S.profile.daysPerWeek} training days a week · streak multiplier x${E.streakMultiplier(S, now())}</p>
@@ -2048,9 +2194,9 @@ function viewMe() {
       <p class="hint">Auto follows your device's light/dark setting.</p>
     </section>
     <section class="card"><h3>Training</h3>
-      <p>${(S.profile.tracks || ['run']).map(k => ({ run: '🏃 Running', hybrid: '🏃🏋️ Hybrid', tri: '🏊🚴🏃 Triathlon' })[k] + (k === (S.profile.primary || 'run') && (S.profile.tracks || []).length > 1 ? ' (leads your week)' : '')).join(' · ')}</p>
-      <p class="hint">Days: ${K.schedule(S).days.map(d => K.DAY_NAMES[d]).join(', ')} · long session ${K.DAY_NAMES[K.schedule(S).longDay]}</p>
-      <div class="row wrap"><button class="btn" data-act="edit-days">Change training days</button>${['hybrid', 'tri'].filter(k => !(S.profile.tracks || []).includes(k)).map(k => `<button class="btn" data-act="add-track" data-k="${k}">＋ ${k === 'hybrid' ? 'Hybrid' : 'Triathlon'} track</button>`).join('')}</div>
+      <p>${(S.profile.tracks || ['run']).map(k => ({ run: '🏃 Running', hybrid: '🏃🏋️ Hybrid', tri: '🏊🚴🏃 Triathlon', gym: '🏋️ Gym' })[k] + (k === (S.profile.primary || 'run') && (S.profile.tracks || []).length > 1 ? ' (leads your week)' : '')).join(' · ')}</p>
+      <p class="hint">Days: ${K.schedule(S).days.map(d => K.DAY_NAMES[d]).join(', ')}${GYM.hasRunning(S) ? ` · long session ${K.DAY_NAMES[K.schedule(S).longDay]}` : ''}</p>
+      <div class="row wrap"><button class="btn" data-act="edit-days">Change training days</button>${['hybrid', 'tri', 'gym'].filter(k => !(S.profile.tracks || []).includes(k)).map(k => `<button class="btn" data-act="add-track" data-k="${k}">＋ ${k === 'gym' ? 'Gym' : k === 'hybrid' ? 'Hybrid' : 'Triathlon'} track</button>`).join('')}</div>
     </section>
     <section class="card"><h3>Body</h3>
       <div class="row wrap">
@@ -2061,6 +2207,7 @@ function viewMe() {
       `<li><span>${new Date(x.ts).toLocaleDateString()}</span>${h(x.title)}${x.pain != null ? ` <em>pain ${x.pain}/10</em>` : ''}<b>${x.xp ? `+${x.xp}` : ''}</b></li>`).join('')}</ul>` : '<p class="hint">Nothing yet. Your first step is on the Today tab.</p>'}</section>
     ${installCard('me')}
     ${WORKER_URL ? stravaCard() : ''}
+    ${gymCard()}
     ${splitCard()}
     <section class="card"><h3>🏋️ My other training</h3>${(S.otherTraining || []).length ? `<ul class="ot-list">${S.otherTraining.map(o => `<li>${h(otherLine(o))}</li>`).join('')}</ul>` : '<p class="hint">Gym, football, padel…? Add it so your plan keeps hard runs off heavy-leg days and your nutrition counts it.</p>'}
       <button class="btn small" data-act="other-edit">${(S.otherTraining || []).length ? 'Edit' : 'Add other training'}</button></section>
@@ -2121,6 +2268,26 @@ const MODALS = {
       <p class="q">Strength days</p>${radio('spDays', days, cur.days ? String(cur.days) : 'auto')}
       <p class="q">Split</p>${radio('spId', [['auto', '⭐ Recommended for my days'], ...Object.entries(SPL.SPLITS).map(([k, v]) => [k, v.label])], cur.id || 'auto')}
       <p class="hint">${stage < 2 ? 'You\'re on the bodyweight / dumbbell stages: those stay full body. Your split starts at Barbell Basics.' : 'Changing the split starts this stage\'s sessions fresh (your stage stays).'} In race prep, taper and race week the app switches to full-body maintenance by itself.</p>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`;
+  },
+  gymAdd(m) {
+    return `<form id="gym-add-form"><h2>🏋️ Add the Gym track</h2><p class="why">💡 Your split, sessions and weights come from this. It shares your training days with your other sport.</p>
+      ${gymQuestions(m.a)}
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Add Gym</button></div></form>`;
+  },
+  gymEdit(m) {
+    const g = { ...S.gym, ...(m.draft || {}) }, probe = { ...S, gym: g }, rec = GYM.activeSplit({ ...probe, gym: { ...g, split: 'auto' } }).rec;
+    const opts = GYM.splitOptions(probe), bro = GYM_SPLITS[g.split === 'auto' ? rec.id : g.split]?.bro;
+    return `<form id="gym-form"><h2>🏋️ Gym settings</h2>
+      <p class="q">Split</p>${radio('gSplit', [['auto', `⭐ Recommended: ${rec.label}`], ...opts.filter(id => id !== rec.id).map(id => [id, GYM_SPLITS[id].label])], opts.includes(g.split) ? g.split : 'auto')}
+      ${bro || opts.some(id => GYM_SPLITS[id].bro) ? `<p class="q">Bro split pairing</p>${radio('gPair', Object.entries(PAIRS).map(([k, v]) => [k, v.label]), g.pair || 'classic')}` : ''}
+      ${GYM.gymOnly(S) ? '' : `<label class="field"><span>Gym days a week</span>${select('gDays', [1, 2, 3, 4, 5, 6].map(d => [String(d), `${d} day${d > 1 ? 's' : ''}`]), String(g.days || 3))}</label>`}
+      <p class="q">Goal</p>${radio('gGoal', GYM.GOALS, g.goal)}
+      <p class="q">Lifting experience</p>${radio('gExp', GYM.EXPERIENCE, g.exp)}
+      <p class="q">Session length</p>${radio('gMin', GYM.LENGTHS, String(g.minutes))}
+      <p class="q">Where you train</p>${radio('gEquip', GYM.EQUIPMENT, g.equip)}
+      <p class="q">Focus</p>${radio('gFocus', GYM.FOCUS, g.focus)}
+      <p class="hint">${GYM.gymOnly(S) ? 'Gym days = your training days: change them with "Change training days". ' : ''}Changing the split starts this week's sessions fresh. Your stage, block and logged lifts stay.</p>
       <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`;
   },
   stravaRequest() {
@@ -2454,7 +2621,7 @@ const MODALS = {
   },
   step(m) {
     const st = E.trackSteps(S, m.track)[m.idx];
-    const exs = exHtml(st);
+    const exs = m.track === 'gym' ? gymExHtml(st) : exHtml(st);
     const passQ = st.type === 'proveit' ? `<p class="q">Did you hit it?</p>${radio('passed', [['1', 'Yes, I hit it'], ['0', 'Not quite']], '1')}` : '';
     const raceQ = m.track === 'hyGate' && st.boss ? `<p class="q">Your race</p>
         <label class="field"><span>Race</span>${select('raceEvent', [['alphax:open', 'Alpha X Open'], ['alphax:base', 'Alpha X Base'], ['hyrox:open', 'Hyrox Open'], ['hyrox:pro', 'Hyrox Pro'], ['sim', 'Simulation (no race)']], S.hybrid?.race ? `${S.hybrid.race.event}:${S.hybrid.race.division}` : 'alphax:open')}</label>
@@ -2481,8 +2648,8 @@ const MODALS = {
       <p class="eyebrow">${trackTitle(m.track)} · ${TYPE_LABEL[st.type]}</p>
       <h2>${h(st.title)}</h2>
       ${st.detail ? `<p>${h(st.detail)}</p>` : ''}
-      ${exs ? `<ul class="exercises">${exs}</ul>` : ''}
-      ${already}${gateNote}${passQ}${raceQ}
+      ${exs ? `<ul class="exercises${m.track === 'gym' ? ' gym-ex' : ''}">${exs}</ul>` : ''}
+      ${already}${m.track === 'gym' ? '' : gateNote}${passQ}${raceQ}
       ${logQ && simple ? `<details class="log-more" ${already ? 'open' : ''}><summary>Not today, not all of it, or want to add notes? Tap here</summary>${logQ}</details>` : logQ}
       ${st.type === 'rest' ? '' : simple ? painButtons() : painSlider()}
       <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button>${st.type !== 'rest' && S.profile.view === 'simple' ? '' : `<button class="btn primary" type="submit">Log it (+${st.xp} XP)</button>`}</div>
@@ -2590,6 +2757,9 @@ const actions = {
     if (+ui.ob.a.age >= 13 && +ui.ob.a.age < 18) { const cap = +ui.ob.a.age < 16 ? 8 : 10; if (state.run.level > cap) { state.run.level = cap; state.run.done = {}; } }
     if (+ui.ob.a.age > 0) { state.profile.birthYear = new Date(now()).getFullYear() - +ui.ob.a.age; state.profile.kid = false; state.profile.ageGroup = state.profile.ageGroup || AGE.ageGroupOf(+ui.ob.a.age); state.nutrition = { ...(state.nutrition || {}), age: state.nutrition?.age || +ui.ob.a.age }; }
     state.tri = tracks.includes('tri') ? TRI.placeTri(state, a) : state.tri || null;
+    state.gym = tracks.includes('gym') ? GYM.placeGym(state, a, now()) : state.gym || null;
+    // Gym only: no running, so no running Rebuild Track (pain is handled by swapping exercises).
+    if (!RUNS(a)) { state.rebuild = { active: false, stage: 0, done: {}, savedRunLevel: null, redFlag: false }; if (state.gym) { state.gym.pain = a.pain !== 'none' ? a.pain : null; state.gym.redFlag = (a.redFlags || []).length > 0; } }
     state.hybrid = tracks.includes('hybrid') ? HYB.refreshHybrid({ ...state, hybrid: HYB.placeHybrid(state, a, now()) }, now(), E.weekKey(now())).hybrid : state.hybrid || null;
     state = E.applyBackground(state, backgroundOf(ui.ob.a)); // former athletes: technique credited, fast-track on
     const ai = a.dreamAI?.accepted ? a.dreamAI : null;
@@ -2600,8 +2770,8 @@ const actions = {
     if (fresh) {
       // Every map starts again at START; each plays when the athlete taps ▶ on it.
       ui.tab = 'map'; ui.avatarAt = 0; ui.mapPopup = null; ui.mapScroll = true; ui.frameTop = null;
-      ui.mapMode = state.profile.primary === 'hybrid' ? 'hyb' : state.profile.primary === 'tri' ? 'tri' : 'world';
-      setRunIntro(placed);
+      ui.mapMode = state.profile.primary === 'hybrid' ? 'hyb' : state.profile.primary === 'tri' ? 'tri' : state.profile.primary === 'gym' ? 'gym' : 'world';
+      if (RUNS(a)) setRunIntro(placed); else ui.tab = 'today';
     }
     // A new placement (first time or a retake) replays every lane map from START.
     if (fresh) { writeSeen({}); ui.laneShown = {}; ui.laneAnimating = false; }
@@ -2948,6 +3118,7 @@ const actions = {
   },
   'goto-run-map'() { ui.tab = 'map'; ui.mapMode = 'world'; ui.lanePopup = null; ui.mapScroll = true; ui.frameTop = null; render(); },
   'goto-hyb-map'() { ui.tab = 'map'; ui.mapMode = 'hyb'; ui.mapScroll = true; ui.frameTop = null; render(); },
+  'goto-gym-map'() { ui.tab = 'map'; ui.mapMode = 'gym'; render(); window.scrollTo(0, 0); },
   'goto-tri-map'() { ui.tab = 'map'; ui.mapMode = 'tri'; ui.mapScroll = true; ui.frameTop = null; render(); },
   'set-view'(el) { S.profile.view = el.dataset.v; commit(S); window.scrollTo(0, 0); },
   async install() { if (!installEvent) return; installEvent.prompt(); await installEvent.userChoice.catch(() => {}); installEvent = null; render(); },
@@ -2961,9 +3132,16 @@ const actions = {
   'add-track'(el) {
     if (el.dataset.k === 'tri') { ui.modal = { type: 'addTri', a: { ...(S.answers || {}) } }; renderModal(); return; }
     if (el.dataset.k === 'hybrid') { ui.modal = { type: 'addHyb', a: { ...(S.answers || {}) } }; renderModal(); return; }
+    if (el.dataset.k === 'gym') { ui.modal = { type: 'gymAdd', a: { ...(S.answers || {}), sex: S.profile.sex, tracks: [...(S.profile.tracks || ['run']), 'gym'] } }; renderModal(); return; }
     S.profile.tracks = [...new Set([...(S.profile.tracks || ['run']), el.dataset.k])]; commit(S); toast('Added! It opens as soon as it is built, and your training already counts.');
   },
   'edit-days'() { ui.modal = { type: 'days' }; renderModal(); },
+  'gym-edit'() { ui.modal = { type: 'gymEdit' }; renderModal(); },
+  'gym-pain-ok'() { S.gym.pain = null; S.gym.redFlag = false; commit(S); },
+  'gym-deload'() { commit(GYM.deloadNow(S)); toast('😮‍💨 Deload week: half the sets, lighter weights. Back stronger next week.'); },
+  'gym-skip-test'() { ui.modal = null; commit(GYM.skipTest(S, now())); toast('No test this time: your next block starts. The Test Day comes back at the next deload.'); },
+  'gym-rotate'(el) { S.gym.split = el.dataset.id; S.gym.offerSeen = S.gym.block.n; S.gym.done = {}; commit(S); toast(`New split: ${GYM_SPLITS[el.dataset.id].label} 🔄`); },
+  'gym-rotate-keep'() { S.gym.offerSeen = S.gym.block.n; commit(S); },
   'sick-start'() { ui.modal = { type: 'sick' }; renderModal(); },
   'sick-where'(el) { ui.modal = null; commit(E.startMode(S, { type: 'sick', where: el.dataset.where }, now())); toast('Sick mode on. Rest is training too 💤'); },
   'busy-start'() { commit(E.startMode(S, { type: 'busy' }, now())); toast('Busy mode on: only Key sessions this week.'); },
@@ -3128,7 +3306,8 @@ document.addEventListener('change', async e => {
   if (el.closest('#nc-form') && el.name !== 'msg' && el.name !== 'myName') { readDraft(); renderModal(); return; }
   if (el.closest('#bg-form') && el.name?.startsWith('bg_')) { ui.modal.a = { ...ui.modal.a, ...Object.fromEntries(new FormData(el.form).entries()), [el.name]: el.checked }; BG.SPORTS.forEach(([k]) => { if (!el.form.querySelector(`[name=bg_${k}]`)?.checked) delete ui.modal.a[`bg_${k}`]; }); renderModal(); return; }
   if (el.closest('#ob-form, #other-form') && /^ot_/.test(el.name || '')) { if (el.closest('#other-form')) { collectOther(); renderModal(); } else { collectOb(); renderOnboarding(); } return; }
-  if (el.closest('#ob-form') && (el.name?.startsWith('bg_') || el.name?.startsWith('tr_') || el.name?.startsWith('hx_') || /Mode$/.test(el.name || '') || el.name === 'swimDist' || el.name === 'bikeAccess' || el.name === 'liftMode' || el.name === 'liftUnit')) { collectOb(); renderOnboarding(); return; }
+  if (el.closest('#gym-add-form') && ['gEquip', 'liftUnit'].includes(el.name)) { ui.modal.a = { ...ui.modal.a, ...Object.fromEntries(new FormData(el.form).entries()) }; renderModal(); return; }
+  if (el.closest('#ob-form') && (el.name?.startsWith('bg_') || el.name?.startsWith('tr_') || el.name?.startsWith('hx_') || /Mode$/.test(el.name || '') || el.name === 'swimDist' || el.name === 'bikeAccess' || el.name === 'liftMode' || el.name === 'liftUnit' || el.name === 'gEquip')) { collectOb(); renderOnboarding(); return; }
   if (el.closest('#tri-form') && (el.name === 'swimDist' || el.name === 'bikeAccess')) { ui.modal.a = { ...ui.modal.a, ...readTriForm(el.closest('form')) }; renderModal(); return; }
   if (el.dataset.act === 'speak-toggle') ui.speakReplies = el.checked;
   if (el.dataset.act === 'shout-file' && el.files[0]) {
@@ -3173,7 +3352,7 @@ document.addEventListener('submit', e => {
     if (f.querySelector('[name=dream]')) readDream();
     if (f.querySelector('[name=otherLifts]')) readLifts();
     ui.ob.step++;
-    if (obSteps(ui.ob.a)[ui.ob.step]?.result && !obSteps(ui.ob.a)[ui.ob.step]?.kid) checkAnswers();
+    if (obSteps(ui.ob.a)[ui.ob.step]?.result && !obSteps(ui.ob.a)[ui.ob.step]?.kid && RUNS(ui.ob.a)) checkAnswers();
     renderOnboarding(); window.scrollTo(0, 0); return;
   }
   if (f.id === 'bg-form') {
@@ -3182,6 +3361,24 @@ document.addEventListener('submit', e => {
     ui.modal = null;
     commit(E.applyBackground(S, backgroundOf(a)));
     toast(BG.isFormerAthlete(S) ? 'Background saved: technique credited, comeback fast-track on ⚡' : 'Background saved.');
+    return;
+  }
+  if (f.id === 'gym-add-form' || f.id === 'gym-form') {
+    const fd = Object.fromEntries(new FormData(f).entries());
+    if (f.id === 'gym-add-form') {
+      const a = { ...(ui.modal.a || {}), ...fd };
+      S.answers = { ...(S.answers || {}), ...fd };
+      S.profile.tracks = [...new Set([...(S.profile.tracks || ['run']), 'gym'])];
+      S.gym = GYM.placeGym(S, a, t);
+      ui.modal = null; commit(S);
+      toast(`Welcome to ${GYM.gymWorld(S).emoji} ${GYM.gymWorld(S).name}! Your gym days are in your week.`);
+      return;
+    }
+    const g = S.gym, split = fd.gSplit || 'auto';
+    const changed = split !== g.split || (fd.gPair && fd.gPair !== g.pair) || +fd.gMin !== +g.minutes || fd.gEquip !== g.equip || fd.gFocus !== g.focus || (fd.gDays && +fd.gDays !== +g.days);
+    Object.assign(g, { split, pair: fd.gPair || g.pair, goal: fd.gGoal || g.goal, exp: fd.gExp || g.exp, minutes: +fd.gMin || g.minutes, equip: fd.gEquip || g.equip, focus: fd.gFocus || g.focus, ...(fd.gDays ? { days: +fd.gDays } : {}) });
+    if (changed) g.done = {};
+    ui.modal = null; commit(S); toast('Gym settings saved.');
     return;
   }
   if (f.id === 'hyb-form') {
@@ -3377,7 +3574,16 @@ document.addEventListener('submit', e => {
     const result = f.querySelector('[name=result]:checked')?.value || 'full';
     const actual = f.actual?.value.trim() || '', note = f.note?.value.trim() || '';
     const st = E.trackSteps(S, m.track)[m.idx];
-    const { state, outcome } = E.completeStep(S, m.track, m.idx, { pain, passed, race, now: ts, result, actual, note, backdated,
+    let lifts;
+    if (m.track === 'gym') {
+      lifts = {};
+      for (const id of new Set([...f.querySelectorAll('[name^=gr_]')].map(i => i.name.replace(/^gr_/, '').replace(/_\d+$/, '')))) {
+        const reps = [...f.querySelectorAll(`[name^="gr_${id}_"]`)].map(i => +i.value).filter(r => r > 0);
+        if (reps.length) lifts[id] = { kg: +f[`gk_${id}`]?.value || 0, reps };
+      }
+      if (st.test && !Object.keys(lifts).length) return toast('Log at least one test lift (weight and reps), or tap Cancel.');
+    }
+    const { state, outcome } = E.completeStep(S, m.track, m.idx, { pain, passed, race, now: ts, result, actual, note, backdated, lifts,
       morningOk: f.querySelector('[name=morning]:checked')?.value !== 'sore' });
     if (m.fromStrava) { const act = state.history.find(x => x.ts === m.fromStrava && x.strava); if (act) { act.linked = true; act.linkedTitle = st?.title; } } // counted once, as the session
     ui.modal = null; S = state; store.save(S);
@@ -3417,7 +3623,7 @@ window.addEventListener('hashchange', () => {
   if (!ui.modal) render();
 });
 
-$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help', 'prepStage', 'stepInfo', 'logInfo', 'target', 'raceResult', 'nutriSetup', 'nutriWeigh', 'nutriReds', 'otherTraining', 'extraSession', 'stravaRequest', 'stravaOwn', 'splitPick'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ['step', 'level', 'share', 'gymAdd', 'gymEdit', 'newChallenge', 'move', 'days', 'sick', 'addTri', 'addHyb', 'background', 'painfree', 'numbers', 'aboutMe', 'race', 'dream', 'bests', 'help', 'prepStage', 'stepInfo', 'logInfo', 'target', 'raceResult', 'nutriSetup', 'nutriWeigh', 'nutriReds', 'otherTraining', 'extraSession', 'stravaRequest', 'stravaOwn', 'splitPick'].includes(ui.modal?.type)) { ui.modal = null; renderModal(); } });
 
 // ---------- installable app ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;

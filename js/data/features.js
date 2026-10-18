@@ -7,6 +7,8 @@
 
 const hyb = s => (s.profile?.tracks || []).includes('hybrid');
 const tri = s => (s.profile?.tracks || []).includes('tri');
+const gym = s => (s.profile?.tracks || []).includes('gym');
+const runs = s => (s.profile?.tracks || ['run']).some(t => t !== 'gym');
 
 export const GROUPS = [
   ['today', '🏠 Today'], ['map', '🗺️ Map'], ['race', '🎯 Races'], ['stats', '📊 Stats'], ['coach', '💬 Coach'], ['me', '👤 Me and safety'],
@@ -29,11 +31,11 @@ export const FEATURES = [
 
   // ---------- Map ----------
   { id: 'map', group: 'map', title: 'Your map', text: 'Your journey as a game map. Each flag is a level; clear its sessions and its boss to move up. Tap a flag to see what it needs.',
-    show: { tab: 'map', mapMode: 'world', sel: '.worldmap' }, quest: { label: 'Open your map', done: (s, f) => f.tab_map } },
+    when: runs, show: { tab: 'map', mapMode: 'world', sel: '.worldmap' }, quest: { label: 'Open your map', done: (s, f) => f.tab_map } },
   { id: 'fog', group: 'map', title: 'Clouds ahead', text: 'Worlds far ahead hide under clouds so the climb stays a surprise. They clear as you reach each world. Tap Look ahead to peek at the whole journey, and tap the summit to set your dream.',
-    show: { tab: 'map', sel: '.fog-peek' }, tip: { sel: '.fog-peek', text: 'Clouds clear as you climb. Tap 👀 Look ahead (it glows) to peek at the whole journey.' } },
+    when: runs, show: { tab: 'map', sel: '.fog-peek' }, tip: { sel: '.fog-peek', text: 'Clouds clear as you climb. Tap 👀 Look ahead (it glows) to peek at the whole journey.' } },
   { id: 'replay', group: 'map', title: 'Replay my journey', text: 'Watch your characters climb from the start line to where you are now, clouds and all.',
-    show: { tab: 'map', sel: '.replay-btn' }, quest: { label: 'Replay your journey on the map', done: (s, f) => f.replay } },
+    when: runs, show: { tab: 'map', sel: '.replay-btn' }, quest: { label: 'Replay your journey on the map', done: (s, f) => f.replay } },
   { id: 'lanes', group: 'map', title: 'Lanes (Hybrid and Triathlon)', text: 'Each sport has its own lane and character. A world gate opens when every lane has reached its target.',
     when: s => hyb(s) || tri(s), show: { tab: 'map', mapMode: 'lanes', sel: '.lane-hud' } },
   { id: 'limiter', group: 'map', title: 'The red ring (limiter)', text: 'The character with a red ring is the lane holding the next gate shut. Train that one to open it.',
@@ -48,6 +50,8 @@ export const FEATURES = [
     show: { tab: 'today', sel: '.race-card' }, quest: { label: 'Look at Race prep for Alpha X or Hyrox', done: (s, f) => !!s.hybrid?.race || f.race_info } },
   { id: 'race-weeks', group: 'race', title: 'Race prep, taper and race week', text: 'With a race set, your week changes by itself. Race prep (2-4 weeks out): strength stays heavy but short, at most 2 sessions. Taper (last 2 weeks): less volume, same intensity, no gates or tests. Race week: only short, easy sessions plus one race-pace touch (and light station practice for Hyrox / Alpha X). Race day is in your week, and the week after is recovery.' },
   { id: 'split', group: 'me', title: 'Strength split', text: 'How your lifting is grouped, picked for your strength days: 1-2 days full body, 3 days Lower / Upper / Full, 4 days Upper / Lower, 5 days Upper / Lower / Push / Pull / Legs, 6 days Push / Pull / Legs. In race prep it switches to 1-2 short full-body sessions, then one half-volume session in the taper and none in race week. Change it in Me.', show: { tab: 'me', sel: '.split-card' } },
+  { id: 'gym', group: 'me', title: 'Gym track', text: 'For lifting: muscle, strength, fitness or fat loss. Your split is picked from your gym days, goal, experience, age and other sports (full body, Upper / Lower, Push / Pull / Legs, or a bro split like Chest + Triceps / Back + Biceps when muscle is the goal and you have 1+ years of lifting). Each session lists sets, reps, rest, effort and a suggested weight: log what you lifted and the next weights follow. Training runs in blocks: build weeks, then a deload week (half the sets). Main lifts stay; the other exercises change every block, and every few blocks the app offers a new split. Stages clear when your logged lifts reach the standard; each world ends with a Test Day. Gym only? The running questions and sessions are skipped.',
+    when: gym, show: { tab: 'me', sel: '.gym-card' } },
   { id: 'ages', group: 'me', title: 'Kids and teens', text: 'Under 13: Family mode, set up with a grown-up: a fun play mission every day and a sticker book, with no plans, times, calories, chat or sharing. 13-17: Teen mode: the full app, with food shown as portions (never a diet), no max-weight lifting gates, run levels up to 10K (under 16) or half marathon (16-17), and races limited to the usual minimum ages.' },
   { id: 'target', group: 'race', title: 'Competition mode', text: 'Tap 🎯 Set as my race on any race. The app checks it honestly against your level and training days: realistic, doable at a slower pace, or not yet (with a shorter distance or a later race instead). Your plan stays your levels; in the last 4 weeks Today switches to race prep, a taper and race week, then you log your result.',
     show: { tab: 'today', sel: '.race-card' }, quest: { label: 'Pick a race to prepare for', done: s => !!s.target } },
@@ -78,7 +82,7 @@ export const FEATURES = [
   { id: 'dream', group: 'me', title: 'Your dream', text: 'Your goal sits on the summit of your map. Tap the summit to set or change it.',
     show: { tab: 'map', sel: '.fog-summit' }, quest: { label: 'Set your dream', done: s => !!(s.profile?.dream?.text || s.profile?.dream?.event) } },
   { id: 'pain', group: 'me', title: 'Pain and the Rebuild track', text: 'Report pain when you log a session. The app moves you to the Rebuild track, locks impact work and tells you why. Once you are pain-free, you come back near your old level.',
-    show: { tab: 'today', sel: '.card.next' } },
+    when: runs, show: { tab: 'today', sel: '.card.next' } },
   { id: 'strava', group: 'me', title: 'Connect Strava', text: 'Connect once in Me and your workouts come in by themselves from any watch or app that syncs to Strava (Garmin, Apple Watch, COROS, Runna…). A run can count as your planned session with one tap; other workouts count in your week and Nutrition. Read-only, and you can disconnect any time.',
     show: { tab: 'me', sel: '.strava-card' } },
   { id: 'data', group: 'me', title: 'Your data', text: 'Everything is saved in this browser. Export it to move to another phone, or retake the assessment (with your previous answers in one tap).',

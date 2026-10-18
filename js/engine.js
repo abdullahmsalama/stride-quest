@@ -8,6 +8,7 @@ import * as BG from './background.js';
 import { TRI_WORLDS } from './data/tri.js';
 import { HYBRID_WORLDS } from './data/hybrid.js';
 import * as AGE from './age.js';
+import * as GYM from './gym.js';
 
 export const DAY = 864e5;
 export const XP = { run: 30, swim: 30, bike: 30, lift: 30, engine: 30, maint: 25, prep: 20, slot: 20, rest: 10, gate: 100, proveit: 30, painCheck: 5, daily: 5, restDay: 10, weekBonus: 50 };
@@ -145,6 +146,7 @@ export function trackSteps(s, track) {
   else if (track === 'engine') { steps = HYB.engineSteps(s); done = s.hybrid.engine.done; }
   else if (track === 'hyGate') { steps = HYB.gateSteps(s); done = s.hybrid.done; }
   else if (track === 'hyMaint') { steps = HYB.maintSteps(s); done = s.hybrid.maint.done; }
+  else if (track === 'gym') { steps = GYM.gymSteps(s); done = s.gym.done; }
   const gateOpen = gateUnlocked(s, track);
   const sex = s.profile.sex;
   return steps.map((st, idx) => {
@@ -162,7 +164,7 @@ export function trackSteps(s, track) {
     if ((track === 'swim' || track === 'bike') && s.rebuild.redFlag && status === 'open') lock(WHY.redFlag);
     if ((track === 'triGate' || track === 'hyGate') && s.rebuild.active && status === 'open') lock(s.rebuild.redFlag ? WHY.redFlag : WHY.rebuild); // races wait until rebuilt
     if ((track === 'strength' || track === 'engine') && status === 'open' && !HYB.inFocus(s, track)) { lock(WHY.held(track)); step = { ...step, held: true }; }
-    if ((track === 'strength' || track === 'engine' || track === 'hyMaint') && s.rebuild.redFlag && status === 'open') lock(WHY.redFlag);
+    if ((track === 'strength' || track === 'engine' || track === 'hyMaint' || track === 'gym') && s.rebuild.redFlag && status === 'open') lock(WHY.redFlag);
     // Rebuild (no red flags): erg, swim, bike and upper-body work carry on; running and jumping wait.
     if ((track === 'strength' || track === 'engine' || track === 'hyMaint') && s.rebuild.active && !s.rebuild.redFlag && status === 'open' && IMPACT.test(`${st.title} ${st.detail || ''}`)) lock(WHY.rebuildImpact);
     if (why) step = { ...step, lockReason: why };
@@ -204,7 +206,7 @@ export function gateUnlocked(s, track) {
   if (track === 'strength') return BG.fast(s, 'strength') || Object.keys(s.hybrid.strength.done).length >= 2;
   if (track === 'engine') return BG.fast(s, 'engine') || Object.keys(s.hybrid.engine.done).length >= 2;
   if (track === 'hyGate') return HYB.lanesReady(s);
-  if (track === 'hyMaint') return true;
+  if (track === 'hyMaint' || track === 'gym') return true;
   return false;
 }
 
@@ -330,6 +332,7 @@ export function completeStep(state, track, idx, opts) {
       return out('stepBack');
     }
     if (s.rebuild.active) { msgs.push('Pain 5/10 or more: stop and rest today. Please get it checked if it continues.'); return out('repeat'); }
+    if (track === 'gym' && !GYM.hasRunning(s)) { msgs.push('Pain 5/10 or more: stop this session. Rest it, and if it is still there in a few days or it was sharp, please see a physio or doctor. Next time, skip or swap the exercise that hurt.'); return out('repeat'); }
     msgs.push('Pain 5/10 or more: stop this session. The Rebuild Track is the safer path for now.');
     return out('rebuildPrompt');
   }
@@ -346,6 +349,7 @@ export function completeStep(state, track, idx, opts) {
     const part = opts.result === 'partial' ? Math.round(base * 0.5 * mult) : 0;
     award(s, part, now, { kind: opts.result === 'partial' ? 'session' : 'attempt', partial: true, track, level: levelNumber(s, track), idx, title: step.title, pain, ...words });
     msgs.push(opts.result === 'partial' ? `Partly done: +${part} XP for the effort. The step stays open: finish it another day 💪` : 'Logged. Not every day is a good day: the step stays open for when you\'re ready 💛');
+    if (track === 'gym' && opts.lifts) GYM.afterGymStep(s, step, opts.lifts, now, msgs); // the sets they did still count
     if (opts.result === 'partial') afterSession(s, now, msgs);
     return out('partial');
   }
@@ -374,7 +378,8 @@ export function completeStep(state, track, idx, opts) {
     if (slotIdx >= 0) { s.run.done[slotIdx] = { ts: now, pain, viaPrep: true }; msgs.push('Also filled a Prep slot in your run level.'); }
   }
 
-  if (step.type === 'gate' && !provisional) passGate(s, track, now, msgs, opts);
+  if (track === 'gym') { if (step.type === 'gate') GYM.passTest(s, opts.lifts, now, msgs); else GYM.afterGymStep(s, step, opts.lifts, now, msgs); }
+  else if (step.type === 'gate' && !provisional) passGate(s, track, now, msgs, opts);
   // Maintenance at the top of a ladder: once all done, they start over.
   if ((track === 'swim' || track === 'bike') && s.tri[track].stage >= (track === 'swim' ? TRI.SWIM_MAX : TRI.BIKE_MAX) && trackSteps(s, track).every(st => st.status === 'done')) s.tri[track].done = {};
   if ((track === 'strength' || track === 'engine') && s.hybrid[track].stage >= (track === 'strength' ? HYB.STR_MAX : HYB.ENG_MAX) && trackSteps(s, track).every(st => st.status === 'done')) s.hybrid[track].done = {};
@@ -396,13 +401,14 @@ function levelNumber(s, track) {
   if (track === 'engine') return s.hybrid.engine.stage;
   if (track === 'hyGate') return s.hybrid.world;
   if (track === 'hyMaint') return s.hybrid.maint.week;
+  if (track === 'gym') return s.gym.stage;
   return 'refresher';
 }
 
 function doneMapOf(s, track) {
   return { run: s.run.done, prep: s.prep.done, rebuild: s.rebuild.done, refresher: s.refresher?.done,
     swim: s.tri?.swim.done, bike: s.tri?.bike.done, triGate: s.tri?.done,
-    strength: s.hybrid?.strength.done, engine: s.hybrid?.engine.done, hyGate: s.hybrid?.done, hyMaint: s.hybrid?.maint.done }[track];
+    strength: s.hybrid?.strength.done, engine: s.hybrid?.engine.done, hyGate: s.hybrid?.done, hyMaint: s.hybrid?.maint.done, gym: s.gym?.done }[track];
 }
 
 function passGate(s, track, now, msgs, opts = {}) {
@@ -877,12 +883,11 @@ export function coachContext(s, now) {
     `Runner: ${s.profile.name || 'unnamed'}; trains ${s.profile.daysPerWeek} days/week.${AGE.ageOf(s) != null ? ` Age ${AGE.ageOf(s)}.` : ''}`,
     ...(AGE.isTeen(s) ? [`TEEN (under 18): keep advice age-appropriate. No max-weight lifting, no dieting or calorie targets (food as portions), Run levels capped at ${AGE.runCap(s)}; suggest a parent or coach for anything medical.`] : []),
     `Dream / goal: ${[s.profile.dream?.text, s.profile.dream?.event, s.profile.dream?.date && `by ${s.profile.dream.date}`].filter(Boolean).join(' · ') || s.profile.goal || 'not set'}.`,
-    `Run Track: Level ${lvl.n} "${lvl.name}" in ${worldOf(lvl).name}. Level XP ${levelProgress(s).earned}/${levelProgress(s).target}. Total XP ${s.xp}.`,
-    `Prep Track: P${s.prep.level} "${prep.name}" (${prep.focus}).`,
+    ...(GYM.hasRunning(s) ? [`Run Track: Level ${lvl.n} "${lvl.name}" in ${worldOf(lvl).name}. Level XP ${levelProgress(s).earned}/${levelProgress(s).target}. Total XP ${s.xp}.`,
+      `Prep Track: P${s.prep.level} "${prep.name}" (${prep.focus}).`] : ['GYM ONLY: this athlete does not run. Do not suggest running levels, paces or races unless they ask.']),
     ...(prepBlocksRun(s) != null ? [`Level ${s.run.level} is CLEARED, but Level ${s.run.level + 1} also needs Prep P${prepBlocksRun(s)} (now P${s.prep.level}): the athlete is waiting on the Prep Track, not on running.`] : []),
     ...((s.pending || []).length ? ['A gate/boss was logged today and is confirmed by tomorrow morning\'s pain check (2/10 or less); then the next level opens.'] : []),
-    `Active track: ${track}.`,
-    next ? `Next step: ${next.title}${next.detail ? ' - ' + next.detail : ''}.` : 'No open step right now.',
+    ...(GYM.hasRunning(s) ? [`Active track: ${track}.`, next ? `Next step: ${next.title}${next.detail ? ' - ' + next.detail : ''}.` : 'No open step right now.'] : []),
     `Recent pain ratings: ${pains}.`,
     // Training load: every session, not just the ones with notes.
     (() => {
@@ -902,7 +907,8 @@ export function coachContext(s, now) {
     : s.refresher || s.run.reclaim ? 'returning after a break: welcome them back warmly, remind them fitness returns fast'
     : s.run.level === 1 && (s.answers?.runsLast4w ?? 0) === 0 ? 'starting from no training at all: be very encouraging, make walking and tiny wins feel big'
     : s.run.level <= 3 ? 'a beginner: be encouraging, normalise walk breaks and slow pace' : 'an experienced runner: be encouraging and direct';
-  lines.push(`Tone: this runner is ${tone}.`);
+  lines.push(GYM.gymOnly(s) ? `Tone: this is a gym-goer (${{ none: 'new to the gym', lt1: 'under 1 year of lifting', y1_3: '1-3 years of lifting', y3: '3+ years of lifting' }[s.gym.exp] || 'lifter'}): be encouraging and practical.` : `Tone: this runner is ${tone}.`);
+  if (GYM.hasGym(s)) lines.push(...gymContext(s, now));
   if (s.mode) lines.push(s.mode.type === 'sick' ? `SICK MODE (${s.mode.where === 'above' ? 'symptoms above the neck: easy movement only' : 'below the neck or fever: full rest, no training'}).` : 'BUSY MODE: only key sessions this week.');
   if (s.profile.tracks?.length) lines.push(`Trains for: ${s.profile.tracks.join(', ')}${s.profile.primary ? `; main focus ${s.profile.primary}` : ''}.`);
   if (TRI.hasTri(s)) {
@@ -926,7 +932,7 @@ export function coachContext(s, now) {
   if (b5 > 0) {
     const p = b5 / 5, f = m => `${Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, '0')}`;
     lines.push(`TRAINING PACES (computed by the app from the 5K best of ${f(b5)}; use these exactly, never invent paces): 5K race pace ${f(p)}/km; easy ${f(p + 1)}-${f(p + 1.5)}/km; long run ${f(p + 1.1)}-${f(p + 1.6)}/km; tempo (comfortably hard) ${f(p + 0.35)}-${f(p + 0.5)}/km; intervals ${f(p - 0.05)}-${f(p + 0.1)}/km.`);
-  } else lines.push('TRAINING PACES: no 5K best on file; give paces by effort (easy = can hold a conversation), not numbers.');
+  } else if (GYM.hasRunning(s)) lines.push('TRAINING PACES: no 5K best on file; give paces by effort (easy = can hold a conversation), not numbers.');
   if (s.hybrid?.race?.event) lines.push(`Preparing for: ${s.hybrid.race.event === 'alphax' ? 'Alpha X' : 'Hyrox'} ${s.hybrid.race.division} (simulations follow that race's format).`);
   if (s.bests) {
     const t = m => (m ? `${Math.floor(m / 60) ? `${Math.floor(m / 60)}:${String(Math.floor(m % 60)).padStart(2, '0')}` : Math.floor(m)}:${String(Math.round((m % 1) * 60)).padStart(2, '0')}` : null);
@@ -938,6 +944,22 @@ export function coachContext(s, now) {
   if (s.answers?.bodyFat > 0) lines.push(`Body fat (self-reported, ${s.answers.bodyFatMethod || 'unknown method'}): ${s.answers.bodyFat}%. Use only as context, never to judge.`);
   const bl = s.bodyLog || [];
   if (bl.length > 1) lines.push(`Body log: ${bl.slice(-4).map(b => `${new Date(b.ts).toISOString().slice(0, 10)} ${b.bw ?? '?'} ${b.unit || 'kg'}${b.bf ? `, ${b.bf}% fat` : ''}`).join(' · ')}.`);
-  if (s.answers) lines.push(`Assessment: ~${s.answers.weeklyKm || 0} km/week, longest run ~${s.answers.longestKm || 0} km, best 5K ${s.answers.best5k || 'n/a'} min, best 10K ${s.answers.best10k || 'n/a'} min.`);
+  if (s.answers && GYM.hasRunning(s)) lines.push(`Assessment: ~${s.answers.weeklyKm || 0} km/week, longest run ~${s.answers.longestKm || 0} km, best 5K ${s.answers.best5k || 'n/a'} min, best 10K ${s.answers.best10k || 'n/a'} min.`);
   return lines.join('\n');
+}
+
+// The gym part of the coach's picture: split, week of the block, standards and the next weights,
+// all computed by the app (the coach must use these, never invent loads).
+function gymContext(s, now) {
+  const g = s.gym, sp = GYM.activeSplit(s), info = GYM.weekInfo(s, now), stage = GYM.gymStage(s), bw = GYM.bwOf(s);
+  const out = [`GYM: ${g.goal} goal, ${g.exp} experience, ${GYM.gymDays(s)} gym days a week, ${g.minutes} min sessions, equipment: ${g.equip}, focus: ${g.focus}. Split: ${sp.id}${sp.auto ? ' (recommended)' : ' (their pick)'}. World "${GYM.gymWorld(s).name}", stage ${stage.n} "${stage.name}". Block ${info.block}, ${info.deload ? 'DELOAD week (half the sets, lighter)' : `week ${info.week} of ${info.len}`}.`];
+  const st = GYM.standing(s).filter(x => x.need != null);
+  if (st.length) out.push(`Stage standard (bodyweight ${bw ? Math.round(bw) + ' kg' : 'unknown'}): ${st.map(x => `${x.name} ${x.text}, best so far ${x.have ? Math.round(x.have) + (g.equip === 'bw' ? ' reps' : ' kg est. 1RM') : 'not logged'}${x.ok ? ' ✓' : ''}`).join('; ')}.`);
+  const next = GYM.gymSteps(s, now).find((x, i) => !g.done[i]);
+  if (next?.gym) out.push(`NEXT GYM SESSION "${next.title}" (app-computed, use exactly): ${next.gym.map(x => { const l = GYM.suggestLoad(s, x, info); return `${x.id} ${x.sets}x${x.reps} RIR ${x.rir}${l?.kg ? ` @ ${l.kg} kg` : ''}`; }).join('; ')}.`);
+  const recent = Object.entries(g.lifts || {}).map(([id, log]) => [id, log.at(-1)]).filter(([, x]) => x && !x.told).sort((a, b) => b[1].ts - a[1].ts).slice(0, 5);
+  if (recent.length) out.push(`Last logged lifts: ${recent.map(([id, x]) => `${id} ${x.kg} kg x ${x.reps.join('/')}`).join('; ')}.`);
+  const stall = GYM.stalled(s);
+  if (stall.length) out.push(`Stalled main lifts (no new best in 3 sessions): ${stall.join(', ')}. An early deload is offered in the app.`);
+  return out;
 }

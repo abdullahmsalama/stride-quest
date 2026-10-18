@@ -887,3 +887,26 @@ header.top { gap: 10px; }
 .stickers { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 8px; }
 .stickers span { font-size: 28px; text-align: center; padding: 6px 0; border-radius: 10px; background: var(--surface-2); filter: grayscale(1); opacity: .35; }
 .stickers span.on { filter: none; opacity: 1; background: var(--brand-soft); }
+
+/* Gym track */
+.gym-bars { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.gym-bars li { display: grid; grid-template-columns: minmax(0, 9em) 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
+.gym-bars li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gym-bars .bar { margin: 0; }
+.gym-bars li.ok b::after { content: ' ✓'; }
+.gym-ex .ex > p.hint { margin: 4px 0; }
+.gl-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.gl-row label { display: flex; align-items: center; gap: 4px; }
+.gl-row input { width: 3.6em; padding: 8px 6px; font-size: 16px; border: 1px solid var(--line, #ccd); border-radius: 8px; background: var(--surface, #fff); color: var(--ink); }
+.gl-row .gl-kg input { width: 4.6em; }
+.gl-row em { font-style: normal; font-size: 12px; color: var(--ink-2); }
+.ex-how summary { cursor: pointer; font-size: 13px; color: var(--brand); }
+.gym-map { display: grid; gap: 12px; }
+.gym-world.here { outline: 2px solid var(--brand); }
+.gym-world.cleared { opacity: 0.85; }
+.gym-world .ladder li { flex-wrap: wrap; }
+.gym-world .ladder li span { margin-left: 0; flex-basis: 100%; }
+.gym-world .ladder li.boss { background: var(--surface-2); border: 1px dashed var(--brand); }
+.lift-row { gap: 8px; }
+.lift-row .field { flex: 1 1 140px; }
+.lifts-table td:nth-child(n+2) { white-space: nowrap; }

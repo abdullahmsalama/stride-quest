@@ -5,6 +5,7 @@ import { DAY, dayKey, weekKey, activeTrack, trackSteps, prepBlocksRun } from './
 import { legDays } from './data/other.js';
 import { hasTri } from './tri.js';
 import { hasHybrid } from './hybrid.js';
+import { hasGym, hasRunning, gymDays, gymOnly } from './gym.js';
 import { phase as racePhase } from './target.js';
 
 export const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -27,6 +28,7 @@ export function classify(step, prepLevel = 0) {
   if (step.type === 'prep' || step.type === 'slot') return prepLevel >= 3 ? 'impact' : 'strength';
   const t = `${step.title} ${step.detail || ''}`.toLowerCase();
   if (step.type === 'swim') return 'swim';
+  if (step.type === 'lift' && step.gym) return step.legs ? 'strength' : 'upper'; // a gym session: heavy legs or not
   if (step.type === 'lift' || (step.type === 'maint' && /squat|deadlift|lunge|sled|lift/.test(t) && !/deload/.test(t))) return /squat|deadlift|lunge|sled|carry|full body|lower/.test(t) ? 'strength' : 'upper';
   if (step.type === 'engine' || step.type === 'maint') return /deload|easy 30 min \+ mobility|mobility and easy/.test(t) ? 'easy' : /threshold|interval|race|simulation|vo2|emom|x \(|splits/.test(t) ? 'hard' : /long|60-75|45 min/.test(t) ? 'long' : 'easy';
   if (step.type === 'bike') return /long ride|brick|\b(5|6|9|10|12)0 km/.test(t) ? 'long' : /threshold|ftp|race effort/.test(t) ? 'hard' : 'bike';
@@ -44,10 +46,12 @@ function candidates(s, now = Date.now()) {
   const track = activeTrack(s);
   const steps = trackSteps(s, track);
   // No Prep (jumps, landings) while rebuilding or during the comeback checks after illness or a break.
-  const prepOpen = track === 'rebuild' || track === 'refresher' ? [] : trackSteps(s, 'prep').filter(p => p.status === 'open');
+  // Gym only: no running, so no run or Prep sessions either.
+  const runs = hasRunning(s);
+  const prepOpen = !runs || track === 'rebuild' || track === 'refresher' ? [] : trackSteps(s, 'prep').filter(p => p.status === 'open');
   let prepI = 0;
   const out = [];
-  for (const st of steps) {
+  for (const st of runs ? steps : []) {
     if (st.type === 'rest') continue;
     if (st.status === 'slot') {
       const p = prepOpen[prepI++];
@@ -59,7 +63,7 @@ function candidates(s, now = Date.now()) {
   // Prep steps not tied to a slot still count as optional extras.
   const extras = [];
   for (; prepI < prepOpen.length; prepI++) extras.push({ track: 'prep', level: s.prep.level, ...prepOpen[prepI], extra: true });
-  if (!hasTri(s) && !hasHybrid(s)) return [...out, ...extras];
+  if (!hasTri(s) && !hasHybrid(s) && !hasGym(s)) return [...out, ...extras];
 
   // Several tracks: one queue per kind of session, mixed by a weekly pattern.
   const lane = (t, lvl) => trackSteps(s, t).filter(st => st.status === 'open').map(st => ({ track: t, level: lvl, ...st }));
@@ -74,6 +78,7 @@ function candidates(s, now = Date.now()) {
     queues.maint = lane('hyMaint', s.hybrid.maint.week);
     gates.push(...lane('hyGate', s.hybrid.world));
   }
+  if (hasGym(s)) queues.gym = lane('gym', s.gym.stage);
   // The week's pattern, minus what's already been done this week, so one sport doesn't take every day.
   const pattern = weekPattern(s), wk = weekKey(now), KEY = { hyMaint: 'maint' };
   const doneThisWeek = (s.history || []).filter(h => h.kind === 'session' && weekKey(h.ts) === wk).map(h => KEY[h.track] || h.track);
@@ -104,7 +109,15 @@ export function weekPattern(s) {
     return t === 'deload' ? ['maint', 'run', 'maint', 'maint'] : t === 'engine' ? ['engine', 'maint', 'run', 'engine', 'maint', 'run'] : ['strength', 'run', 'strength', 'maint', 'strength', 'run'];
   };
   const BASE = { run: () => ['run', 'run'], tri: () => ['swim', 'bike', 'run'], hybrid: hyb };
-  const tracks = (s.profile.tracks || ['run']).filter(t => t === 'run' || (t === 'tri' && hasTri(s)) || (t === 'hybrid' && hasHybrid(s)));
+  const all = (s.profile.tracks || ['run']).filter(t => t === 'run' || (t === 'tri' && hasTri(s)) || (t === 'hybrid' && hasHybrid(s)) || (t === 'gym' && hasGym(s)));
+  if (all.includes('gym')) { // gym days spread evenly through the week; the other sports fill the rest
+    const rest = all.length > 1 ? weekPattern({ ...s, profile: { ...s.profile, tracks: all.filter(t => t !== 'gym'), primary: s.profile.primary === 'gym' ? undefined : s.profile.primary } }) : [];
+    if (!rest.length) return ['gym'];
+    const D = schedule(s).days.length, n = Math.min(gymDays(s), Math.max(1, D - 1)), at = new Set([...Array(n).keys()].map(k => Math.floor((k * D) / n)));
+    let o = 0;
+    return [...Array(D).keys()].map(i => (at.has(i) ? 'gym' : rest[o++ % rest.length]));
+  }
+  const tracks = all;
   const primary = tracks.includes(s.profile.primary) ? s.profile.primary : tracks[0] || 'run';
   const main = BASE[primary]();
   if (primary !== 'run' && tracks.includes('run') && tracks.length === 2) main.splice(Math.ceil(main.length / 2), 0, 'run'); // they chose Run too: keep more runs
@@ -195,6 +208,8 @@ export function buildWeek(s, now, { skip } = {}) {
 
   // Moved items keep the day the athlete chose.
   for (const it of take) if (moves[it.key] != null && moves[it.key] >= today) put(it, moves[it.key]);
+  // Gym only: the split's days go in order (chest, back, legs…), one per training day.
+  if (gymOnly(s)) for (const it of take) if (!placed.some(p => p.it === it)) put(it, [...free][0] ?? slots[0]);
   const rest = take.filter(it => !placed.some(p => p.it === it));
   for (const it of rest.filter(x => x.cls === 'long')) put(it, free.has(longDay) ? longDay : [...free].at(-1) ?? slots.at(-1));
   for (const it of rest.filter(x => x.cls === 'test')) { const f = [...free]; put(it, far(f.length ? f : slots, hardDays().filter(d => d !== undefined))); }
@@ -235,7 +250,7 @@ export function buildWeek(s, now, { skip } = {}) {
 // Competition mode changes the sessions, not just the words: race prep keeps strength heavy but short,
 // the taper cuts volume, race week keeps only easy sessions (plus a race-pace touch and, for Hyrox /
 // Alpha X, light station practice), race day is the race, and the week after is recovery.
-const STRENGTHY = it => it.track === 'strength' || (it.track === 'hyMaint' && (it.cls === 'strength' || it.cls === 'upper'));
+const STRENGTHY = it => it.track === 'strength' || it.track === 'gym' || (it.track === 'hyMaint' && (it.cls === 'strength' || it.cls === 'upper'));
 function raceWeekPlan(s, byDay, monday, notes, today = 0, slots = []) {
   const t = s.target, hybridRace = ['hyrox', 'alphax'].includes(t.distance);
   const counts = { strength: 0, hard: 0 };
