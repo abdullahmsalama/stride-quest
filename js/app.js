@@ -167,7 +167,8 @@ function obStepsAdult(a) {
         <p class="byline">Developed by <button type="button" class="linkish" data-act="about-me">Abdullah Salama</button></p>` },
     { title: 'About you', why: 'So we only show the tracks you care about, and use the right times and weights for you.', body: `
         <label class="field"><span>Your name (optional)</span><input type="text" name="name" value="${h(a.name || '')}" maxlength="40" autocomplete="given-name"></label>
-        <label class="field"><span>Your age</span><span class="with-unit"><input type="number" inputmode="numeric" name="age" min="4" max="99" step="1" value="${h(a.age ?? '')}" placeholder="e.g. 32"><em>years</em></span></label>
+        <label class="field"><span>Your birthday</span><input type="date" name="birthDate" min="1925-01-01" max="${E.dayKey(now())}" value="${h(a.birthDate || '')}"></label>
+        <p class="hint">${+a.age > 0 ? `You're ${+a.age}. ` : ''}Your age keeps itself up to date from this: plans for kids and teens, nutrition and age-group stats follow it. Stays on this device.</p>
         ${+a.age > 0 && +a.age < 13 ? '<p class="hint">👨‍👩‍👧 Under 13: next you\'ll set up <strong>Family mode</strong> together with a grown-up: fun play missions, no training plans.</p>' : +a.age >= 13 && +a.age < 18 ? '<p class="hint">🌱 Under 18: you get <strong>Teen mode</strong>: the full app with a few safety rules for growing bodies.</p>' : ''}
         <p class="q">Which category do you race in? ${tip("Men's and women's race weights, times and standards differ. 'Prefer not to say' uses the more forgiving standards.", 'About categories')}</p>
         ${radio('sex', [['m', "Men's"], ['f', "Women's"], ['x', 'Prefer not to say']], a.sex || 'x')}
@@ -522,6 +523,8 @@ function collectOb() {
       else a[el.name] = el.checked;
     } else a[el.name] = el.value;
   }
+  // Age always comes from the birthday, so it is right on the day it changes.
+  if (a.birthDate) { const y = AGE.ageFromDate(a.birthDate, now()); if (y != null) a.age = String(y); } else if ('birthDate' in a) delete a.age;
   // A single-choice question left empty (tapped again to clear) forgets its answer.
   for (const n of radios) if (!form.querySelector(`[name="${n}"]:checked`)) delete a[n];
 }
@@ -532,7 +535,7 @@ function renderOnboarding() {
   const st = steps[i];
   const back = i > 0 ? '<button type="button" class="btn ghost" data-act="ob-back">Back</button>' : '';
   const invited = ui.incoming && ui.incoming.from?.name ? `<div class="banner info">🏆 <strong>${h(ui.incoming.from.name)}</strong> ${ui.incoming.t === 'c' ? 'sent you a challenge' : 'invited you to run together'}! Finish this quick setup to see how it fits your level.</div>` : '';
-  const returning = invited + (S.needsReassessment ? `<div class="banner info">Welcome back! A quick re-assessment places you again. You won't start more than 3 levels below Level ${S.needsReassessment.oldLevel}.</div>` : '');
+  const returning = invited + (ui.teenUp ? '<div class="banner info">🎉 <strong>Happy 13th birthday!</strong> You\'ve grown out of Family mode. A few questions set up <strong>Teen mode</strong>: real training plans, with safety rules for growing bodies. Your stickers stay.</div>' : '') + (S.needsReassessment ? `<div class="banner info">Welcome back! A quick re-assessment places you again. You won't start more than 3 levels below Level ${S.needsReassessment.oldLevel}.</div>` : '');
   let body;
   if (st.kid) body = `<div class="result"><div class="result-badge">🌟</div><h2>Hi${ui.ob.a.name ? ` ${h(ui.ob.a.name)}` : ''}! Let's play.</h2>
         <p>Every day you get a fun play mission. Do it with your grown-up, tap <strong>We did it!</strong> and collect a sticker. Collect them all!</p>
@@ -594,7 +597,7 @@ function renderOnboarding() {
 
 // The gym placement on the result screen: world, stage, split and why.
 function gymPlacedBox(a0, big = false) {
-  const a = normalize(a0), probe = { ...S, profile: { ...S.profile, tracks: a.tracks || ['gym'], sex: a.sex, days: a.days || K.defaultDays(3), birthYear: +a.age > 0 ? new Date(now()).getFullYear() - +a.age : S.profile.birthYear } };
+  const a = normalize(a0), probe = { ...S, profile: { ...S.profile, tracks: a.tracks || ['gym'], sex: a.sex, days: a.days || K.defaultDays(3), birthDate: a.birthDate || null, birthYear: +a.age > 0 ? new Date(now()).getFullYear() - +a.age : S.profile.birthYear } };
   probe.gym = GYM.placeGym(probe, a, now());
   const st = GYM.gymStage(probe), w = GYM.gymWorld(probe), sp = GYM.activeSplit(probe), split = GYM_SPLITS[sp.id];
   const days = split.days.slice(0, GYM.gymDays(probe)).map(d => GYM.dayPlan(probe, d).name);
@@ -610,6 +613,8 @@ function gymPlacedBox(a0, big = false) {
 
 // ---------- shell ----------
 function render() {
+  // A Family mode child who turns 13 sets up Teen mode: the normal questionnaire, with their birthday kept.
+  if (S.placedAt && S.profile.kid && S.profile.birthDate && AGE.ageOf(S) >= 13 && !ui.retake) { ui.retake = true; ui.teenUp = true; ui.ob = { step: 0, a: { name: S.profile.name, birthDate: S.profile.birthDate, age: String(AGE.ageOf(S)) } }; }
   if (!S.placedAt || S.needsReassessment || ui.retake) { $('#app').className = ''; renderOnboarding(); renderModal(); return; }
   $('#app').className = 'shell';
   if (HYB.hasHybrid(S)) { const next = HYB.refreshHybrid(S, now(), E.weekKey(now())); if (next !== S) { S = next; store.save(S); } }
@@ -1759,7 +1764,7 @@ function stravaReturn() {
 }
 // A logged activity from Strava (non-run: counts in the week and nutrition; run: also offered as today's session).
 function fromStrava(a) {
-  const run = STRAVA_RUN.has(a.type), age = +S.nutrition?.age || null;
+  const run = STRAVA_RUN.has(a.type), age = AGE.ageOf(S) ?? (+S.nutrition?.age || null);
   const effort = effortOf(a.hr, age), minutes = Math.round(a.minutes || a.elapsed || 0);
   const pace = a.km > 0 ? minutes / a.km : null;
   const item = run ? { title: `Run ${a.km} km`, cls: minutes >= 75 ? 'long' : effort === 'hard' ? 'hard' : 'easy', track: 'run', minutes, effort, km: a.km }
@@ -1914,7 +1919,7 @@ function nutriProfile() {
   const toKg = (v, u) => (+v > 0 ? +v * (u === 'lb' ? 0.4536 : 1) : null);
   const kg = toKg(last?.bw, last?.unit) || toKg(a.bodyweight, a.liftUnit) || n.kg || null;
   const b5 = S.bests?.run5k || a.best5k;
-  return { sex: S.profile.sex || 'x', age: +n.age || 30, heightCm: +n.heightCm || null, kg, bodyFat: +(last ? last.bf : a.bodyFat) || null,
+  return { sex: S.profile.sex || 'x', age: AGE.ageOf(S) ?? (+n.age || 30), heightCm: +n.heightCm || null, kg, bodyFat: +(last ? last.bf : a.bodyFat) || null,
     life: n.life || 'sit', easyPace: b5 > 0 ? b5 / 5 + 1.25 : 6.5, trains: true, strengthBlock: S.hybrid?.block?.type === 'strength' || (GYM.hasGym(S) && ['muscle', 'strength', 'cut'].includes(S.gym.goal)) };
 }
 const ymdNow = () => E.dayKey(now());
@@ -2061,8 +2066,8 @@ function sharePayload() {
   const v = myValues(), sex = S.profile.sex;
   const values = Object.fromEntries(['run5k', 'run10k', 'half', 'marathon', 'hyrox_open', 'hyrox_pro', 'squat', 'deadlift', 'ftp', 'pullups']
     .filter(k => v[k] > 0).map(k => [k, Math.round(v[k] * 1000) / 1000]));
-  const rare = STATS.hybridRarity(Object.keys(NORMS).map(k => STATS.statFor(k, v[k], sex, S.profile.ageGroup, { bwKg: v.bwKg })).filter(Boolean));
-  return { sex, age: S.profile.ageGroup || null, values, pair: rare ? rare.basis.map(b => b.metric) : null };
+  const rare = STATS.hybridRarity(Object.keys(NORMS).map(k => STATS.statFor(k, v[k], sex, AGE.ageGroupNow(S), { bwKg: v.bwKg })).filter(Boolean));
+  return { sex, age: AGE.ageGroupNow(S), values, pair: rare ? rare.basis.map(b => b.metric) : null };
 }
 async function fetchCommunity(force) {
   const sh = shareState();
@@ -2080,7 +2085,7 @@ async function fetchCommunity(force) {
 function communityLine(metric) {
   const d = ui.community?.data?.metrics?.[metric];
   if (!shareState().on || !d) return '';
-  const sexW = S.profile.sex === 'm' ? 'men' : 'women', age = S.profile.ageGroup, min = ui.community.data.min;
+  const sexW = S.profile.sex === 'm' ? 'men' : 'women', age = AGE.ageGroupNow(S), min = ui.community.data.min;
   const one = (g, who) => (g.p != null ? `better than <b>${g.p}%</b> of ${g.n} ${who}` : `${who}: ${g.n} of ${min} so far`);
   if (d.sex.p == null && d.age?.p == null) return '';
   return `<p class="community">👥 Stride Quest athletes: ${one(d.sex, sexW)}${d.age ? ` · ${one(d.age, `${sexW} aged ${h(age)}`)}` : ''}</p>`;
@@ -2111,7 +2116,7 @@ function viewStats() {
     fetch(`${WORKER_URL.replace(/\/$/, '')}/stats`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pend.id, delete: true }) })
       .then(r => { if (r.ok) setShare({ on: false, id: pend.id }); }).catch(() => {});
   }
-  const sex = S.profile.sex, age = S.profile.ageGroup || null;
+  const sex = S.profile.sex, age = AGE.ageGroupNow(S);
   const vals = myValues();
   const stats = Object.keys(NORMS).map(k => STATS.statFor(k, vals[k], sex, age, { bwKg: vals.bwKg })).filter(Boolean);
   const shown = stats.filter(x => x.show).sort((x, y) => y.p - x.p || (x.median ? 1 : -1));
@@ -2179,6 +2184,10 @@ function viewMe() {
     <section class="card"><h3>🏅 Sporting background</h3>
       <p class="hint">${S.background?.length ? h(BG.describe(S.background).join(' · ')) : 'Trained seriously in a sport before? Add it: former athletes get their technique credited and a comeback fast-track.'}</p>
       <button class="btn" data-act="edit-bg">${S.background?.length ? 'Edit' : 'Add my background'}</button>
+    </section>
+    <section class="card"><h3>🎂 Birthday</h3>
+      <form id="bday-form" class="row wrap"><input type="date" name="bday" min="1925-01-01" max="${E.dayKey(now())}" value="${h(S.profile.birthDate || '')}"><button class="btn small" type="submit">Save</button></form>
+      <p class="hint">${S.profile.birthDate ? `You're ${AGE.ageOf(S)}. Your age updates itself on your birthday: teen rules, nutrition and age-group stats follow it.` : `Add it so your age stays up to date by itself${AGE.ageOf(S) != null ? ` (we have about ${AGE.ageOf(S)} from your answers)` : ''}.`}</p>
     </section>
     <section class="card"><h3>Race category</h3>
       <div class="seg">${[['m', "Men's"], ['f', "Women's"], ['x', 'Prefer not']].map(([k, l]) => `<button class="${(S.profile.sex || '') === k ? 'on' : ''}" data-act="set-sex" data-v="${k}">${l}</button>`).join('')}</div>
@@ -2322,7 +2331,7 @@ const MODALS = {
       <p class="q">Your goal</p>${radio('nGoal', GOALS_N, g.type || 'perform')}
       <div class="nutri-pace" ${['cut', 'gain'].includes(g.type) ? '' : 'hidden'}><p class="q">Pace</p>${radio('nPace', [['slow', 'Slowly (keeps the most muscle and performance)'], ['steady', 'Steadily']], g.pace || 'slow')}
         <div class="row wrap">${num('nGoalKg', 'Goal weight (optional)', g.weight, 'kg', '0.1')}<label class="field"><span>By (optional)</span><input type="date" name="nGoalDate" value="${g.date || ''}"></label></div></div>
-      <div class="row wrap">${num('nHeight', 'Height', n.heightCm, 'cm')}${num('nAge', 'Age', n.age, 'years')}${num('nKg', 'Weight', p.kg ? Math.round(p.kg * 10) / 10 : '', 'kg', '0.1')}</div>
+      <div class="row wrap">${num('nHeight', 'Height', n.heightCm, 'cm')}${S.profile.birthDate ? '' : num('nAge', 'Age', n.age, 'years')}${num('nKg', 'Weight', p.kg ? Math.round(p.kg * 10) / 10 : '', 'kg', '0.1')}</div>
       <p class="q">Outside training, your day is…</p>${radio('nLife', LIFE, n.life || 'sit')}
       ${num('nBf', 'Body fat % (optional, makes it more accurate)', p.bodyFat || '', '%', '0.1')}
       <p class="hint">Calories follow your training each day. Nothing here changes your plan.</p>
@@ -2450,7 +2459,7 @@ const MODALS = {
     return `<form id="bests-form"><h2>📊 My bests</h2>
       <p class="why">💡 Recent bests give the fairest comparison. Leave anything blank you haven't done.</p>
       <p class="q">Compare me with</p>${radio('bSex', [['m', 'Men'], ['f', 'Women'], ['x', 'Everyone']], S.profile.sex || 'x')}
-      <label class="field"><span>Age group (optional)</span>${select('bAge', [['', 'Prefer not to say'], ...STATS.AGE_GROUPS], S.profile.ageGroup || '')}</label>
+      ${S.profile.birthDate ? `<p class="hint">Age group: <strong>${h(AGE.ageGroupNow(S) || 'under 18')}</strong> (from your birthday, moves up by itself)</p>` : `<label class="field"><span>Age group (optional)</span>${select('bAge', [['', 'Prefer not to say'], ...STATS.AGE_GROUPS], S.profile.ageGroup || '')}</label>`}
       ${t('b5k', '5K time', b.run5k || a.best5k, 'e.g. 24:30')}${t('b10k', '10K time', b.run10k || a.best10k, 'e.g. 52:10')}
       ${t('bHalf', 'Half marathon', b.half, 'e.g. 1:55:00')}${t('bMar', 'Marathon', b.marathon, 'e.g. 4:10:00')}
       ${t('bHyrox', 'Hyrox (solo) time', b.hyrox, 'e.g. 1:25:00')}
@@ -2739,7 +2748,7 @@ const actions = {
     if (+ui.ob.a.age > 0 && +ui.ob.a.age < 13) { // Family mode
       const a = ui.ob.a, st = E.newState(now());
       st.placedAt = now(); st.history = (S.history || []).filter(h => h.kind === 'play'); st.xp = st.history.length * 10; // stickers stay
-      st.profile = { ...st.profile, name: String(a.name || '').trim().slice(0, 40), kid: true, birthYear: new Date(now()).getFullYear() - +a.age, likes: KID_LIKES.map(([k]) => k).filter(k => a[`kl_${k}`]), tracks: ['run'], view: 'simple' };
+      st.profile = { ...st.profile, name: String(a.name || '').trim().slice(0, 40), kid: true, birthDate: a.birthDate || null, birthYear: new Date(now()).getFullYear() - +a.age, likes: KID_LIKES.map(([k]) => k).filter(k => a[`kl_${k}`]), tracks: ['run'], view: 'simple' };
       st.profile.days = a.days || [0, 1, 2, 3, 4, 5, 6];
       ui.retake = false; ui.ob = { step: 0, a: {} }; ui.tab = 'today';
       commit(st); confetti(); return;
@@ -2755,7 +2764,7 @@ const actions = {
     state.profile.primary = tracks.includes(a.primary) ? a.primary : tracks[0];
     state.profile.view = a.view === 'full' ? 'full' : 'simple';
     if (+ui.ob.a.age >= 13 && +ui.ob.a.age < 18) { const cap = +ui.ob.a.age < 16 ? 8 : 10; if (state.run.level > cap) { state.run.level = cap; state.run.done = {}; } }
-    if (+ui.ob.a.age > 0) { state.profile.birthYear = new Date(now()).getFullYear() - +ui.ob.a.age; state.profile.kid = false; state.profile.ageGroup = state.profile.ageGroup || AGE.ageGroupOf(+ui.ob.a.age); state.nutrition = { ...(state.nutrition || {}), age: state.nutrition?.age || +ui.ob.a.age }; }
+    if (+ui.ob.a.age > 0) { state.profile.birthYear = new Date(now()).getFullYear() - +ui.ob.a.age; state.profile.birthDate = ui.ob.a.birthDate || state.profile.birthDate || null; state.profile.kid = false; state.profile.ageGroup = state.profile.ageGroup || AGE.ageGroupOf(+ui.ob.a.age); state.nutrition = { ...(state.nutrition || {}), age: state.nutrition?.age || +ui.ob.a.age }; }
     state.tri = tracks.includes('tri') ? TRI.placeTri(state, a) : state.tri || null;
     state.gym = tracks.includes('gym') ? GYM.placeGym(state, a, now()) : state.gym || null;
     // Gym only: no running, so no running Rebuild Track (pain is handled by swapping exercises).
@@ -2766,7 +2775,7 @@ const actions = {
     state.profile.dream = { text: String(a.dream || '').trim().slice(0, 160), event: String(a.dreamEvent || ai?.event || '').trim().slice(0, 60),
       date: a.dreamDate || (/^\d{4}-\d{2}-\d{2}$/.test(ai?.date || '') ? ai.date : ''), summary: ai?.summary || '',
       target: (ai && targetFromAI(ai)) || dreamTarget(`${a.dream || ''} ${a.dreamEvent || ''}`) };
-    ui.retake = false; ui.ob = { step: 0, a: {} }; ui.tab = 'today';
+    ui.retake = false; ui.teenUp = false; ui.ob = { step: 0, a: {} }; ui.tab = 'today';
     if (fresh) {
       // Every map starts again at START; each plays when the athlete taps ▶ on it.
       ui.tab = 'map'; ui.avatarAt = 0; ui.mapPopup = null; ui.mapScroll = true; ui.frameTop = null;
@@ -3307,6 +3316,7 @@ document.addEventListener('change', async e => {
   if (el.closest('#bg-form') && el.name?.startsWith('bg_')) { ui.modal.a = { ...ui.modal.a, ...Object.fromEntries(new FormData(el.form).entries()), [el.name]: el.checked }; BG.SPORTS.forEach(([k]) => { if (!el.form.querySelector(`[name=bg_${k}]`)?.checked) delete ui.modal.a[`bg_${k}`]; }); renderModal(); return; }
   if (el.closest('#ob-form, #other-form') && /^ot_/.test(el.name || '')) { if (el.closest('#other-form')) { collectOther(); renderModal(); } else { collectOb(); renderOnboarding(); } return; }
   if (el.closest('#gym-add-form') && ['gEquip', 'liftUnit'].includes(el.name)) { ui.modal.a = { ...ui.modal.a, ...Object.fromEntries(new FormData(el.form).entries()) }; renderModal(); return; }
+  if (el.closest('#ob-form') && el.name === 'birthDate') { collectOb(); renderOnboarding(); return; }
   if (el.closest('#ob-form') && (el.name?.startsWith('bg_') || el.name?.startsWith('tr_') || el.name?.startsWith('hx_') || /Mode$/.test(el.name || '') || el.name === 'swimDist' || el.name === 'bikeAccess' || el.name === 'liftMode' || el.name === 'liftUnit' || el.name === 'gEquip')) { collectOb(); renderOnboarding(); return; }
   if (el.closest('#tri-form') && (el.name === 'swimDist' || el.name === 'bikeAccess')) { ui.modal.a = { ...ui.modal.a, ...readTriForm(el.closest('form')) }; renderModal(); return; }
   if (el.dataset.act === 'speak-toggle') ui.speakReplies = el.checked;
@@ -3342,7 +3352,7 @@ document.addEventListener('submit', e => {
   if (f.id === 'ob-form') {
     collectOb();
     if (f.querySelector('[name^=tr_]') && !(ui.ob.a.tracks || []).length) return toast('Pick at least one thing you train for.');
-    if (f.age && !(+f.age.value >= 4 && +f.age.value <= 99)) { f.age.focus(); return toast('Add your age: it keeps the plan safe for kids and teens.'); }
+    if (f.birthDate && !(+ui.ob.a.age >= 4 && +ui.ob.a.age <= 100)) { f.birthDate.focus(); return toast('Add your birthday: it keeps the plan safe for kids and teens.'); }
     if (f.guardian && !f.guardian.checked) return toast('A parent or guardian needs to tick the box to set up Family mode.');
     if (f.querySelector('[name^=d_]') && (ui.ob.a.days || K.defaultDays(3)).length < 2) return toast('Pick at least 2 training days.');
     if (f.bodyweight && (ui.ob.a.liftUnit || 'kg') === 'kg' && +f.bodyweight.value > 130 && !ui.ob.lbWarned) { ui.ob.lbWarned = true; f.bodyweight.focus(); return toast('Bodyweight over 130 kg: did you mean lb? Switch to lb above, or tap Next again to keep kg.'); }
@@ -3362,6 +3372,13 @@ document.addEventListener('submit', e => {
     commit(E.applyBackground(S, backgroundOf(a)));
     toast(BG.isFormerAthlete(S) ? 'Background saved: technique credited, comeback fast-track on ⚡' : 'Background saved.');
     return;
+  }
+  if (f.id === 'bday-form') {
+    const v = f.bday.value, y = AGE.ageFromDate(v, t);
+    if (!(y >= 4 && y <= 100)) return toast('Pick your birthday (date of birth).');
+    if (y < 13 && !AGE.isKid(S)) return toast('Under 13 uses Family mode: set it up again with a grown-up via Retake assessment.');
+    S.profile.birthDate = v; S.profile.birthYear = new Date(t).getFullYear() - y;
+    commit(S); toast(`Saved: you're ${y} 🎂`); return;
   }
   if (f.id === 'gym-add-form' || f.id === 'gym-form') {
     const fd = Object.fromEntries(new FormData(f).entries());
@@ -3441,7 +3458,7 @@ document.addEventListener('submit', e => {
   }
   if (f.id === 'nutri-form') {
     const v = n => f[n]?.value?.trim(), num = n => (v(n) ? +v(n) : null);
-    const type = f.querySelector('[name=nGoal]:checked')?.value || 'perform', kg = num('nKg'), heightCm = num('nHeight'), age = num('nAge');
+    const type = f.querySelector('[name=nGoal]:checked')?.value || 'perform', kg = num('nKg'), heightCm = num('nHeight'), age = S.profile.birthDate ? AGE.ageOf(S) : num('nAge');
     if (!(heightCm > 120 && heightCm < 230)) return toast('Add your height in cm, e.g. 175.');
     if (!(age > 0)) return toast('Add your age.');
     if (!(age >= 14 && age <= 90)) return toast('Nutrition targets are for ages 14 to 90.');
@@ -3501,7 +3518,7 @@ document.addEventListener('submit', e => {
     if (bad) return toast('Use mm:ss or h:mm:ss for times, for example 24:30 or 1:55:00.');
     S.bests = { ...fields, hyroxDiv: f.querySelector('[name=bHyDiv]:checked')?.value || 'open', ftp: +f.bFtp.value || null };
     S.profile.sex = f.querySelector('[name=bSex]:checked')?.value || S.profile.sex;
-    S.profile.ageGroup = f.bAge.value || null;
+    if (f.bAge) S.profile.ageGroup = f.bAge.value || null;
     ui.modal = null; commit(S); toast('Bests saved 📊');
     return;
   }
