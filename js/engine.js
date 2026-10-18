@@ -9,6 +9,7 @@ import { TRI_WORLDS } from './data/tri.js';
 import { HYBRID_WORLDS } from './data/hybrid.js';
 import * as AGE from './age.js';
 import * as GYM from './gym.js';
+import * as CY from './cycle.js';
 
 export const DAY = 864e5;
 export const XP = { run: 30, swim: 30, bike: 30, lift: 30, engine: 30, maint: 25, prep: 20, slot: 20, rest: 10, gate: 100, proveit: 30, painCheck: 5, daily: 5, restDay: 10, weekBonus: 50 };
@@ -909,6 +910,8 @@ export function coachContext(s, now) {
     : s.run.level <= 3 ? 'a beginner: be encouraging, normalise walk breaks and slow pace' : 'an experienced runner: be encouraging and direct';
   lines.push(GYM.gymOnly(s) ? `Tone: this is a gym-goer (${{ none: 'new to the gym', lt1: 'under 1 year of lifting', y1_3: '1-3 years of lifting', y3: '3+ years of lifting' }[s.gym.exp] || 'lifter'}): be encouraging and practical.` : `Tone: this runner is ${tone}.`);
   if (GYM.hasGym(s)) lines.push(...gymContext(s, now));
+  const cy = s.profile?.sex === 'f' ? CY.coachLine(s.cycle, dayKey(now)) : null; // only if she chose to share it
+  if (cy) lines.push(cy);
   if (s.mode) lines.push(s.mode.type === 'sick' ? `SICK MODE (${s.mode.where === 'above' ? 'symptoms above the neck: easy movement only' : 'below the neck or fever: full rest, no training'}).` : 'BUSY MODE: only key sessions this week.');
   if (s.profile.tracks?.length) lines.push(`Trains for: ${s.profile.tracks.join(', ')}${s.profile.primary ? `; main focus ${s.profile.primary}` : ''}.`);
   if (TRI.hasTri(s)) {

@@ -30,6 +30,7 @@ import * as TG from './target.js';
 import * as NU from './nutrition.js';
 import * as SPL from './splits.js';
 import * as AGE from './age.js';
+import * as CY from './cycle.js';
 import * as GYM from './gym.js';
 import { renderGymMap, NODES as GYM_NODES, moveGym, hereIndex as gymHere, pointOf as gymPoint, H as GYM_H } from './gymmap.js';
 import { GYM_WORLDS, GYM_STAGES, GYM_SPLITS, PAIRS } from './data/gym.js';
@@ -149,6 +150,31 @@ function dobOf(f) {
   const last = new Date(y, m, 0).getDate();
   return `${y}-${String(m).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
 }
+// ---------- cycle (women 13+, optional, stays on this phone) ----------
+const CY_PRIVATE = '🔒 This stays on your phone. It\'s never sent to us, to Strava or to anyone else.';
+const dayLabel = (ymd, today) => { const d = CY.daysBetween(ymd, today); return d === 0 ? 'Today' : d === 1 ? 'Yesterday' : new Date(`${ymd}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }); };
+// The last `days` days as a drop-down (no typing dates on a phone).
+const daysBack = (name, days, cur, today, empty) => `<select name="${name}">${empty ? `<option value="">${h(empty)}</option>` : ''}${Array.from({ length: days }, (_, i) => CY.addDays(today, -i)).map(d => `<option value="${d}" ${cur === d ? 'selected' : ''}>${h(dayLabel(d, today))}</option>`).join('')}</select>`;
+function cycleFields(a) {
+  const today = ymdNow(), mode = a.cyMode || '';
+  return `<p class="q">Would you like the app to follow your cycle?</p>
+    ${radio('cyMode', [['track', 'Yes, track my cycle'], ['hormonal', 'I use hormonal birth control (pill, implant, hormonal coil…)'], ['off', 'No thanks / prefer not to say']], mode)}
+    ${mode === 'track' ? `<label class="field"><span>First day of your last period</span>${daysBack('cyStart', 60, a.cyStart, today, "I don't remember")}</label>
+      <label class="field"><span>Your cycle usually lasts</span>${select('cyLen', [['28', "I don't know (28 days)"], ...Array.from({ length: 25 }, (_, i) => [String(21 + i), `${21 + i} days`])], String(a.cyLen || 28))}</label>
+      <label class="field"><span>Your period usually lasts</span>${select('cyPl', Array.from({ length: 8 }, (_, i) => [String(i + 2), `${i + 2} days`]), String(a.cyPl || 5))}</label>
+      <p class="hint">🌸 On period days your sessions are a bit lighter (you can go full any day). Each phase brings a training and food tip, and when your period is due the app asks once a day if it started.</p>`
+    : mode === 'hormonal' ? '<p class="hint">Hormonal birth control evens out the phases, so there are none to follow. You still get a "Feeling rough today?" button on every session for a lighter version.</p>' : ''}
+    <p class="hint">${CY_PRIVATE}</p>`;
+}
+// The cycle from those answers, keeping what was logged before.
+function cycleFrom(a, old) {
+  if (!['track', 'hormonal'].includes(a.cyMode)) return null;
+  let c = { ...(old || {}), mode: a.cyMode, len: +a.cyLen || old?.len || 28, periodLen: +a.cyPl || old?.periodLen || 5, starts: old?.starts || [], day: old?.day || {} };
+  if (a.cyMode === 'track' && /^\d{4}-\d{2}-\d{2}$/.test(a.cyStart || '')) c = CY.logStart(c, a.cyStart);
+  return c;
+}
+const cycleToAnswers = c => (c ? { cyMode: c.mode, cyStart: CY.lastStart(c) || '', cyLen: c.len, cyPl: c.periodLen } : { cyMode: 'off' });
+const CY_KEYS = ['cyMode', 'cyStart', 'cyLen', 'cyPl'];
 const num = (name, label, cur, unit) => `<label class="field"><span>${h(label)}</span><span class="with-unit"><input type="number" inputmode="decimal" min="0" step="any" name="${name}" value="${cur ?? ''}"><em>${h(unit)}</em></span></label>`;
 
 // "Other training" questions (also used in Me to edit them later). Names: ot_<kind> (do it?),
@@ -229,6 +255,7 @@ function obStepsAdult(a) {
     steps.push({ title: 'Quick body check', why: 'Strong landings and ankles come before speed work.', body: `<p class="hint">Tick what you can do today. Not sure? Try it now: each has a demo link. Leave one unticked only if you can't do it: we'll start your Prep just before it.</p>
       <div class="choices">${SELF_TEST.map(([k, l, ex]) => `${check(k, `${h(l)} <a href="${videoLink(ex)}" target="_blank" rel="noopener">demo</a>`, a.selfTest?.[k])}`).join('')}</div>` });
   }
+  if (a.sex === 'f' && !(+a.age > 0 && +a.age < 13)) steps.push({ title: 'Your cycle (optional)', why: 'Some days feel harder than others. Your plan can go a bit lighter on period days, and your food tips follow your phase.', body: cycleFields(a) });
   steps.push({ title: 'How much do you want to see?', why: 'Some people like every detail, some just want to know what to do next.', body:
     radio('view', [['simple', 'Keep it simple: just tell me what to do next'], ['full', 'Show me everything: my week, levels and details']], a.view || 'simple') + '<p class="hint">You can switch any time at the top of Today.</p>' });
   steps.push({ title: 'Your starting point', result: true });
@@ -724,10 +751,22 @@ function queueModals() {
   if (S.mode?.type === 'busy' && t - S.mode.since > 7 * E.DAY) { S = E.endMode(S, t).state; store.save(S); setTimeout(() => toast('🧳 Busy week over: your normal plan is back.'), 800); }
   if (!S.mode && GYM.hasRunning(S) && E.returnCheck(S, t).needed && !ui.dismissed.has('return')) ui.modal = { type: 'return', step: 0 };
   else if (E.pendingChecks(S, t).length && !ui.dismissed.has('morning')) ui.modal = { type: 'morning' };
+  // Period due: asks once a day (the first time the app opens) until she answers or closes it.
+  else if (CY.canTrack(S) && CY.shouldAsk(S.cycle, ymdNow())) { S.cycle = CY.markAsked(S.cycle, ymdNow()); store.save(S); ui.modal = { type: 'cycleAsk' }; }
+}
+// Today's cycle line: phase, its tip and the lighter / full switch (and a gentle health note if needed).
+function cycleBanner() {
+  const c = S.cycle, today = ymdNow();
+  if (!CY.canTrack(S) || !CY.on(c)) return '';
+  const light = CY.lighter(c, today), ph = CY.phaseOf(c, today), P = ph && CY.PHASES[ph];
+  const sw = light ? '<button class="link" data-act="cy-day" data-v="full">Feeling good? Full sessions today</button>' : '<button class="link" data-act="cy-day" data-v="light">Feeling rough today? Go lighter</button>';
+  const late = CY.lateNote(c, today, AGE.isTeen(S));
+  const due = ph === 'late' ? ' <button class="link" data-act="cy-started">It started</button>' : '';
+  return `<div class="banner cycle">${P ? `${P.icon} <strong>Day ${CY.cycleDay(c, today)} · ${h(P.name)}.</strong> ${h(light && ph !== 'period' ? 'Sessions are a bit lighter today.' : !light && ph === 'period' ? 'Full sessions today, your call. Light movement often eases cramps.' : P.tip)}` : light ? '🌸 <strong>Lighter sessions today.</strong>' : '🌸'} ${due} ${sw}</div>${late ? `<div class="banner ${late.level}">🩺 ${h(late.text)}</div>` : ''}`;
 }
 
 function banners() {
-  const out = [];
+  const out = [cycleBanner()];
   if (TRI.hasTri(S) && S.tri.learnToSwim && S.tri.swim.stage === 0) out.push('<div class="banner info"><strong>🏊 Learning to swim?</strong> Lessons with a coach are the fastest, safest start. Never swim alone; choose a lifeguarded pool.</div>');
   if (S.mode?.type === 'sick') out.push(`<div class="banner warn"><strong>🤒 Sick mode.</strong> ${S.mode.where === 'above' ? 'Only easy movement, and only if you feel like it.' : 'Full rest: no training.'} Your streak is frozen, nothing is lost. <button class="link" data-act="mode-end">I'm better</button></div>`);
   if (S.mode?.type === 'busy') out.push(`<div class="banner info"><strong>🧳 Busy mode.</strong> Only Key sessions this week; short versions count. <button class="link" data-act="mode-end">Back to normal</button></div>`);
@@ -786,6 +825,8 @@ function gymExHtml(st) {
         <div class="gl-row">${kgBox(l.id)}<label class="gl-r"><input type="number" inputmode="numeric" name="gr_${l.id}_0" min="0" max="50" placeholder="reps"></label></div>${how(l.id)}</li>`; }).join('')
       + '<p class="hint">Warm up with lighter sets first. Pass or not, the next block starts after the test. <button type="button" class="link small" data-act="gym-skip-test">Not testing this time? Skip it</button></p>';
   }
+  const light = st.type === 'lift' && CY.canTrack(S) && CY.lighter(S.cycle, ymdNow());
+  if (light) st = { ...st, gym: CY.lightGym(st.gym), finish: CY.lightFinish(st.finish) };
   const warm = st.warm ? `<li class="ex cardio"><div><strong>🔥 ${h(st.warm)}</strong></div></li>` : '';
   const fin = st.finish ? `<li class="ex cardio"><div><strong>❤️ ${h(st.finish.text)}</strong></div><p class="hint">For your heart and fitness: lifting alone doesn't cover it. Easy cardio after the weights barely touches your gains.</p></li>` : '';
   return warm + (st.gym || []).map(x => {
@@ -794,6 +835,13 @@ function gymExHtml(st) {
       <p class="hint">${x.reps.includes('s') || x.reps.includes('side') ? '' : `Leave ${x.rir} in the tank · `}rest ${h(x.rest)}${sug?.kg ? ` · <strong>try ${sug.kg} kg</strong>` : ''}${sug ? ` <em>${h(sug.why)}</em>` : ''}</p>
       <div class="gl-row">${kgBox(x.id, sug?.kg)}${Array.from({ length: x.sets }, (_, i) => `<label class="gl-r"><input type="number" inputmode="numeric" name="gr_${x.id}_${i}" min="0" max="100" placeholder="set ${i + 1}"></label>`).join('')}</div>${how(x.id)}</li>`;
   }).join('') + fin + `<p class="hint">${bw ? 'Log the reps you did in each set. Too easy at the top of the range? Make it harder: slower, a pause, or the harder version.' : 'Log the weight and the reps you did in each set: your next weights come from it.'} Skip the boxes if you just want to tick it off.</p>`;
+}
+// On a lighter day: what changes in this session, and a switch back to the full version.
+function cycleStepNote(st, track) {
+  if (!CY.canTrack(S) || !CY.on(S.cycle) || st.type === 'rest') return '';
+  if (!CY.lighter(S.cycle, ymdNow())) return '<p class="hint">🌸 Feeling rough today (cramps, PMS, low energy)? <button type="button" class="link" data-act="cy-day" data-v="light">Lighter version</button></p>';
+  const note = track === 'gym' && st.type === 'lift' ? 'One set fewer on each exercise below and one more rep in the tank. Same weights: less work, not a step back.' : CY.lightNote(st, track);
+  return `<div class="banner cycle">🌸 <strong>Lighter today.</strong> ${h(note)} It counts as finished. <button type="button" class="link" data-act="cy-day" data-v="full">I feel good: full session</button></div>`;
 }
 function exHtml(st) {
   return (st.ex || []).map(id => EXERCISES[id] && `<li class="ex">
@@ -2051,11 +2099,14 @@ function nutriToday() {
   const raceLoad = ph && (ph.d === 1 || ph.d === 2) && (expected || 0) > 90 ? 9 : 0;
   const reds = S.nutrition?.reds?.flags?.length > 0 && now() - S.nutrition.reds.ts < 60 * E.DAY;
   const goal = nutriGoal(), tg = NU.targets(p, day, goal, { raceLoad, reds });
+  // Luteal phase: a little more energy (as carbs). Only when she tracks her cycle.
+  const cyPhase = CY.canTrack(S) ? CY.phaseOf(S.cycle, ymdNow()) : null, extra = CY.extraKcal(cyPhase);
+  if (extra) { tg.kcal += extra; tg.range = tg.range.map(v => v + extra); tg.carbs += Math.round(extra / 4); }
   const own = S.nutrition?.goal || { type: 'maintain' };
   const tired = S.history.filter(h => h.ts > now() - 3 * E.DAY && (h.pain >= 3 || h.kind === 'attempt')).length > 0;
   const list = NU.checks({ goal: own.type === goal.type ? goal : own, phase: ph?.id, rebuild: S.rebuild?.active, sick: S.mode?.type === 'sick', spike: TG.loadSpike(S.history, now()), tired, t: tg, load: day.load,
     goalCheck: tg.held ? null : NU.goalCheck(p, own, now()), reds }).filter(x => !(goal.overridden && x.apply));
-  return { p, day, t: tg, goal, own, list, ph, expected, raceLoad };
+  return { p, day, t: tg, goal, own, list, ph, expected, raceLoad, cyPhase };
 }
 // Short line for the coach: today's targets and anything that clashes.
 function nutritionContext() {
@@ -2101,6 +2152,7 @@ function viewNutrition() {
   const due = !n.reds || now() - n.reds.ts > 30 * E.DAY;
   const reds = `<section class="card"><h3>🩺 Monthly check-in</h3><p class="hint">Four quick questions that catch under-fuelling early (REDs). ${due ? 'Due now.' : `Last done ${new Date(n.reds.ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}.`}</p><button class="btn small ${due ? 'primary' : 'ghost'}" data-act="nutri-reds">${due ? 'Do it now' : 'Do it again'}</button></section>`;
   return `<section class="card nutri-today"><p class="eyebrow">🍽️ Today · ${why}</p>${nums}
+      ${CY.nutriTip(x.cyPhase) ? `<p class="hint">${CY.PHASES[x.cyPhase].icon} ${h(CY.nutriTip(x.cyPhase))}</p>` : ''}
       ${goalLine}${t.raised && !hide ? '<p class="hint">Calories nudged up so fat stays at a healthy minimum.</p>' : ''}
       ${day.sessions.filter(se => se.met).length ? `<p class="hint">Counted: ${day.sessions.filter(se => se.met).map(se => h(se.title)).join(', ')}. Log other activities on Today.</p>` : ''}
       ${teen ? '<p class="hint">🌱 Under 18 we show portions, not calories: growing bodies need fuel, not counting.</p>' : `<label class="switch-row small"><input type="checkbox" data-act="nutri-hide" ${hide ? 'checked' : ''}> <span>Show portions instead of numbers</span></label>`}</section>
@@ -2252,6 +2304,18 @@ function viewStats() {
     </details>`;
 }
 
+function cycleCard() {
+  const c = S.cycle, today = ymdNow();
+  if (!CY.on(c)) return `<section class="card"><h3>🌸 Cycle <span class="hint">optional</span></h3><p class="hint">Lighter sessions on period days, training and food tips for each phase. ${CY_PRIVATE}</p><button class="btn" data-act="cy-edit">Track my cycle</button></section>`;
+  const ph = CY.phaseOf(c, today), exp = CY.expected(c);
+  return `<section class="card"><h3>🌸 Cycle</h3>
+    <p>${c.mode === 'hormonal' ? 'Hormonal birth control: no phases to follow. Every session has a "Feeling rough today?" lighter version.'
+      : ph ? `Day ${CY.cycleDay(c, today)} · ${CY.PHASES[ph].icon} ${h(CY.PHASES[ph].name)}${exp ? ` · next period around <strong>${h(dateLong(exp))}</strong>` : ''}` : `${exp && c.assumed ? `Next period around <strong>${h(dateLong(exp))}</strong>. ` : ''}Log the day your period starts and the app follows from there.`}</p>
+    ${c.mode === 'track' ? `<p class="hint">Cycle ${CY.cycleLen(c)} days${(c.starts || []).length >= 2 ? ' (your average)' : ''} · period ${c.periodLen} days · ${(c.starts || []).length} logged</p>` : ''}
+    <label class="switch-row small"><input type="checkbox" data-act="cy-coach" ${c.coach ? 'checked' : ''}> <span>Let the AI coach know my phase (it's sent with your coach questions)</span></label>
+    <p class="hint">${CY_PRIVATE}</p>
+    <div class="row wrap">${c.mode === 'track' ? '<button class="btn small primary" data-act="cy-started">My period started</button>' : ''}<button class="btn small" data-act="cy-edit">Edit</button><button class="btn ghost small" data-act="cy-delete">Delete my cycle data</button></div></section>`;
+}
 function viewMe() {
   const hist = S.history.filter(x => x.kind === 'session' || x.kind === 'event' || x.kind === 'bonus' || x.kind === 'challenge').slice(-15).reverse();
   return `
@@ -2272,6 +2336,7 @@ function viewMe() {
       <p class="hint">${S.background?.length ? h(BG.describe(S.background).join(' · ')) : 'Trained seriously in a sport before? Add it: former athletes get their technique credited and a comeback fast-track.'}</p>
       <button class="btn" data-act="edit-bg">${S.background?.length ? 'Edit' : 'Add my background'}</button>
     </section>
+    ${CY.canTrack(S) && !AGE.isKid(S) ? cycleCard() : ''}
     <section class="card"><h3>🎂 Birthday</h3>
       <form id="bday-form" class="row wrap">${dobField(S.profile.birthDate)}<button class="btn small" type="submit">Save</button></form>
       <p class="hint">${S.profile.birthDate ? `You're ${AGE.ageOf(S)}. Your age updates itself on your birthday: teen rules, nutrition and age-group stats follow it.` : `Add it so your age stays up to date by itself${AGE.ageOf(S) != null ? ` (we have about ${AGE.ageOf(S)} from your answers)` : ''}.`}</p>
@@ -2756,6 +2821,7 @@ const MODALS = {
       <p class="eyebrow">${trackTitle(m.track)} · ${TYPE_LABEL[st.type]}</p>
       <h2>${h(st.title)}</h2>
       ${st.detail ? `<p>${h(st.detail)}</p>` : ''}
+      ${cycleStepNote(st, m.track)}
       ${exs ? `<ul class="exercises${m.track === 'gym' ? ' gym-ex' : ''}">${exs}</ul>` : ''}
       ${already}${m.track === 'gym' ? '' : gateNote}${passQ}${raceQ}
       ${logQ && simple ? `<details class="log-more" ${already ? 'open' : ''}><summary>Not today, not all of it, or want to add notes? Tap here</summary>${logQ}</details>` : logQ}
@@ -2771,6 +2837,22 @@ const MODALS = {
       <p class="hint">If you tick any, running pauses until a physio or doctor clears you. This app is not medical advice.</p>
       <div class="row end"><button type="button" class="btn ghost" data-act="close">Not now</button><button class="btn primary" type="submit">Start Rebuild Track</button></div>
     </form>`;
+  },
+  cycleAsk(m) {
+    const today = ymdNow(), exp = CY.expected(S.cycle);
+    if (m.yes) return `<form id="cy-start-form"><h2>🌸 When did it start?</h2>
+      <label class="field"><span>First day</span>${daysBack('cyDay', 14, today, today)}</label>
+      <p class="hint">${CY_PRIVATE}</p>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`;
+    return `<button type="button" class="sheet-x" data-act="cy-skip" aria-label="Close">✕</button><h2>🌸 Did your period start?</h2>
+      <p>It was due around <strong>${h(dateLong(exp))}</strong>. Logging it keeps your phases right: period days get lighter sessions.</p>
+      <p class="hint">${CY_PRIVATE}</p>
+      <div class="cy-answers"><button class="btn primary" data-act="cy-yes">Yes</button><button class="btn" data-act="close">Not yet</button><button class="btn ghost" data-act="cy-skip">Prefer not to say</button></div>
+      <p class="hint">Not yet? We'll ask again tomorrow.</p>`;
+  },
+  cycleEdit(m) {
+    return `<form id="cycle-form"><h2>🌸 Your cycle</h2>${cycleFields(m.a)}
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`;
   },
   morning() {
     const due = E.pendingChecks(S, now());
@@ -2869,6 +2951,8 @@ const actions = {
     // Gym only: no running, so no running Rebuild Track (pain is handled by swapping exercises).
     if (!RUNS(a)) { state.rebuild = { active: false, stage: 0, done: {}, savedRunLevel: null, redFlag: false }; if (state.gym) { state.gym.pain = a.pain !== 'none' ? a.pain : null; state.gym.redFlag = (a.redFlags || []).length > 0; } }
     state.hybrid = tracks.includes('hybrid') ? HYB.refreshHybrid({ ...state, hybrid: HYB.placeHybrid(state, a, now()) }, now(), E.weekKey(now())).hybrid : state.hybrid || null;
+    if (a.sex === 'f' && 'cyMode' in ui.ob.a) state.cycle = cycleFrom(ui.ob.a, S.cycle);
+    if (state.answers) CY_KEYS.forEach(k => delete state.answers[k]); // the cycle lives only in state.cycle
     state = E.applyBackground(state, backgroundOf(ui.ob.a)); // former athletes: technique credited, fast-track on
     const ai = a.dreamAI?.accepted ? a.dreamAI : null;
     state.profile.dream = { text: String(a.dream || '').trim().slice(0, 160), event: String(a.dreamEvent || ai?.event || '').trim().slice(0, 60),
@@ -2900,6 +2984,18 @@ const actions = {
     ui.modal = { type: 'step', track, idx }; renderModal();
   },
   close() { ui.modal = null; render(); },
+  'cy-yes'() { ui.modal = { type: 'cycleAsk', yes: true }; renderModal(); },
+  'cy-started'() { ui.modal = { type: 'cycleAsk', yes: true }; renderModal(); },
+  'cy-skip'() { S.cycle = CY.skipCycle(S.cycle); ui.modal = null; commit(S); toast('OK, we\'ll ask again next cycle.'); },
+  'cy-edit'() { ui.modal = { type: 'cycleEdit', a: S.cycle ? cycleToAnswers(S.cycle) : { cyMode: 'track' } }; renderModal(); },
+  'cy-delete'() { if (!confirm('Delete all your cycle data from this phone?')) return; S.cycle = null; commit(S); toast('Cycle data deleted.'); },
+  'cy-coach'(el) { S.cycle = { ...S.cycle, coach: el.checked }; commit(S); toast(el.checked ? 'The coach will know your phase.' : 'The coach won\'t see your cycle.'); },
+  'cy-day'(el) {
+    const today = ymdNow(), day = Object.fromEntries(Object.entries(S.cycle?.day || {}).filter(([d]) => CY.daysBetween(d, today) < 60));
+    S.cycle = { ...S.cycle, day: { ...day, [today]: el.dataset.v } }; store.save(S);
+    if (ui.modal?.type === 'step') renderModal(); else render();
+    toast(el.dataset.v === 'light' ? '🌸 Lighter sessions today. Look after yourself.' : '💪 Full sessions today.');
+  },
   dismiss(el) { ui.dismissed.add(el.dataset.key); ui.modal = null; render(); },
   order(el) { commit(E.completeOrder(S, +el.dataset.i, now())); toast(`+${E.XP.daily} XP`); },
   rest() {
@@ -3106,7 +3202,7 @@ const actions = {
   },
   'report-pain'() { ui.modal = { type: 'rebuildPrompt' }; renderModal(); },
   export() { store.exportFile(S); },
-  retake() { if (confirm('Retake the assessment? Your XP and badges stay; your level is set again from your new answers.')) { ui.retake = true; ui.ob = { step: 0, a: {} }; render(); } }, // a fresh questionnaire: new answers, new result
+  retake() { if (confirm('Retake the assessment? Your XP and badges stay; your level is set again from your new answers.')) { ui.retake = true; ui.ob = { step: 0, a: S.cycle ? cycleToAnswers(S.cycle) : {} }; render(); } }, // a fresh questionnaire: new answers, new result
   reset() { if (confirm('Delete all progress in this browser? This also disconnects Strava on this phone.')) { const st = stravaState(); if (st.connected && WORKER_URL) fetch(`${WORKER_URL.replace(/\/$/, '')}/strava/disconnect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: st.device }) }).catch(() => {}); localStorage.removeItem(STRAVA_KEY); ui.stravaStatus = null; store.clear(); localStorage.removeItem(CHAT_KEY); localStorage.removeItem(AVATAR_KEY); ui.avatarAt = null; ui.chat = []; S = E.newState(now()); render(); } },
   sound() { sfx.setSound(!sfx.soundOn()); if (sfx.soundOn()) { sfx.unlockAudio(); sfx.pop(); } render(); },
   quick(el) { sendChat(el.dataset.q); },
@@ -3407,6 +3503,7 @@ document.addEventListener('change', async e => {
     else { const km = TG.NEEDS[ui.modal.distance || raceFrom(ui.modal.uid)?.distance]?.km || 1, tm = raceMinutes(el.value, ui.modal.timeMode || 'time', km); if (!tm && el.value.trim()) return toast('Use h:mm:ss or mm:ss, for example 1:59:00 or 5:30.'); ui.modal.goalTime = tm; }
     renderModal(); return;
   }
+  if (el.closest('#cycle-form') && el.name === 'cyMode') { ui.modal.a = { ...ui.modal.a, ...Object.fromEntries(new FormData(el.form).entries()) }; renderModal(); return; }
   if (el.closest('#step-form') && el.name === 'when') {
     const f = el.form;
     const w = f.querySelector('[name=when]:checked')?.value || 'today';
@@ -3474,6 +3571,17 @@ document.addEventListener('submit', e => {
     commit(E.applyBackground(S, backgroundOf(a)));
     toast(BG.isFormerAthlete(S) ? 'Background saved: technique credited, comeback fast-track on ⚡' : 'Background saved.');
     return;
+  }
+  if (f.id === 'cy-start-form') {
+    const d = f.cyDay.value;
+    S.cycle = CY.logStart(S.cycle || { mode: 'track', len: 28, periodLen: 5 }, d); ui.modal = null; commit(S);
+    toast(`🌸 Saved. Lighter sessions for the next ${S.cycle.periodLen} days; switch to full any day.`); return;
+  }
+  if (f.id === 'cycle-form') {
+    const a = Object.fromEntries(new FormData(f).entries());
+    if (!a.cyMode) return toast('Pick one of the three options.');
+    S.cycle = cycleFrom(a, S.cycle); ui.modal = null; commit(S);
+    toast(S.cycle ? '🌸 Saved on this phone.' : 'Cycle tracking is off.'); return;
   }
   if (f.id === 'bday-form') {
     const v = dobOf(f), y = AGE.ageFromDate(v, t);
