@@ -215,8 +215,8 @@ function obStepsAdult(a) {
         <div class="field"><span>Your birthday</span>${dobField(a.birthDate, a)}</div>
         <p class="hint">${+a.age > 0 ? `You're ${+a.age}. ` : ''}Your age keeps itself up to date from this: plans for kids and teens, nutrition and age-group stats follow it. Stays on this device.</p>
         ${+a.age > 0 && +a.age < 13 ? '<p class="hint">👨‍👩‍👧 Under 13: next you\'ll set up <strong>Family mode</strong> together with a grown-up: fun play missions, no training plans.</p>' : +a.age >= 13 && +a.age < 18 ? '<p class="hint">🌱 Under 18: you get <strong>Teen mode</strong>: the full app with a few safety rules for growing bodies.</p>' : ''}
-        <p class="q">Which category do you race in? ${tip("Men's and women's race weights, times and standards differ. 'Prefer not to say' uses the more forgiving standards.", 'About categories')}</p>
-        ${radio('sex', [['m', "Men's"], ['f', "Women's"], ['x', 'Prefer not to say']], a.sex || 'x')}
+        <p class="q">Your gender ${tip("Men and women get different race weights, time standards and lifting targets, and women can follow their cycle. 'Prefer not to say' uses the more forgiving standards.", 'Why we ask')}</p>
+        ${radio('sex', [['m', 'Man'], ['f', 'Woman'], ['x', 'Prefer not to say']], a.sex || 'x')}
         <p class="q">What do you train for? <span class="hint">Pick one or more</span></p>
         <div class="choices">${TRACKS.map(([k, l]) => check(`tr_${k}`, l, (a.tracks || ['run']).includes(k))).join('')}</div>
         ${(a.tracks || []).length > 1 ? `<p class="q">Which one leads your week?</p>${radio('primary', TRACKS.filter(([k]) => a.tracks.includes(k)), a.primary || a.tracks[0])}` : ''}` },
