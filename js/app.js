@@ -1134,6 +1134,8 @@ function raceCard(style = '') {
 // Anonymous counters (no ID, no personal data) that show race organisers how many athletes train
 // for their race. Off with the switch in Me.
 const COUNT_KEY = 'stride-quest:counts';
+const OWNER_KEY = 'stride-quest:ownerLink';
+const ownerLink = () => { try { return localStorage.getItem(OWNER_KEY) === '1'; } catch { return false; } };
 const countsOn = () => { try { return localStorage.getItem(COUNT_KEY) !== 'off'; } catch { return false; } };
 function count(key) {
   if (!countsOn() || !WORKER_URL) return;
@@ -1904,7 +1906,7 @@ function stravaCard() {
       <tr><td>Active (per day)</td><td>–</td><td>${v('app:day', 'week')}</td><td>${v('app:day', 'today')}</td></tr></table>
       <p class="hint">Picked: 🏃 ${v('track:run')} · 🏃🏋️ ${v('track:hybrid')} · 🏊 ${v('track:tri')} · 🏋️ ${v('track:gym')}. "7 days" active = person-days (someone using it 3 days counts 3).</p></div>`; })() : '';
   return `<section class="card strava-card"><h3>🔗 Strava${ss?.admin && ss.pending ? ` <span class="count-badge">${ss.pending}</span>` : ''}</h3>${body}${admin}${use}
-      <p class="powered">Powered by Strava</p>${ss && !ss.admin ? '<p class="hint owner-link"><button class="linkish" data-act="strava-claim">App owner?</button></p>' : ''}</section>`;
+      <p class="powered">Powered by Strava</p>${ss && !ss.admin && ownerLink() ? '<p class="hint owner-link"><button class="linkish" data-act="strava-claim">App owner?</button></p>' : ''}</section>`;
 }
 
 // ---------- floating coach ----------
@@ -3735,6 +3737,7 @@ document.addEventListener('submit', e => {
 
 // A link opened while the app is already open (same tab) only changes the hash.
 window.addEventListener('hashchange', () => {
+  if (location.hash === '#owner') { try { localStorage.setItem(OWNER_KEY, '1'); } catch { /* ignore */ } history.replaceState(null, '', location.pathname + location.search); render(); return; }
   const inc = CH.decodeHash(location.hash);
   if (!inc) return;
   history.replaceState(null, '', location.pathname + location.search);
@@ -3787,6 +3790,8 @@ function renderToasts() {
   $('#toasts').innerHTML = ui.toasts.map(t => `<div class="toast">${h(t.m)}</div>`).join('');
 }
 
+// The owner's private link (…/stride-quest/#owner) shows the "App owner?" button on this device only.
+if (location.hash === '#owner') { try { localStorage.setItem(OWNER_KEY, '1'); } catch { /* ignore */ } history.replaceState(null, '', location.pathname + location.search); }
 stravaReturn();
 render();
 countOnce('app:open'); countDaily('app:day'); // anonymous: how many people opened the app, and use it each day

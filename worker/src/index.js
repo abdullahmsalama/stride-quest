@@ -526,7 +526,10 @@ async function strava(request, env, url, headers, ok) {
     return json({ status: 'pending' }, 200, headers);
   }
   if (url.pathname === '/strava/claim') { // the owner, once, with the code they set as a Worker secret
-    if (!env.ADMIN_CLAIM || String(body.code || '') !== env.ADMIN_CLAIM) return json({ error: 'That code is not right.' }, 403, headers);
+    // Guessing is pointless: the code must be long (16+ characters), and each IP gets 3 tries a minute.
+    if (limited(`claim:${request.headers.get('CF-Connecting-IP') || 'unknown'}`, 3)) return json({ error: 'Too many tries. Wait a minute.' }, 429, headers);
+    if (!env.ADMIN_CLAIM || env.ADMIN_CLAIM.length < 16) return json({ error: 'The owner code on the server must be at least 16 characters.' }, 403, headers);
+    if (String(body.code || '') !== env.ADMIN_CLAIM) return json({ error: 'That code is not right.' }, 403, headers);
     await env.DB.prepare('INSERT INTO strava_admins (device, ts) VALUES (?1, ?2) ON CONFLICT (device) DO NOTHING').bind(body.device, Date.now()).run();
     return json({ admin: true }, 200, headers);
   }
