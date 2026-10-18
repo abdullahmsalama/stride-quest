@@ -2,6 +2,7 @@
 // scenery per world (plates, dumbbells, kettlebells, racks, columns), a flag per stage, a trophy per
 // Test Day, and the lifter where the athlete is now. Pure SVG markup; tap a flag for its details.
 import { GYM_WORLDS, GYM_STAGES } from './data/gym.js';
+import { liftFigure, facing } from './trimap.js';
 
 export const W = 400;
 const STEP = 150;
@@ -11,15 +12,14 @@ export const H = 190 + NODES.length * STEP;
 const XS = [200, 110, 290, 120, 280, 110, 290, 125, 275, 110, 290, 120, 280, 115, 200];
 const POINTS = [{ x: 200, y: H - 60 }, ...NODES.map((_, i) => ({ x: XS[i % XS.length], y: H - 190 - i * STEP }))];
 
-function pathD() {
-  const p = POINTS;
-  let d = `M${p[0].x},${p[0].y}`;
-  for (let i = 0; i < p.length - 1; i++) {
-    const p0 = p[Math.max(0, i - 1)], p1 = p[i], p2 = p[i + 1], p3 = p[Math.min(p.length - 1, i + 2)];
-    d += ` C${p1.x + (p2.x - p0.x) / 6},${p1.y + (p2.y - p0.y) / 6} ${p2.x - (p3.x - p1.x) / 6},${p2.y - (p3.y - p1.y) / 6} ${p2.x},${p2.y}`;
-  }
-  return d;
-}
+// One curve per hop (point i → i+1), so the lifter can walk it segment by segment.
+const SEGS = POINTS.slice(0, -1).map((p1, i) => {
+  const p = POINTS, p0 = p[Math.max(0, i - 1)], p2 = p[i + 1], p3 = p[Math.min(p.length - 1, i + 2)];
+  return ` C${p1.x + (p2.x - p0.x) / 6},${p1.y + (p2.y - p0.y) / 6} ${p2.x - (p3.x - p1.x) / 6},${p2.y - (p3.y - p1.y) / 6} ${p2.x},${p2.y}`;
+});
+const pathD = () => `M${POINTS[0].x},${POINTS[0].y}${SEGS.join('')}`;
+// Node index → point (-1 = the start line).
+export const pointOf = i => POINTS[i + 1];
 const STYLE = [
   { ground: '#cfd8dc', deep: '#b0bec5', deco: ['plate', 'dumbbell', 'box', 'kettlebell'] },
   { ground: '#c5e1a5', deep: '#9ccc65', deco: ['plate', 'pine', 'dumbbell', 'rock'] },
@@ -68,7 +68,10 @@ function statusOf(g, node) {
   if (node.kind === 'stage') return node.n < g.stage ? 'done' : node.n === g.stage ? 'here' : 'locked';
   return g.world > node.world ? 'done' : g.stage === node.n ? 'open' : 'locked';
 }
-export function renderGymMap(s) {
+// Where the athlete is now: the node index of their stage (the last one when everything is done).
+export const hereIndex = s => (s.gym.finished ? NODES.length - 1 : Math.max(0, NODES.findIndex(n => statusOf(s.gym, n) === 'here')));
+// `at`: where the lifter stands (node index, -1 = start): where they were last seen, until the walk plays.
+export function renderGymMap(s, at = hereIndex(s)) {
   const g = s.gym;
   const nodes = NODES.map((node, i) => {
     const p = POINTS[i + 1], st = statusOf(g, node), boss = node.kind === 'test';
@@ -80,14 +83,39 @@ export function renderGymMap(s) {
       <circle r="${boss ? 23 : 19}" fill="${fill}" stroke="#fff" stroke-width="4"/>
       <text y="${boss ? 8 : 6}" text-anchor="middle" font-size="${boss ? 22 : 16}" font-weight="800" fill="#fff">${boss ? '🏆' : st === 'done' ? '✓' : node.n}</text>
       <g transform="translate(${right ? 30 : -30},4)"><text text-anchor="${right ? 'start' : 'end'}" font-size="13" font-weight="700" fill="#263238" paint-order="stroke" stroke="#fff" stroke-width="4">${label}</text></g>
-      ${st === 'here' ? `<text y="-34" text-anchor="middle" font-size="30">🏋️</text>` : ''}</g>`;
+</g>`;
   }).join('');
-  const reached = Math.max(0, NODES.findIndex(n => statusOf(g, n) === 'here'));
-  const sub = pathD();
+  const sub = pathD(), av = pointOf(at);
+  const segs = SEGS.map((c, i) => `<path id="gm-seg-${i}" d="M${POINTS[i].x},${POINTS[i].y}${c}" fill="none" stroke="none"/>`).join('');
   return `<div class="gym-svg card"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Gym map">
     ${scenery()}
     <path d="${sub}" fill="none" stroke="#5d4037" stroke-width="22" stroke-linecap="round" opacity="0.35"/>
     <path d="${sub}" fill="none" stroke="#fff" stroke-width="5" stroke-dasharray="2 12" stroke-linecap="round"/>
     <g transform="translate(${POINTS[0].x},${POINTS[0].y})"><rect x="-44" y="-16" width="88" height="30" rx="8" fill="#263238"/><text y="5" text-anchor="middle" fill="#fff" font-size="13" font-weight="800">START</text></g>
-    ${nodes}</svg></div>`.replace('data-reached', String(reached));
+    ${segs}${nodes}
+    <g id="gym-av" class="lane-ch" transform="translate(${av.x},${av.y - 8}) scale(1.25)">${liftFigure(s.profile.sex)}</g></svg></div>`;
+}
+
+// Walk the lifter from node `from` to node `to` (about 0.8 s a hop), facing the way it goes.
+export function moveGym(from, to, { follow, skip, onDone } = {}) {
+  const el = document.getElementById('gym-av');
+  const segEls = []; for (let i = from + 1; i <= to; i++) { const p = document.getElementById(`gm-seg-${i}`); if (p) segEls.push(p); }
+  if (!el || !segEls.length) { onDone?.(); return; }
+  const lens = segEls.map(p => p.getTotalLength()), total = lens.reduce((a, b) => a + b, 0), dur = Math.min(12000, 600 + segEls.length * 800);
+  const face = el.querySelector('.face'), t0 = performance.now();
+  let hx = 0, hy = -1;
+  el.classList.add('moving');
+  const frame = t => {
+    const k = skip?.() ? 1 : Math.min(1, (t - t0) / dur), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    let d = e * total, i = 0;
+    while (i < lens.length - 1 && d > lens[i]) { d -= lens[i]; i++; }
+    const pt = segEls[i].getPointAtLength(d), ahead = segEls[i].getPointAtLength(Math.min(lens[i], d + 6));
+    el.setAttribute('transform', `translate(${pt.x.toFixed(1)},${(pt.y - 8).toFixed(1)}) scale(1.25)`);
+    const dx = ahead.x - pt.x, dy = ahead.y - pt.y;
+    if (Math.hypot(dx, dy) > 0.5) { hx = hx * 0.8 + dx * 0.2; hy = hy * 0.8 + dy * 0.2; const f = facing('strength', hx, hy); el.classList.toggle('up', f.view === 'up'); face?.setAttribute('transform', f.face); }
+    follow?.(pt);
+    if (k < 1) requestAnimationFrame(frame);
+    else { el.classList.remove('moving', 'up'); face?.removeAttribute('transform'); onDone?.(pt); }
+  };
+  requestAnimationFrame(frame);
 }

@@ -550,3 +550,6 @@ function popupHtml(s, cfg, p) {
 }
 
 export { addToMap };
+
+// The Hybrid lifter, for the Gym map: side view, and seen from behind when walking up the map.
+export const liftFigure = sex => `<g class="face"><g class="v-side">${CHAR.strength(sex)}</g><g class="v-back">${BACK.strength(sex)}</g></g>`;

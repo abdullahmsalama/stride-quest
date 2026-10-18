@@ -920,3 +920,4 @@ header.top { gap: 10px; }
 .gnode { cursor: pointer; }
 .gym-list summary { cursor: pointer; font-weight: 700; }
 .gym-list .gym-map { margin-top: 10px; }
+.gym-svg { position: relative; }

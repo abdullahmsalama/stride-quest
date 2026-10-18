@@ -31,7 +31,7 @@ import * as NU from './nutrition.js';
 import * as SPL from './splits.js';
 import * as AGE from './age.js';
 import * as GYM from './gym.js';
-import { renderGymMap, NODES as GYM_NODES } from './gymmap.js';
+import { renderGymMap, NODES as GYM_NODES, moveGym, hereIndex as gymHere, pointOf as gymPoint, H as GYM_H } from './gymmap.js';
 import { GYM_WORLDS, GYM_STAGES, GYM_SPLITS, PAIRS } from './data/gym.js';
 import { KID_LIKES, MISSIONS, KID_TIPS, missionsFor } from './data/kids.js';
 import { OTHER, EFFORT, otherItems, sessionItem, otherOf, STRAVA_RUN, kindOfStrava, effortOf, stravaMet } from './data/other.js';
@@ -660,7 +660,7 @@ function render() {
   if (ui.tab === 'coach') { const log = $('.chat-log'); if (log) log.scrollTop = log.scrollHeight; }
   if (ui.tab === 'coach' && ui.chatDraft != null) { const inp = document.querySelector('#chat-form [name=msg]'); if (inp) { inp.value = ui.chatDraft; inp.focus(); } ui.chatDraft = null; }
   if (ui.tab === 'map' && ui.mapMode === 'world') afterMapRender();
-  if (ui.tab === 'map' && ui.mapMode === 'gym' && ui.gymScroll !== false) { ui.gymScroll = false; requestAnimationFrame(() => document.getElementById('gym-here')?.scrollIntoView({ block: 'center' })); }
+  if (ui.tab === 'map' && ui.mapMode === 'gym') afterGymRender();
   if (ui.tab === 'map' && (ui.mapMode === 'tri' || ui.mapMode === 'hyb')) afterTriRender();
   fogRevealedToast();
   tourFlag(`tab_${ui.tab}`);
@@ -1294,6 +1294,45 @@ function gymBars() {
     return `<li class="${x.ok ? 'ok' : ''}"><span>${h(x.name)}</span><div class="bar"><div style="width:${pct}%"></div></div><b>${x.have ? Math.round(x.have) : '–'}${need ? `/${Math.round(need)}` : ''}${bw ? '' : ' kg'}</b></li>`; }).join('')}</ul>
     ${!bw && !GYM.bwOf(S) ? '<p class="hint">Add your bodyweight (Nutrition → Log weight) so the standards can be worked out.</p>' : `<p class="hint">${bw ? 'Your best reps' : 'Estimated 1-rep max from your logged sets'} vs this stage's standard.</p>`}`;
 }
+// Where the lifter stood the last time the Gym map was seen (node index), so progress can be walked.
+const GYM_SEEN_KEY = 'stride-quest:gymSeen';
+const gymSeen = () => { try { const v = localStorage.getItem(GYM_SEEN_KEY); return v == null ? null : +v; } catch { return null; } };
+const setGymSeen = v => { try { if (v == null) localStorage.removeItem(GYM_SEEN_KEY); else localStorage.setItem(GYM_SEEN_KEY, String(v)); } catch { /* ignore */ } };
+const gymFollow = (pt, smooth = false) => { const svg = document.querySelector('.gym-svg svg'); if (!svg) return; const r = svg.getBoundingClientRect(); window.scrollTo({ top: Math.max(0, r.top + window.scrollY + (pt.y / GYM_H) * r.height - window.innerHeight * 0.5), behavior: smooth ? 'smooth' : 'auto' }); };
+// After the Gym map is drawn: a play button when there's progress to walk, else scroll to where they are.
+function afterGymRender() {
+  const seen = gymSeen(), here = gymHere(S), wrap = document.querySelector('.gym-svg');
+  if (!wrap || ui.gymWalking) return;
+  if (seen != null && seen >= here) { if (ui.gymScroll !== false) { ui.gymScroll = false; requestAnimationFrame(() => gymFollow(gymPoint(here))); } return; }
+  const from = seen == null ? -1 : seen, p = gymPoint(from);
+  const b = document.createElement('button');
+  b.className = 'play-btn at'; b.dataset.act = 'play-gym'; b.textContent = seen == null ? '▶ Let\'s go!' : '▶ See my progress';
+  b.style.left = `${(Math.min(300, Math.max(100, p.x)) / 400) * 100}%`; b.style.top = `${((p.y - 110) / GYM_H) * 100}%`;
+  wrap.appendChild(b);
+  if (ui.gymScroll !== false) { ui.gymScroll = false; requestAnimationFrame(() => gymFollow(p)); }
+}
+// The lifter walks from where it was last seen to the current stage: footsteps, then a clank and "Light weight, baby!".
+function playGym() {
+  document.querySelector('.play-btn')?.remove();
+  sfx.unlockAudio();
+  const seen = gymSeen(), from = seen == null ? -1 : seen, to = gymHere(S), worldFrom = from < 0 ? -1 : GYM_NODES[from].world;
+  const bar = document.createElement('div');
+  bar.className = 'speedrun lane-skip';
+  bar.innerHTML = `<span class="sr-label">${seen == null ? '▶ YOUR JOURNEY' : '▶ PROGRESS'}</span><span class="sr-level">🏋️ Gym</span><button class="sr-mute" type="button" aria-label="Sound">${sfx.soundOn() ? '🔊' : '🔇'}</button><button class="sr-skip" type="button">Skip ⏭</button>`;
+  let skip = false;
+  bar.querySelector('.sr-skip').onclick = () => { skip = true; };
+  bar.querySelector('.sr-mute').onclick = e => { const on = !sfx.soundOn(); sfx.setSound(on); e.currentTarget.textContent = on ? '🔊' : '🔇'; if (on) sfx.unlockAudio(); };
+  document.body.appendChild(bar);
+  const stop = sfx.moveLoop('strength', { sex: S.profile.sex });
+  moveGym(from, to, { skip: () => skip, follow: pt => gymFollow(pt), onDone: () => {
+    stop(); bar.remove(); setGymSeen(to);
+    const node = GYM_NODES[to], st = GYM.gymStage(S);
+    sfx.arrive('strength'); // clank, then "Light weight, baby!" (or their own shout)
+    toast(`LIGHT WEIGHT, BABY! 💪 ${GYM.gymWorld(S).emoji} Stage ${st.n} · ${st.name}`);
+    if (seen == null) { confetti(); sfx.fanfare(); toast(`You're placed at ${GYM.gymWorld(S).emoji} ${GYM.gymWorld(S).name}! Let's lift 💪`); }
+    else if (node.world > worldFrom) { confetti(); sfx.fanfare(); }
+  } });
+}
 // The Gym map: every world, its stages with their standards, and its Test Day.
 function gymMap() {
   const g = S.gym, cap = GYM.stageCap(S);
@@ -1313,7 +1352,8 @@ function gymMap() {
       <p class="hint">${i.deload ? '😮‍💨 Deload week' : `Block ${i.block} · week ${i.week} of ${i.len}`}</p>${gymBars()}
       <p class="hint">Stages clear by themselves when your logged lifts reach the standard${S.gym.goal === 'strength' ? '' : ', or when you beat your own numbers by 5% over a block'}. Each world ends with a Test Day.</p>
       <button class="btn primary small" data-act="tab" data-tab="today">Today's session</button></section>`;
-  return `<div class="map-cols"><div class="map-main">${renderGymMap(S)}<details class="card gym-list"><summary>📋 All stages and their standards</summary><div class="gym-map">${worlds}</div></details></div><div class="map-side">${side}${gymCard()}</div></div>`;
+  const seen = gymSeen(), at = seen == null ? -1 : Math.min(seen, gymHere(S));
+  return `<div class="map-cols"><div class="map-main">${renderGymMap(S, ui.gymWalking ? ui.gymFrom : at)}<details class="card gym-list"><summary>📋 All stages and their standards</summary><div class="gym-map">${worlds}</div></details></div><div class="map-side">${side}${gymCard()}</div></div>`;
 }
 
 function viewMap() {
@@ -2224,7 +2264,7 @@ function viewMe() {
       <div class="seg">${[['m', "Men's"], ['f', "Women's"], ['x', 'Prefer not']].map(([k, l]) => `<button class="${(S.profile.sex || '') === k ? 'on' : ''}" data-act="set-sex" data-v="${k}">${l}</button>`).join('')}</div>
       <p class="hint">${S.profile.sex ? 'Times, lift targets and race standards use this category.' : '⚠️ Not set yet: standards use men\'s numbers until you pick.'}</p>
     </section>
-    ${HYB.hasHybrid(S) ? `<section class="card"><h3>🏋️ Lifting shout</h3>
+    ${HYB.hasHybrid(S) || GYM.hasGym(S) ? `<section class="card"><h3>🏋️ Lifting shout</h3>
       <p class="hint">Your lifter plays this when it reaches a new stage. Without a clip, the device's voice says "Light weight, baby!". Record yourself (or a friend), or upload a clip. Up to 3 seconds, stays on this device.</p>
       <div class="row wrap"><button class="btn" data-act="shout-rec">${ui.recording ? '⏺ Recording…' : '🎤 Record (3 s)'}</button>
         <label class="btn">⬆️ Upload<input type="file" accept="audio/*" data-act="shout-file" hidden></label>
@@ -2826,7 +2866,7 @@ const actions = {
       if (RUNS(a)) setRunIntro(placed); else ui.tab = 'today';
     }
     // A new placement (first time or a retake) replays every lane map from START.
-    if (fresh) { writeSeen({}); ui.laneShown = {}; ui.laneAnimating = false; }
+    if (fresh) { writeSeen({}); setGymSeen(null); ui.laneShown = {}; ui.laneAnimating = false; }
     commit(state);
     ui.mapMode = primaryMode();
     if (!fresh) window.scrollTo(0, 0); // a new placement scrolls the map to its START line instead
@@ -3171,6 +3211,7 @@ const actions = {
   'goto-run-map'() { ui.tab = 'map'; ui.mapMode = 'world'; ui.lanePopup = null; ui.mapScroll = true; ui.frameTop = null; render(); },
   'goto-hyb-map'() { ui.tab = 'map'; ui.mapMode = 'hyb'; ui.mapScroll = true; ui.frameTop = null; render(); },
   'goto-gym-map'() { ui.tab = 'map'; ui.mapMode = 'gym'; ui.gymScroll = true; render(); },
+  'play-gym'() { playGym(); },
   'gym-node'(el) { ui.modal = { type: 'gymNode', i: +el.dataset.i }; renderModal(); },
   'goto-tri-map'() { ui.tab = 'map'; ui.mapMode = 'tri'; ui.mapScroll = true; ui.frameTop = null; render(); },
   'set-view'(el) { S.profile.view = el.dataset.v; commit(S); window.scrollTo(0, 0); },
@@ -3647,8 +3688,10 @@ document.addEventListener('submit', e => {
     const { state, outcome } = E.completeStep(S, m.track, m.idx, { pain, passed, race, now: ts, result, actual, note, backdated, lifts,
       morningOk: f.querySelector('[name=morning]:checked')?.value !== 'sore' });
     if (m.fromStrava) { const act = state.history.find(x => x.ts === m.fromStrava && x.strava); if (act) { act.linked = true; act.linkedTitle = st?.title; } } // counted once, as the session
+    const stageUp = m.track === 'gym' && state.gym && (state.gym.stage > S.gym.stage || state.gym.world > S.gym.world);
     ui.modal = null; S = state; store.save(S);
     handleOutcome(outcome);
+    if (stageUp) { sfx.unlockAudio(); sfx.arrive('strength'); toast('💪 LIGHT WEIGHT, BABY! Open your Gym map to watch your lifter climb.'); }
     if (actual || note || result !== 'full') sessionFeedback(st, { when, ts, result, pain, actual, note });
     return;
   }
