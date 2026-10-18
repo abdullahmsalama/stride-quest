@@ -356,7 +356,9 @@ async function stats(request, env, headers) {
 }
 
 // Anonymous tallies (no ID): "one more athlete is preparing for Alpha X". Only these keys count.
-const COUNT_KEYS = /^(view:(race-card|videos)|prep:(hyrox|alphax)(:(open|pro|base))?|site:(hyrox|alphax|calendar))$/;
+// app:open = a device opened the app (once), app:placed = finished the setup (once), app:day = active that day
+// (once a day), track:x = which sports people picked.
+const COUNT_KEYS = /^(view:(race-card|videos)|prep:(hyrox|alphax)(:(open|pro|base))?|site:(hyrox|alphax|calendar)|app:(open|placed|day)|track:(run|hybrid|tri|gym))$/;
 async function tally(request, env, headers) {
   if (!env.DB) return json({ error: 'not set up' }, 503, headers);
   let body;
@@ -530,6 +532,11 @@ async function strava(request, env, url, headers, ok) {
   }
   if (url.pathname === '/strava/admin') {
     if (!(await isAdmin(body.device))) return json({ error: 'not admin' }, 403, headers);
+    if (body.action === 'usage') { // the owner's view of the anonymous tallies: all time, last 7 days, today
+      const today = new Date().toISOString().slice(0, 10), week = new Date(Date.now() - 6 * 864e5).toISOString().slice(0, 10);
+      const rows = (await env.DB.prepare('SELECT key, SUM(n) AS total, SUM(CASE WHEN day >= ?1 THEN n ELSE 0 END) AS week, SUM(CASE WHEN day = ?2 THEN n ELSE 0 END) AS today FROM counts GROUP BY key').bind(week, today).all()).results || [];
+      return json({ usage: rows }, 200, headers);
+    }
     if (['approve', 'decline', 'revoke'].includes(body.action) && isDevice(body.target)) {
       await env.DB.prepare('UPDATE strava_access SET status = ?2, decided = ?3 WHERE device = ?1').bind(body.target, body.action === 'approve' ? 'approved' : 'declined', Date.now()).run();
       if (body.action === 'revoke') await env.DB.prepare('DELETE FROM strava WHERE device = ?1 AND cid IS NULL').bind(body.target).run();

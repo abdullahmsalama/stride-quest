@@ -1145,6 +1145,12 @@ function countOnce(key) {
   count(key);
 }
 
+// Once per device per day: how many people use the app each day (no ID is sent).
+function countDaily(key) {
+  try { const k = `${COUNT_KEY}:day`, d = E.dayKey(now()); if (localStorage.getItem(k) === d) return; localStorage.setItem(k, d); } catch { return; }
+  count(key);
+}
+
 function viewToday() {
   const t = now();
   const track = GYM.hasRunning(S) ? E.activeTrack(S) : 'gym';
@@ -1814,7 +1820,7 @@ const stravaApi = async (path, body) => { try { const r = await fetch(`${WORKER_
 const stravaDevice = () => { const st = stravaState(); if (st.device) return st.device; const d = crypto.randomUUID(); setStrava({ ...st, device: d }); return d; };
 async function stravaRefreshStatus() {
   const d = await stravaApi('status', {});
-  if (!d.error) { ui.stravaStatus = d; if (d.admin && !ui.stravaAdmin) ui.stravaAdmin = await stravaApi('admin', { action: 'list' }); }
+  if (!d.error) { ui.stravaStatus = d; if (d.admin && !ui.stravaAdmin) ui.stravaAdmin = await stravaApi('admin', { action: 'list' }); if (d.admin && !ui.usage) ui.usage = await stravaApi('admin', { action: 'usage' }); }
   if (ui.tab === 'me') render();
 }
 function stravaConnect() {
@@ -1889,7 +1895,15 @@ function stravaCard() {
   const ad = ss?.admin && ui.stravaAdmin && !ui.stravaAdmin.error ? ui.stravaAdmin : null;
   const admin = ad ? `<div class="strava-admin"><p class="q">👑 Requests <span class="hint">· ${ad.used} of 10 shared slots in use</span></p>${ad.requests.length ? `<ul>${ad.requests.map(r => `<li><div><strong>${h(r.name)}</strong> <span class="hint">${h(r.status)}${r.strava ? ` · connected as ${h(r.strava)}` : ''}</span>${r.msg ? `<br><span class="hint">“${h(r.msg)}”</span>` : ''}</div>
         <div class="row">${r.status !== 'approved' ? `<button class="btn small primary" data-act="strava-decide" data-v="approve" data-d="${h(r.device)}">Approve</button>` : `<button class="btn small ghost" data-act="strava-decide" data-v="revoke" data-d="${h(r.device)}">Remove</button>`}${r.status === 'pending' ? `<button class="btn small ghost" data-act="strava-decide" data-v="decline" data-d="${h(r.device)}">Decline</button>` : ''}</div></li>`).join('')}</ul>` : '<p class="hint">No requests yet.</p>'}</div>` : '';
-  return `<section class="card strava-card"><h3>🔗 Strava${ss?.admin && ss.pending ? ` <span class="count-badge">${ss.pending}</span>` : ''}</h3>${body}${admin}
+  const use = ss?.admin && ui.usage?.usage ? (() => { const u = Object.fromEntries(ui.usage.usage.map(r => [r.key, r]));
+    const v = (k, f = 'total') => u[k]?.[f] || 0;
+    return `<div class="strava-admin"><p class="q">📈 App usage <span class="hint">· anonymous, from people who keep counts on</span></p>
+      <table class="split-table"><tr><th></th><th>All time</th><th>7 days</th><th>Today</th></tr>
+      <tr><td>Opened the app</td><td>${v('app:open')}</td><td>${v('app:open', 'week')}</td><td>${v('app:open', 'today')}</td></tr>
+      <tr><td>Finished setup</td><td>${v('app:placed')}</td><td>${v('app:placed', 'week')}</td><td>${v('app:placed', 'today')}</td></tr>
+      <tr><td>Active (per day)</td><td>–</td><td>${v('app:day', 'week')}</td><td>${v('app:day', 'today')}</td></tr></table>
+      <p class="hint">Picked: 🏃 ${v('track:run')} · 🏃🏋️ ${v('track:hybrid')} · 🏊 ${v('track:tri')} · 🏋️ ${v('track:gym')}. "7 days" active = person-days (someone using it 3 days counts 3).</p></div>`; })() : '';
+  return `<section class="card strava-card"><h3>🔗 Strava${ss?.admin && ss.pending ? ` <span class="count-badge">${ss.pending}</span>` : ''}</h3>${body}${admin}${use}
       <p class="powered">Powered by Strava</p>${ss && !ss.admin ? '<p class="hint owner-link"><button class="linkish" data-act="strava-claim">App owner?</button></p>' : ''}</section>`;
 }
 
@@ -2295,7 +2309,7 @@ function viewMe() {
     <section class="card"><h3>Your data</h3>
       <p class="hint">Progress is saved in this browser only. Export it to move to another device.</p>
       <label class="switch-row"><input type="checkbox" data-act="counts-toggle" ${countsOn() ? 'checked' : ''}> <span>Send anonymous counts</span></label>
-      <p class="hint">Simple tallies with no ID and no personal data, like "one more athlete is preparing for Alpha X". They show race organisers how many people train for their race, which helps support the app.</p>
+      <p class="hint">Simple tallies with no ID and no personal data, like "one more person opened the app" or "one more athlete is preparing for Alpha X". They show race organisers how many people train for their race, which helps support the app.</p>
       <div class="row wrap">
         <button class="btn" data-act="export">Export progress</button>
         <label class="btn">Import<input type="file" accept="application/json" data-act="import" hidden></label>
@@ -2858,6 +2872,7 @@ const actions = {
     state.profile.dream = { text: String(a.dream || '').trim().slice(0, 160), event: String(a.dreamEvent || ai?.event || '').trim().slice(0, 60),
       date: a.dreamDate || (/^\d{4}-\d{2}-\d{2}$/.test(ai?.date || '') ? ai.date : ''), summary: ai?.summary || '',
       target: (ai && targetFromAI(ai)) || dreamTarget(`${a.dream || ''} ${a.dreamEvent || ''}`) };
+    if (fresh) { countOnce('app:placed'); tracks.forEach(t => countOnce(`track:${t}`)); }
     ui.retake = false; ui.teenUp = false; ui.ob = { step: 0, a: {} }; ui.tab = 'today';
     if (fresh) {
       // Every map starts again at START; each plays when the athlete taps ▶ on it.
@@ -3774,6 +3789,7 @@ function renderToasts() {
 
 stravaReturn();
 render();
+countOnce('app:open'); countDaily('app:day'); // anonymous: how many people opened the app, and use it each day
 // Strava: bring new activities in on open, and when coming back to the app (at most every 20 min).
 setTimeout(() => stravaSync(), 1500);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') stravaSync(); });
