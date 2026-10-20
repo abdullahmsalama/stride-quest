@@ -19,17 +19,19 @@ Rules:
 
 Answer format: a JSON object {"reply": string, "actions": array}.
 "actions" are plan changes you SUGGEST; the athlete reviews and taps Apply in the app. Use [] when nothing should change.
-Allowed actions (use only these, at most 2, only when clearly helpful; when unsure, suggest nothing and ask a question instead):
+Allowed actions (use only these, at most 3, only when clearly helpful; when unsure, suggest nothing and ask a question instead):
 - {"type":"start_sick","where":"above"|"below","reason":string} they are sick NOW. "above" = only above-neck symptoms (runny nose, mild sore throat); "below" = fever, chest, body aches, stomach.
 - {"type":"start_busy","reason":string} busy or travelling this week.
 - {"type":"end_mode","reason":string} they feel better / back to normal, and the state shows a mode is on.
 - {"type":"report_pain","redFlag":boolean,"reason":string} ONLY for real pain or injury: pain above 3/10, pain that changes how they move, or a diagnosed injury. NOT for normal tightness, stiffness or muscle soreness after training (give mobility and easy-day advice instead, no action). redFlag true ONLY when they mention one of: sharp pain, swelling, pain at night or at rest, pain while walking, recent fracture or surgery. Moderate pain without those signs: redFlag false (and suggest a physio check in the reply).
 - {"type":"move_session","key":string,"day":0-6,"reason":string} move a planned session; key copied exactly from the WEEK PLAN lines; "day" is REQUIRED, an integer, 0 = Monday ... 6 = Sunday, today or later.
+- {"type":"change_session","key":string,"title":string,"detail":string,"reason":string} rewrite ONE planned session for this week only: shorter, easier, longer, different (e.g. tempo -> easy 30 min, long run 45 -> 30 min, swap a run for a bike). key copied exactly from the WEEK PLAN lines. "title" is the new session in the app's style with its length, e.g. "Easy run 30 min" or "Long easy run 55 min"; "detail" one short line of how to do it. Rules the app enforces: tests, gates and races can't be changed; at most 25% longer (or +10 min) than planned; never longer or harder during Rebuild or sick mode.
+- {"type":"skip_session","key":string,"reason":string} rest instead of a planned session this week (very tired, sore, life); it comes back next week.
 - {"type":"set_days","days":[0-6,...],"longDay":0-6,"reason":string} change training days (at least 2).
 - {"type":"set_dream","text":string,"event":string,"date":"YYYY-MM-DD" or "","reason":string} they state a new goal or race.
 - {"type":"update_numbers", ...numbers, "reason":string} when they give real numbers that should change their placement or say a level looks wrong. Numbers (kg, minutes, km, metres; convert lb, miles and h:mm): "bodyweightKg","squat5Kg","deadlift5Kg" (heaviest for 5 clean reps; a 1-rep max x 0.86),"pullups","row1000Min","best5kMin","best10kMin","longestRunKm","weeklyKm","swimM","rideKm". Only include numbers they actually gave. The app re-runs its placement rules and shows the change.
 - {"type":"level_down","track":"run"|"strength"|"engine"|"swim"|"bike"|"prep","reason":string} when they say a level is too hard or they want to go back.
-If you suggest an action, say in the reply that they can tap Apply below.
+If you suggest an action, say in the reply that they can tap Apply below or reply \"confirm\".
 Runner state (from the app):
 `;
 
@@ -95,7 +97,7 @@ const UNDERSTAND_SCHEMA = {
   required: ['track', 'distance', 'summary'],
 };
 
-const ACTION_TYPES = new Set(['start_sick', 'start_busy', 'end_mode', 'report_pain', 'move_session', 'set_days', 'set_dream', 'update_numbers', 'level_down']);
+const ACTION_TYPES = new Set(['start_sick', 'start_busy', 'end_mode', 'report_pain', 'move_session', 'change_session', 'skip_session', 'set_days', 'set_dream', 'update_numbers', 'level_down']);
 const CHAT_SCHEMA = {
   type: 'OBJECT',
   properties: {
@@ -103,7 +105,7 @@ const CHAT_SCHEMA = {
     actions: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
       type: { type: 'STRING', enum: [...ACTION_TYPES] }, reason: { type: 'STRING' }, where: { type: 'STRING' }, key: { type: 'STRING' },
       day: { type: 'INTEGER' }, days: { type: 'ARRAY', items: { type: 'INTEGER' } }, longDay: { type: 'INTEGER' },
-      redFlag: { type: 'BOOLEAN' }, text: { type: 'STRING' }, event: { type: 'STRING' }, date: { type: 'STRING' }, track: { type: 'STRING' },
+      redFlag: { type: 'BOOLEAN' }, title: { type: 'STRING' }, detail: { type: 'STRING' }, text: { type: 'STRING' }, event: { type: 'STRING' }, date: { type: 'STRING' }, track: { type: 'STRING' },
       bodyweightKg: { type: 'NUMBER' }, squat5Kg: { type: 'NUMBER' }, deadlift5Kg: { type: 'NUMBER' }, pullups: { type: 'NUMBER' }, row1000Min: { type: 'NUMBER' },
       best5kMin: { type: 'NUMBER' }, best10kMin: { type: 'NUMBER' }, longestRunKm: { type: 'NUMBER' }, weeklyKm: { type: 'NUMBER' }, swimM: { type: 'NUMBER' }, rideKm: { type: 'NUMBER' } }, required: ['type'] } },
   },
@@ -117,7 +119,7 @@ function parseChat(raw) {
     const d = JSON.parse(t);
     const reply = typeof d.reply === 'string' && d.reply.trim() ? d.reply.trim() : null;
     if (!reply) return { reply: raw, actions: [] };
-    const actions = (Array.isArray(d.actions) ? d.actions : []).filter(a => a && ACTION_TYPES.has(a.type)).slice(0, 2);
+    const actions = (Array.isArray(d.actions) ? d.actions : []).filter(a => a && ACTION_TYPES.has(a.type)).slice(0, 3);
     return { reply, actions };
   } catch { return { reply: raw, actions: [] }; }
 }

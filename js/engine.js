@@ -348,7 +348,7 @@ export function completeStep(state, track, idx, opts) {
   // Attempted but not finished: effort still earns something, the step stays open to finish later.
   if (!isRest && (opts.result === 'partial' || opts.result === 'none')) {
     const part = opts.result === 'partial' ? Math.round(base * 0.5 * mult) : 0;
-    award(s, part, now, { kind: opts.result === 'partial' ? 'session' : 'attempt', partial: true, track, level: levelNumber(s, track), idx, title: step.title, pain, ...words });
+    award(s, part, now, { kind: opts.result === 'partial' ? 'session' : 'attempt', partial: true, track, level: levelNumber(s, track), idx, title: opts.title || step.title, pain, ...words });
     msgs.push(opts.result === 'partial' ? `Partly done: +${part} XP for the effort. The step stays open: finish it another day 💪` : 'Logged. Not every day is a good day: the step stays open for when you\'re ready 💛');
     if (track === 'gym' && opts.lifts) GYM.afterGymStep(s, step, opts.lifts, now, msgs); // the sets they did still count
     if (opts.result === 'partial') afterSession(s, now, msgs);
@@ -364,7 +364,7 @@ export function completeStep(state, track, idx, opts) {
   const doneMap = doneMapOf(s, track);
   const provisional = step.type === 'gate' && step.nextDay && !opts.backdated;
   doneMap[idx] = { ts: now, pain, ...(provisional ? { provisional: true } : {}), ...(opts.passed != null ? { passed: !!opts.passed } : {}), ...(opts.race ? { race: opts.race } : {}) };
-  award(s, gained, now, { kind: isRest ? 'rest' : 'session', track, level: levelNumber(s, track), idx, title: step.title, pain, ...words, ...(opts.backdated ? { backdated: true } : {}) });
+  award(s, gained, now, { kind: isRest ? 'rest' : 'session', track, level: levelNumber(s, track), idx, title: opts.title || step.title, pain, ...words, ...(opts.backdated ? { backdated: true } : {}) });
   msgs.push(`+${gained} XP${mult > 1 ? ` (streak x${mult})` : ''}`);
   if (isRest) s.daily[dayKey(now)] = { ...(s.daily[dayKey(now)] || {}), rest: true };
 
@@ -391,7 +391,7 @@ export function completeStep(state, track, idx, opts) {
 
 const clean = t => String(t ?? '').replace(/[<>]/g, '').trim().slice(0, 300);
 
-function levelNumber(s, track) {
+export function levelNumber(s, track) {
   if (track === 'run') return s.run.level;
   if (track === 'prep') return s.prep.level;
   if (track === 'rebuild') return s.rebuild.stage;

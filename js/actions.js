@@ -56,6 +56,27 @@ function oneBack(s, track) {
 }
 
 const DAY = K.DAY_NAMES;
+// Rough length of a session from its words: "2 x 8 min" = 16, "10 min easy, 10 min hard" = 20, "8 km" ≈ 52.
+export function minutesOf(text) {
+  let t = String(text || ''), m = 0, any = false;
+  t = t.replace(/(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*min/gi, (_, a, b) => { m += a * b; any = true; return ''; });
+  t = t.replace(/(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*km/gi, (_, a, b) => { m += a * b * 6.5; any = true; return ''; });
+  for (const x of t.matchAll(/(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?\b(?:\s*(\d+)\s*min)?/gi)) { m += x[1] * 60 + (+x[2] || 0); any = true; }
+  t = t.replace(/(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?\b(?:\s*(\d+)\s*min)?/gi, '');
+  for (const x of t.matchAll(/(\d+(?:\.\d+)?)\s*min/gi)) { m += +x[1]; any = true; }
+  for (const x of t.matchAll(/(\d+(?:\.\d+)?)\s*km/gi)) { m += x[1] * 6.5; any = true; }
+  return any ? Math.round(m) : null;
+}
+const QUALITY = /interval|tempo|threshold|hill|fartlek|race pace|sprint|hard|vo2|×|\d\s*x\s*\d/i;
+const TEST = it => it.type === 'gate' || it.type === 'proveit' || it.boss || it.test || it.track === 'triGate' || it.track === 'hyGate';
+// Is the new version harder than the plan? Longer (by more than 5%) or adds hard efforts.
+function harder(from, to) {
+  const a = minutesOf(from), b = minutesOf(to);
+  return (a && b && b > a * 1.05) || (QUALITY.test(to) && !QUALITY.test(from));
+}
+// How much harder the coach may make a session: up to +25% (at least 10 min), never while hurt or sick.
+const tooMuch = (from, to) => { const a = minutesOf(from), b = minutesOf(to); return a && b && b > Math.max(a * 1.25, a + 10); };
+const findItem = (s, key, now) => K.buildWeek(s, now).days.flatMap(d => d.items.map(it => ({ ...it, day: d.i }))).find(x => x.key === key && !x.done);
 const clean = (v, n) => String(v ?? '').replace(/[<>]/g, '').trim().slice(0, n);
 
 // Returns { label, detail, warnings } for a valid action, or null when it can't or shouldn't apply.
@@ -85,6 +106,18 @@ export function describe(s, a, now) {
       if (!item) return null;
       const warnings = K.previewMove(s, a.key, day, now).map(x => x.text);
       return { label: `📅 Move “${clean(item.title, 60)}” to ${DAY[day]}`, detail: '', warnings };
+    }
+    case 'change_session': {
+      const item = findItem(s, a.key, now), title = clean(a.title, 90), detail = clean(a.detail, 220);
+      if (!item || !title || TEST(item) || title === item.title && detail === (item.detail || '')) return null;
+      const up = harder(item.title, `${title} ${detail}`);
+      if (up && (s.rebuild?.active || s.mode?.type === 'sick' || tooMuch(item.title, `${title} ${detail}`))) return null;
+      return { label: `✏️ ${DAY[item.day]}: “${clean(item.title, 50)}” → “${title}”`, detail: detail || 'This week only.', warnings: up ? ['A step up from the plan: keep the effort as planned and stop if anything hurts.'] : [] };
+    }
+    case 'skip_session': {
+      const item = findItem(s, a.key, now);
+      if (!item) return null;
+      return { label: `😴 Rest instead of “${clean(item.title, 60)}” (${DAY[item.day]})`, detail: 'It comes back next week. Rest days are when your body adapts.', warnings: item.keySession ? ['This is a key session this week.'] : [] };
     }
     case 'set_days': {
       const days = [...new Set((a.days || []).filter(d => Number.isInteger(d) && d >= 0 && d <= 6))].sort((x, y) => x - y);
@@ -138,6 +171,8 @@ export function apply(s, a, now) {
     }
     case 'report_pain': return { state: E.enterRebuild(s, { redFlag: !!a.redFlag, now }), message: a.redFlag ? 'Running paused. Please see a professional.' : 'Rebuild Track started. Your level is saved.' };
     case 'move_session': return { state: K.moveItem(s, a.key, a.day, now), message: `Moved to ${DAY[a.day]}.` };
+    case 'change_session': { const it = findItem(s, a.key, now); return { state: K.editItem(s, a.key, { title: clean(a.title, 90), detail: clean(a.detail, 220), from: it?.title }, now), message: 'Session changed for this week ✏️' }; }
+    case 'skip_session': return { state: K.skipItem(s, a.key, now), message: 'Rest it is 😴 It comes back next week.' };
     case 'set_days': {
       const days = [...new Set(a.days.filter(d => Number.isInteger(d) && d >= 0 && d <= 6))];
       return { state: K.setSchedule(s, days, a.longDay), message: 'Training days updated.' };
@@ -172,6 +207,11 @@ export function offlineActions(text, s) {
   if (/(fever|flu|covid|cold|sick|ill\b|chills|stomach bug|vomit)/.test(t) && !s.mode) out.push({ type: 'start_sick', where: /(fever|flu|chills|chest|stomach|vomit|aches)/.test(t) ? 'below' : 'above' });
   else if (/(better now|feel better|recovered|back to normal|i'?m back)/.test(t) && s.mode) out.push({ type: 'end_mode' });
   else if (/(busy|travel|trip|vacation|holiday|work crunch|exams)/.test(t) && !s.mode) out.push({ type: 'start_busy' });
+  // Tired: today's session becomes an easy 20-30 min (a hard one), or a rest (an easy one). Never a test.
+  if (/(tired|exhausted|knackered|no energy|drained|wiped)/.test(t) && !s.mode) {
+    const w = K.buildWeek(s, Date.now()), it = w.days[w.today].items.find(x => !x.done && x.key && !TEST(x));
+    if (it) out.push(QUALITY.test(it.title) || it.cls === 'long' ? { type: 'change_session', key: it.key, title: it.cls === 'long' ? 'Easy run 30 min' : 'Easy run 25 min', detail: 'Tired today: easy and short instead. The plan picks up again tomorrow.' } : { type: 'skip_session', key: it.key });
+  }
   if (/(hurt|pain|injur|sprain|strain|swollen|swelling)/.test(t) && !s.rebuild.active) out.push({ type: 'report_pain', redFlag: /(sharp|swollen|swelling|night|can'?t walk|cannot walk|fracture|surgery)/.test(t) });
   return out;
 }

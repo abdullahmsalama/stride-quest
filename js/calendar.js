@@ -179,6 +179,9 @@ export function buildWeek(s, now, { skip } = {}) {
 
   let list = candidates(s, now);
   if (skip?.size) list = list.filter(it => !skip.has(itemKey(it)));
+  // The coach's changes for this week: sessions rested (skipped) or rewritten (shorter, easier, longer…).
+  const skips = s.calendar?.skips?.[wk] || {}, edits = s.calendar?.edits?.[wk] || {};
+  list = list.filter(it => !skips[itemKey(it)]);
   const moves = s.calendar?.moves?.[wk] || {};
   const blocked = prepBlocksRun(s) != null;
   list = list.map(it => ({ ...it, cls: classify(it, s.prep.level), key: itemKey(it) }));
@@ -235,7 +238,9 @@ export function buildWeek(s, now, { skip } = {}) {
     if (keySession) keyCount++;
     const optional = !keySession && (it.extra || mode?.type === 'busy');
     if (mode?.type === 'busy' && optional) continue;
-    byDay[d].push({ ...it, keySession, optional, moved: moves[it.key] != null });
+    // A coach's change keeps the session's day; only its words (and its kind, for nutrition) change.
+    const ed = edits[it.key], shown = ed ? { ...it, title: ed.title, detail: ed.detail || it.detail, edited: ed.from } : it;
+    byDay[d].push({ ...shown, cls: ed ? classify(shown, s.prep.level) : it.cls, keySession, optional, moved: moves[it.key] != null });
   }
   if (mode?.type === 'busy') notes.push('Busy week: only Key sessions are planned. Short 20-minute versions still count.');
   if (s.target?.date) raceWeekPlan(s, byDay, monday, notes, today, slots);
@@ -321,6 +326,21 @@ export function moveItem(state, key, day, now) {
   s.calendar.moves = { [wk]: { ...(s.calendar.moves?.[wk] || {}), [key]: day } }; // keep only this week
   return s;
 }
+
+// This week only: rewrite a planned session (the coach's change), or rest it (it comes back next week).
+export function editItem(state, key, change, now) {
+  const s = JSON.parse(JSON.stringify(state)), wk = weekKey(now);
+  s.calendar ||= { moves: {} };
+  s.calendar.edits = { [wk]: { ...(s.calendar.edits?.[wk] || {}), [key]: change } };
+  return s;
+}
+export function skipItem(state, key, now) {
+  const s = JSON.parse(JSON.stringify(state)), wk = weekKey(now);
+  s.calendar ||= { moves: {} };
+  s.calendar.skips = { [wk]: { ...(s.calendar.skips?.[wk] || {}), [key]: true } };
+  return s;
+}
+export const editOf = (s, key, now) => s.calendar?.edits?.[weekKey(now)]?.[key] || null;
 
 // Preview the warnings a move would cause, without changing state.
 export function previewMove(state, key, day, now) {

@@ -1692,7 +1692,7 @@ function suggestionCards(m, mi) {
       ${a.status === 'pending' ? `<div class="row"><button class="btn primary small" data-act="sugg-apply" data-m="${mi}" data-a="${ai}">Apply</button><button class="btn ghost small" data-act="sugg-skip" data-m="${mi}" data-a="${ai}">No thanks</button></div>`
         : `<span class="hint">${a.status === 'applied' ? 'Applied ✓' : 'Skipped'}</span>`}
     </div>`;
-  }).join('')}</div>`;
+  }).join('')}${mi === ui.chat.length - 1 && m.actions.some(a => a.status === 'pending' && ACT.describe(S, a, now())) ? `<p class="hint">Or type <strong>confirm</strong> to apply ${m.actions.filter(a => a.status === 'pending').length > 1 ? 'them all' : 'it'}.</p>` : ''}</div>`;
 }
 
 // Coach replies may use **bold** and *italics*; everything else stays escaped text.
@@ -2847,7 +2847,9 @@ const MODALS = {
       <div class="row end"><button class="btn" data-act="close">Close</button></div>`;
   },
   step(m) {
-    const st = E.trackSteps(S, m.track)[m.idx];
+    let st = E.trackSteps(S, m.track)[m.idx];
+    const ed = K.editOf(S, `${m.track}:${E.levelNumber(S, m.track)}:${m.idx}`, now());
+    if (ed) st = { ...st, title: ed.title, detail: ed.detail ? `${ed.detail} (Changed by your coach this week; planned: ${ed.from}.)` : `Changed by your coach this week; planned: ${ed.from}.` };
     const exs = m.track === 'gym' ? gymExHtml(st) : exHtml(st);
     const passQ = st.type === 'proveit' ? `<p class="q">Did you hit it?</p>${radio('passed', [['1', 'Yes, I hit it'], ['0', 'Not quite']], '1')}` : '';
     const raceQ = m.track === 'hyGate' && st.boss ? `<p class="q">Your race</p>
@@ -3532,9 +3534,28 @@ function chatRemove(i) {
   ui.chat.splice(i, n); saveChat(); render();
 }
 
+// "confirm", "yes", "do it"… right after a suggestion applies it, like tapping Apply on each card.
+const CONFIRM = /^\s*(confirm(ed)?|yes( please)?|yep|yeah|ok(ay)?|sure|apply( it| them| all)?|do it|go ahead|sounds good)\s*[.!👍]*\s*$/i;
+function confirmPending() {
+  const mi = ui.chat.length - 1, m = ui.chat[mi];
+  const pend = m?.role === 'assistant' ? (m.actions || []).map((a, ai) => [a, ai]).filter(([a]) => a.status === 'pending') : [];
+  if (!pend.length) return false;
+  ui.chat.push({ role: 'user', content: 'Confirm' });
+  const done = [];
+  for (const [a] of pend) {
+    if (!ACT.describe(S, a, now())) { a.status = 'skipped'; a.label = ACT.alreadyDone(S, a, now()) || 'No longer fits your plan'; continue; }
+    a.label = ACT.describe(S, a, now()).label;
+    const r = ACT.apply(S, a, now()); S = r.state; a.status = 'applied'; done.push(r.message);
+    if (r.open) ui.modal = r.open;
+  }
+  ui.chat.push({ role: 'assistant', content: done.length ? `Done ✅ ${done.join(' ')}` : 'Your plan changed since I suggested that, so nothing was applied. Ask me again and I\'ll look at the new plan.', provider: 'app' });
+  store.save(S); saveChat(); render();
+  return true;
+}
 async function sendChat(text) {
   text = text.trim();
   if (!text || ui.thinking) return;
+  if (CONFIRM.test(text) && confirmPending()) return;
   ui.chat.push({ role: 'user', content: text });
   ui.thinking = true; ui.slow = false; render();
   const slowTimer = setTimeout(() => { if (ui.thinking) { ui.slow = true; if (ui.tab === 'coach') render(); } }, ui.smartCoach ? 9000 : 4000);
@@ -3927,7 +3948,8 @@ document.addEventListener('submit', e => {
       }
       if (st.test && !Object.keys(lifts).length) return toast('Log at least one test lift (weight and reps), or tap Cancel.');
     }
-    const { state, outcome } = E.completeStep(S, m.track, m.idx, { pain, passed, race, now: ts, result, actual, note, backdated, lifts,
+    const ed = K.editOf(S, `${m.track}:${E.levelNumber(S, m.track)}:${m.idx}`, ts);
+    const { state, outcome } = E.completeStep(S, m.track, m.idx, { pain, passed, race, now: ts, result, actual, note, backdated, lifts, title: ed?.title,
       morningOk: f.querySelector('[name=morning]:checked')?.value !== 'sore' });
     if (m.fromStrava) { const act = state.history.find(x => x.ts === m.fromStrava && x.strava); if (act) { act.linked = true; act.linkedTitle = st?.title; } } // counted once, as the session
     const stageUp = m.track === 'gym' && state.gym && (state.gym.stage > S.gym.stage || state.gym.world > S.gym.world);
