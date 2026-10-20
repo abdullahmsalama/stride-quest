@@ -99,11 +99,11 @@ const now = () => Date.now();
 const $ = sel => document.querySelector(sel);
 const h = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-function toast(messages) {
+function toast(messages, ms = 4500) {
   for (const m of [].concat(messages)) {
     const id = Math.random().toString(36).slice(2);
     ui.toasts.push({ id, m });
-    setTimeout(() => { ui.toasts = ui.toasts.filter(t => t.id !== id); renderToasts(); }, 4500);
+    setTimeout(() => { ui.toasts = ui.toasts.filter(t => t.id !== id); renderToasts(); }, ms);
   }
   renderToasts();
 }
@@ -216,9 +216,9 @@ function obStepsAdult(a) {
         <p class="hint">${+a.age > 0 ? `You're ${+a.age}. ` : ''}Your age keeps itself up to date from this: plans for kids and teens, nutrition and age-group stats follow it. Stays on this device.</p>
         ${+a.age > 0 && +a.age < 13 ? '<p class="hint">👨‍👩‍👧 Under 13: next you\'ll set up <strong>Family mode</strong> together with a grown-up: fun play missions, no training plans.</p>' : +a.age >= 13 && +a.age < 18 ? '<p class="hint">🌱 Under 18: you get <strong>Teen mode</strong>: the full app with a few safety rules for growing bodies.</p>' : ''}
         <p class="q">Your gender ${tip("Men and women get different race weights, time standards and lifting targets, and women can follow their cycle. 'Prefer not to say' uses the more forgiving standards.", 'Why we ask')}</p>
-        ${radio('sex', [['m', 'Man'], ['f', 'Woman'], ['x', 'Prefer not to say']], a.sex || 'x')}
+        ${radio('sex', [['m', 'Man'], ['f', 'Woman'], ['x', 'Prefer not to say']], a.sex || '')}
         <p class="q">What do you train for? <span class="hint">Pick one or more</span></p>
-        <div class="choices">${TRACKS.map(([k, l]) => check(`tr_${k}`, l, (a.tracks || ['run']).includes(k))).join('')}</div>
+        <div class="choices">${TRACKS.map(([k, l]) => check(`tr_${k}`, l, (a.tracks || []).includes(k))).join('')}</div>
         ${(a.tracks || []).length > 1 ? `<p class="q">Which one leads your week?</p>${radio('primary', TRACKS.filter(([k]) => a.tracks.includes(k)), a.primary || a.tracks[0])}` : ''}` },
     { title: 'What do you dream of achieving?', why: 'Your plan works backwards from here. Dream big: we make it step by step.', body: `
         <label class="field"><span>In your own words</span><textarea name="dream" rows="2" maxlength="160" placeholder="e.g. Run a sub-50 10K · Finish my first marathon · Hyrox Pro under 1:15 · Run 30 min without stopping">${h(a.dream || '')}</textarea></label>
@@ -559,7 +559,7 @@ function collectOb() {
     else if (el.type === 'checkbox') {
       if (el.name.startsWith('tr_')) {
         const k = el.name.slice(3);
-        a.tracks = (a.tracks || ['run']).filter(x => x !== k).concat(el.checked ? [k] : []);
+        a.tracks = (a.tracks || []).filter(x => x !== k).concat(el.checked ? [k] : []);
       } else if (el.name.startsWith('d_')) {
         const k = +el.name.slice(2);
         a.days = (a.days || K.defaultDays(3)).filter(x => x !== k).concat(el.checked ? [k] : []).sort((x, y) => x - y);
@@ -2972,7 +2972,7 @@ const MODALS = {
     if (short) return `<form id="return-form">
       <h2>👋 Missed a few days?</h2>
       <p>${gapDays} days since your last session. No stress, what happened?</p>
-      ${radio('reason', [['busy', 'Just busy, all good'], ['illness', 'I was sick'], ['injury', 'Pain or injury']], 'busy')}
+      ${radio('reason', [['logged', 'I trained, just forgot to log it'], ['busy', 'Just busy, all good'], ['illness', 'I was sick'], ['injury', 'Pain or injury']], '')}
       <p class="hint">Sick? Your streak gets saved, and you ease back in with one gentle session.</p>
       <input type="hidden" name="easyMin" value=""><input type="hidden" name="hardMin" value=""><input type="hidden" name="crossMin" value="">
       <div class="row end"><button class="btn primary" type="submit">Continue</button></div>
@@ -2980,7 +2980,7 @@ const MODALS = {
     return `<form id="return-form">
       <h2>👋 Welcome back!</h2>
       <p>You've been away for ${gapDays} days. A short check sets up the right way back in.</p>
-      <p class="q">What happened?</p>${radio('reason', [['busy', 'Life got busy'], ['illness', 'I was ill'], ['injury', 'Pain or injury']], 'busy')}
+      <p class="q">What happened?</p>${radio('reason', [['logged', 'I trained, just forgot to log it'], ['busy', 'Life got busy'], ['illness', 'I was ill'], ['injury', 'Pain or injury']], '')}
       <p class="q">While away, roughly per week:</p>
       ${num('easyMin', 'Easy running', '', 'min')}${num('hardMin', 'Hard running (tempo, intervals)', '', 'min')}${num('crossMin', 'Cycling, swimming, other cardio', '', 'min')}
       <p class="hint">Unsure? Leave it empty. The Prove It run will show where you are.</p>
@@ -3676,6 +3676,7 @@ document.addEventListener('submit', e => {
   const t = now();
   if (f.id === 'ob-form') {
     collectOb();
+    if (f.querySelector('[name=sex]') && !ui.ob.a.sex) return toast('Pick your gender (or "Prefer not to say").');
     if (f.querySelector('[name^=tr_]') && !(ui.ob.a.tracks || []).length) return toast('Pick at least one thing you train for.');
     if (f.bdY && !(+ui.ob.a.age >= 4 && +ui.ob.a.age <= 100)) { (f.bdD.value === '0' ? f.bdD : f.bdM.value === '0' ? f.bdM : f.bdY).focus(); return toast('Pick your birthday: day, month and year. It keeps the plan safe for kids and teens.'); }
     if (f.guardian && !f.guardian.checked) return toast('A parent or guardian needs to tick the box to set up Family mode.');
@@ -3973,6 +3974,12 @@ document.addEventListener('submit', e => {
     return;
   }
   if (f.id === 'return-form') {
+    if (!f.reason.value) return toast('Pick what happened.');
+    if (f.reason.value === 'logged') {
+      // Nothing changes yet: they log the missed sessions (each session has "When did you do it?").
+      ui.dismissed.add('return'); ui.modal = null; ui.tab = 'today'; render();
+      return toast('Great! Tap each session you did, then under "When did you do it?" pick Yesterday or Another day (up to 2 weeks back).', 7000);
+    }
     const n = v => parseFloat(v) || 0;
     const { state, summary } = E.applyReturn(S, { reason: f.reason.value, easyMin: n(f.easyMin.value), hardMin: n(f.hardMin.value), crossMin: n(f.crossMin.value), now: t });
     S = state; store.save(S);
