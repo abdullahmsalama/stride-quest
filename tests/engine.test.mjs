@@ -260,3 +260,11 @@ test('prep: someone held at Level 8 for P5 is credited once and moves up', async
   assert.ok(msgs.some(m => /Level up/.test(m)));
   assert.equal(creditPrep(s2, T).msgs.length, 0); // only once
 });
+
+test('coach context carries what the athlete told us about themselves', async () => {
+  const E = await import('../js/engine.js');
+  let { state: s } = E.placeFromAnswers(E.newState(Date.now()), { continuous: 'none', pain: 'none' }, Date.now());
+  assert.doesNotMatch(E.coachContext(s, Date.now()), /ABOUT THE ATHLETE/);
+  s.profile.aboutMe = 'ACL repair in 2021, played club football.';
+  assert.match(E.coachContext(s, Date.now()), /ABOUT THE ATHLETE.*ACL repair/);
+});

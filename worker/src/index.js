@@ -123,7 +123,7 @@ function parseChat(raw) {
 }
 
 const MAX_MESSAGES = 12;
-const MAX_CHARS = 2000;
+const MAX_CHARS = 4000; // room for an answer pasted from the athlete's own AI app
 const TIMEOUT_MS = 12000;
 const SMART_TIMEOUT_MS = 45000; // the smart coach thinks longer
 const HEDGE_MS = 5500; // if the main Gemini model hasn't answered by then, also ask the next one
@@ -651,7 +651,7 @@ export default {
     if (!messages.length || messages.at(-1).role !== 'user') return json({ error: 'no user message' }, 400, headers);
     // The app's own feature guide, for "how do I…" / "what is…" questions about the app itself.
     const app = String(body.app || '').slice(0, 2600);
-    const system = SYSTEM + String(body.context || '').slice(0, 3000) + (app ? `\n\nHOW THE APP WORKS (use this to answer questions about the app itself and say which tab or button to use; never invent features that are not listed):\n${app}` : '');
+    const system = SYSTEM + String(body.context || '').slice(0, 4500) + (app ? `\n\nHOW THE APP WORKS (use this to answer questions about the app itself and say which tab or button to use; never invent features that are not listed):\n${app}` : '');
 
     const errors = [];
     let chain = body.smart ? [['gemini-smart', geminiSmart], ...PROVIDERS] : PROVIDERS;

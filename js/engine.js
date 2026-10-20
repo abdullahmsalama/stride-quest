@@ -910,6 +910,7 @@ export function coachContext(s, now) {
     : s.run.level <= 3 ? 'a beginner: be encouraging, normalise walk breaks and slow pace' : 'an experienced runner: be encouraging and direct';
   lines.push(GYM.gymOnly(s) ? `Tone: this is a gym-goer (${{ none: 'new to the gym', lt1: 'under 1 year of lifting', y1_3: '1-3 years of lifting', y3: '3+ years of lifting' }[s.gym.exp] || 'lifter'}): be encouraging and practical.` : `Tone: this runner is ${tone}.`);
   if (GYM.hasGym(s)) lines.push(...gymContext(s, now));
+  if (s.profile?.aboutMe) lines.push(`ABOUT THE ATHLETE (their own words, or a summary from their own AI app; background only, the app's plan and safety rules still decide): ${String(s.profile.aboutMe).slice(0, 1200)}`);
   const cy = s.profile?.sex === 'f' ? CY.coachLine(s.cycle, dayKey(now)) : null; // only if she chose to share it
   if (cy) lines.push(cy);
   if (s.mode) lines.push(s.mode.type === 'sick' ? `SICK MODE (${s.mode.where === 'above' ? 'symptoms above the neck: easy movement only' : 'below the neck or fever: full rest, no training'}).` : 'BUSY MODE: only key sessions this week.');

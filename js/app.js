@@ -1810,6 +1810,32 @@ function openIncoming() {
   } else ui.modal = { type: 'incoming', inc };
 }
 
+// ---------- the athlete's own AI app (ChatGPT, Claude, Gemini) ----------
+// The app writes the question with the athlete's training data; they send it from their own AI app,
+// and can paste the answer back for our coach to check against the plan and its safety rules.
+const OWN_AI = [
+  ['chatgpt', 'ChatGPT', q => `https://chatgpt.com/?q=${encodeURIComponent(q)}`],
+  ['claude', 'Claude', q => `https://claude.ai/new?q=${encodeURIComponent(q)}`],
+  ['gemini', 'Gemini', () => 'https://gemini.google.com/app'],
+];
+const ABOUT_PROMPT = 'Summarise what you know about me as an athlete in under 150 words: sports and training history, injuries, goals, what motivates me and how I like to be coached. Plain sentences, no lists of chats.';
+const coachData = () => `${E.coachContext(S, now())}\n${ACT.weekContext(S, now())}\n${nutritionContext()}`;
+// The same data for an outside AI, minus our coach's own notes (tone) and the app's internal session keys.
+const outsideData = () => coachData().split('\n').filter(l => !/^Tone:/.test(l)).map(l => l.replace('WEEK PLAN (key | day | session)', 'WEEK PLAN (day | session)').replace(/^[a-zA-Z]+:\d+:\d+ \| /, '')).join('\n');
+function ownAiText(q) {
+  return `You're helping me as my training coach. Here is my current plan and training data from my training app, Stride Quest (the app sets my levels, gates and safety rules, so work within them):
+
+${outsideData()}
+
+My question: ${q.trim() || 'What should I focus on this week?'}
+
+Keep it practical. If you suggest changes to my plan, end with a short list headed "Plan changes:" (one change per line, e.g. "Move the long run to Sunday"), so I can bring them back into the app. Not medical advice: tell me to see a professional for anything worrying.`;
+}
+async function copyText(t) { try { await navigator.clipboard.writeText(t); return true; } catch { return false; } }
+// The coach chat as a text file (or the phone's share sheet).
+function chatText() {
+  return `Stride Quest coach chat · ${new Date(now()).toLocaleDateString()}\n\n${ui.chat.map(m => `${m.role === 'user' ? 'Me' : 'Coach'}: ${m.content}`).join('\n\n')}\n`;
+}
 function viewCoach() {
   const msgs = ui.chat.length ? ui.chat : [{ role: 'assistant', content: `Hey${S.profile.name ? ' ' + S.profile.name : ''}! I'm your coach. Ask me what to do today, how a drill works, or how you're feeling. I run on a free AI model, so give me a few seconds if I'm busy 🙂` }];
   const modeSeg = `<div class="seg coach-seg">${[[false, '⚡ Quick'], [true, '🧠 Smart · slower']].map(([v, l]) => `<button class="${!!ui.smartCoach === v ? 'on' : ''}" data-act="coach-mode" data-v="${v ? 1 : 0}">${l}</button>`).join('')}</div>
@@ -1824,6 +1850,12 @@ function viewCoach() {
         ${ui.thinking ? '<button class="btn" type="button" data-act="chat-stop">⏹ Stop</button>' : '<button class="btn primary" type="submit">Send</button>'}
       </form>
       ${canSpeak ? `<label class="choice small"><input type="checkbox" data-act="speak-toggle" ${ui.speakReplies ? 'checked' : ''}><span>Read replies aloud</span></label>` : ''}
+      <div class="coach-tools">
+        <button class="btn small" data-act="own-ai">🤖 Ask ChatGPT, Claude or Gemini</button>
+        <button class="btn small" data-act="ai-paste">📥 Paste an answer from your AI</button>
+        <button class="btn small" data-act="about-me-ai">🧠 ${S.profile.aboutMe ? 'What your AI knows about you ✓' : 'Teach the coach about you'}</button>
+        ${ui.chat.length ? '<button class="btn ghost small" data-act="chat-export">⬇️ Save this chat</button>' : ''}
+      </div>
       <p class="hint">⏱️ The coach runs on a shared AI model, so replies can take a few seconds when it's busy. It can suggest changes; nothing changes until you tap Apply. Messages go to Google's Gemini AI to write replies. Not medical advice.</p>
     </section>`;
 }
@@ -2838,6 +2870,35 @@ const MODALS = {
       <div class="row end"><button type="button" class="btn ghost" data-act="close">Not now</button><button class="btn primary" type="submit">Start Rebuild Track</button></div>
     </form>`;
   },
+  ownAi(m) {
+    return `<form id="own-ai-form"><h2>🤖 Ask your own AI</h2>
+      <p>Use the ChatGPT, Claude or Gemini app you already have. We write the question with your plan, level, week, recent sessions and paces, so it answers about <strong>your</strong> training.</p>
+      <label class="field"><span>Your question</span><textarea name="q" rows="3" maxlength="600" placeholder="e.g. My knee feels tight after long runs. What should I change?">${h(m.q || '')}</textarea></label>
+      <div class="own-ai">${OWN_AI.map(([k, l]) => `<button type="button" class="btn" data-act="own-ai-go" data-ai="${k}">Open ${l}</button>`).join('')}
+        ${navigator.share ? '<button type="button" class="btn ghost" data-act="own-ai-go" data-ai="share">📤 Share to another app</button>' : ''}
+        <button type="button" class="btn ghost" data-act="own-ai-go" data-ai="copy">📋 Just copy it</button></div>
+      <p class="hint">The question is copied first. If the app opens without it, tap the message box and paste.</p>
+      <p class="hint">🔒 This sends your training data to the AI you pick, under your account there. Your cycle is only included if you let the coach see it (Me → Cycle). Nothing is sent until you tap.</p>
+      <p class="hint">Got a plan you like? Come back and tap <strong>📥 Paste an answer</strong>: our coach checks it against your plan and safety rules and offers the changes as buttons.</p>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Close</button></div></form>`;
+  },
+  aiPaste() {
+    return `<form id="ai-paste-form"><h2>📥 Bring an answer back</h2>
+      <p>Paste what ChatGPT, Claude or Gemini told you. Our coach checks it against your plan and safety rules (pain, how fast to build up, your age) and offers the changes that make sense. Nothing changes until you tap Apply.</p>
+      <label class="field"><span>From</span>${select('from', [['ChatGPT', 'ChatGPT'], ['Claude', 'Claude'], ['Gemini', 'Gemini'], ['another AI', 'Another AI']], ui.lastAi || 'ChatGPT')}</label>
+      <label class="field"><span>The answer</span><textarea name="text" rows="8" maxlength="3500" required placeholder="Paste here"></textarea></label>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Check it</button></div></form>`;
+  },
+  aboutMeAi() {
+    return `<form id="about-ai-form"><h2>🧠 Teach the coach about you</h2>
+      <p>Your ChatGPT, Claude or Gemini may already know a lot about you. Bring the useful part over in 30 seconds:</p>
+      <ol class="plain-ol"><li>Copy this question and ask it in your AI app:
+        <div class="copy-box"><p>${h(ABOUT_PROMPT)}</p><button type="button" class="btn small" data-act="about-copy">📋 Copy</button></div></li>
+        <li>Paste its answer here. Or just write it yourself.</li></ol>
+      <label class="field"><span>About me</span><textarea name="about" rows="6" maxlength="1200" placeholder="e.g. Played club football until 22, ACL repair in 2021, now running 3x a week. Want a sub-25 5K. Like straight talk.">${h(S.profile.aboutMe || '')}</textarea></label>
+      <p class="hint">🔒 Saved on this phone. Our coach reads it with every question (it goes to the AI that writes the replies). Edit or clear it any time.</p>
+      <div class="row end">${S.profile.aboutMe ? '<button type="button" class="btn ghost" data-act="about-clear">Clear</button>' : ''}<button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`;
+  },
   cycleAsk(m) {
     const today = ymdNow(), exp = CY.expected(S.cycle);
     if (m.yes) return `<form id="cy-start-form"><h2>🌸 When did it start?</h2>
@@ -3058,6 +3119,27 @@ const actions = {
   'msg-edit'(el) { const i = +el.dataset.m; ui.chatDraft = ui.chat[i]?.content || ''; chatRemove(i); },
   'dismiss-banner'(el) { ui.dismissed.add(el.dataset.key); render(); },
   'coach-open'() { ui.prevTab = ui.tab === 'coach' ? ui.prevTab : ui.tab; ui.coachUnread = false; ui.tab = 'coach'; render(); },
+  'own-ai'() { ui.modal = { type: 'ownAi', q: document.querySelector('#chat-form [name=msg]')?.value || '' }; renderModal(); },
+  async 'own-ai-go'(el) {
+    const q = document.querySelector('#own-ai-form [name=q]')?.value || '', text = ownAiText(q), ai = el.dataset.ai;
+    if (ai === 'share') { try { await navigator.share({ text }); } catch { /* cancelled */ } return; }
+    // Open the tab inside the tap (phones block pop-ups opened later), then copy.
+    const pick = OWN_AI.find(([k]) => k === ai), win = pick ? window.open(text.length < 6000 ? pick[2](text) : pick[2](''), '_blank') : null;
+    if (win) try { win.opener = null; } catch { /* ignore */ }
+    const copied = await copyText(text);
+    if (pick) { ui.lastAi = pick[1]; toast(copied ? `📋 Copied. If ${pick[1]} opens empty, paste it in.` : `Opened ${pick[1]}.`); if (!win) location.href = pick[2](''); }
+    else toast(copied ? '📋 Copied. Paste it into any AI app.' : 'Couldn\'t copy on this phone: try Share.');
+  },
+  'ai-paste'() { ui.modal = { type: 'aiPaste' }; renderModal(); },
+  'about-me-ai'() { ui.modal = { type: 'aboutMeAi' }; renderModal(); },
+  async 'about-copy'() { toast(await copyText(ABOUT_PROMPT) ? '📋 Copied. Ask it in your AI app.' : 'Couldn\'t copy: select the text and copy it.'); },
+  'about-clear'() { delete S.profile.aboutMe; ui.modal = null; commit(S); toast('Cleared.'); },
+  async 'chat-export'() {
+    const text = chatText(), file = `stride-quest-chat-${dayInput(now())}.txt`;
+    try { const f = new File([text], file, { type: 'text/plain' }); if (navigator.canShare?.({ files: [f] })) { await navigator.share({ files: [f], title: 'Coach chat' }); return; } } catch (e) { if (e?.name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = file; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    toast('⬇️ Chat saved.');
+  },
   'coach-back'() { ui.tab = ui.prevTab || 'today'; render(); },
   'strava-connect'() { stravaConnect(); },
   'split-edit'() { ui.modal = { type: 'splitPick' }; renderModal(); },
@@ -3571,6 +3653,18 @@ document.addEventListener('submit', e => {
     commit(E.applyBackground(S, backgroundOf(a)));
     toast(BG.isFormerAthlete(S) ? 'Background saved: technique credited, comeback fast-track on ⚡' : 'Background saved.');
     return;
+  }
+  if (f.id === 'ai-paste-form') {
+    const text = f.text.value.trim(), from = f.from.value;
+    if (!text) return toast('Paste the answer first.');
+    ui.lastAi = from; ui.modal = null; ui.tab = 'coach';
+    sendChat(`Here's advice from ${from} about my training. Check it against my plan and the app's safety rules. Tell me briefly what fits and what doesn't, and offer the changes that make sense:\n\n${text}`);
+    return;
+  }
+  if (f.id === 'about-ai-form') {
+    const v = f.about.value.trim().slice(0, 1200);
+    if (v) S.profile.aboutMe = v; else delete S.profile.aboutMe;
+    ui.modal = null; commit(S); toast(v ? '🧠 Saved. Your coach knows you better now.' : 'Cleared.'); return;
   }
   if (f.id === 'cy-start-form') {
     const d = f.cyDay.value;
