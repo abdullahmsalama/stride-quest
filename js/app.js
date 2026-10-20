@@ -1822,10 +1822,32 @@ const ABOUT_PROMPT = 'Summarise what you know about me as an athlete in under 15
 const coachData = () => `${E.coachContext(S, now())}\n${ACT.weekContext(S, now())}\n${nutritionContext()}`;
 // The same data for an outside AI, minus our coach's own notes (tone) and the app's internal session keys.
 const outsideData = () => coachData().split('\n').filter(l => !/^Tone:/.test(l)).map(l => l.replace('WEEK PLAN (key | day | session)', 'WEEK PLAN (day | session)').replace(/^[a-zA-Z]+:\d+:\d+ \| /, '')).join('\n');
+// What the app's words mean (levels, XP, gates, Prep…), so an outside AI understands the data.
+function appExplained() {
+  const sx = t => ST.sexText(String(t || ''), S.profile.sex), names = id => EXERCISES[id]?.name || id.replace(/_/g, ' ');
+  const out = ['HOW STRIDE QUEST WORKS (so you can read the data above):'];
+  if (GYM.hasRunning(S)) {
+    const l = E.runLevel(S.run.level), nx = S.run.level < RUN_LEVELS.length ? E.runLevel(S.run.level + 1) : null, gate = l.steps.find(x => x.type === 'gate'), p = PREP_STAGES[S.prep.level], pg = p.steps.find(x => x.type === 'gate');
+    out.push(`- Run Track: ${RUN_LEVELS.length} levels in themed worlds (${WORLDS.map(w => w.name).join(' → ')}). Each level is a few weeks of set sessions. Sessions earn XP; when the level's XP target is reached, its gate (a test run) opens. Passing the gate with pain 2/10 or less the next morning unlocks the next level.`,
+      `- My level: Level ${l.n} "${l.name}", which marks this standard: ${sx(l.criteria)}. Its sessions: ${l.steps.filter(x => x.type === 'run').map(x => x.title).join('; ')}. Gate: ${sx(gate?.title)}${gate?.detail ? ` (${sx(gate.detail)})` : ''}.`,
+      ...(nx ? [`- Next: Level ${nx.n} "${nx.name}" (${sx(nx.criteria)}), which also needs Prep stage P${nx.needsPrep}.`] : []),
+      `- Prep Track: short strength, mobility and landing sessions (about 15-20 min) that get tendons and joints ready for harder running. Harder run levels need a certain Prep stage. I'm at P${p.n} "${p.name}" (${p.focus}): ${p.steps.filter(x => x.ex && x.type !== 'gate').map(x => x.ex.map(names).join(', ')).filter((v, i, a) => a.indexOf(v) === i).join(' / ')}. Its gate: ${pg?.title.replace(/^Gate: /, '')}.`,
+      '- Paces come from my best 5K. "Key" sessions are the ones that matter most in the week; the others can be shortened or moved.');
+  }
+  if (GYM.hasGym(S)) out.push('- Gym track: stages are cleared when my logged lifts (estimated 1-rep max vs bodyweight) reach that stage\'s standard; training runs in blocks of build weeks then a deload week. Main lifts stay; accessories change each block.');
+  if (HYB.hasHybrid(S)) out.push('- Hybrid track (Hyrox, Alpha X…): three lanes, Run, Strength and Engine (sleds, rowing, ski erg, carries). The weakest lane ("limiter") decides when the race gate opens.');
+  if (TRI.hasTri(S)) out.push('- Triathlon track: Swim, Bike and Run lanes; the weakest lane decides when the transition gate opens.');
+  out.push('- The app handles safety: pain over 2/10 sends me to a Rebuild Track, teens have limits, and big jumps in training are flagged. Work within that rather than around it.');
+  return out.join('\n');
+}
 function ownAiText(q) {
   return `You're helping me as my training coach. Here is my current plan and training data from my training app, Stride Quest (the app sets my levels, gates and safety rules, so work within them):
 
 ${outsideData()}
+
+${appExplained()}
+
+ALSO USE WHAT YOU KNOW ABOUT ME: if you remember things about me from our past chats or your memory (sports background, injuries, past races, how I train, what I prefer), use them, and search our past chats if you can. Tell me in one line what you used, and if it clashes with the app data above, say so.
 
 My question: ${q.trim() || 'What should I focus on this week?'}
 
@@ -2882,8 +2904,9 @@ const MODALS = {
       <p class="hint">Got a plan you like? Come back and tap <strong>📥 Paste an answer</strong>: our coach checks it against your plan and safety rules and offers the changes as buttons.</p>
       <div class="row end"><button type="button" class="btn ghost" data-act="close">Close</button></div></form>`;
   },
-  aiPaste() {
-    return `<form id="ai-paste-form"><h2>📥 Bring an answer back</h2>
+  aiPaste(m) {
+    return `<form id="ai-paste-form"><h2>📥 ${m.waiting ? `Waiting for ${h(ui.lastAi || 'your AI')}'s answer` : 'Bring an answer back'}</h2>
+      ${m.waiting ? `<p class="hint">When it has answered, copy its reply (long-press it, or the copy icon under it), come back here and paste it below.</p>` : ''}
       <p>Paste what ChatGPT, Claude or Gemini told you. Our coach checks it against your plan and safety rules (pain, how fast to build up, your age) and offers the changes that make sense. Nothing changes until you tap Apply.</p>
       <label class="field"><span>From</span>${select('from', [['ChatGPT', 'ChatGPT'], ['Claude', 'Claude'], ['Gemini', 'Gemini'], ['another AI', 'Another AI']], ui.lastAi || 'ChatGPT')}</label>
       <label class="field"><span>The answer</span><textarea name="text" rows="8" maxlength="3500" required placeholder="Paste here"></textarea></label>
@@ -3127,7 +3150,7 @@ const actions = {
     const pick = OWN_AI.find(([k]) => k === ai), win = pick ? window.open(text.length < 6000 ? pick[2](text) : pick[2](''), '_blank') : null;
     if (win) try { win.opener = null; } catch { /* ignore */ }
     const copied = await copyText(text);
-    if (pick) { ui.lastAi = pick[1]; toast(copied ? `📋 Copied. If ${pick[1]} opens empty, paste it in.` : `Opened ${pick[1]}.`); if (!win) location.href = pick[2](''); }
+    if (pick) { ui.lastAi = pick[1]; ui.modal = { type: 'aiPaste', waiting: true }; renderModal(); toast(copied ? `📋 Copied. If ${pick[1]} opens empty, paste it in.` : `Opened ${pick[1]}.`); if (!win) location.href = pick[2](''); }
     else toast(copied ? '📋 Copied. Paste it into any AI app.' : 'Couldn\'t copy on this phone: try Share.');
   },
   'ai-paste'() { ui.modal = { type: 'aiPaste' }; renderModal(); },
