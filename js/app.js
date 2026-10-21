@@ -754,7 +754,18 @@ function queueModals() {
   else if (E.pendingChecks(S, t).length && !ui.dismissed.has('morning')) ui.modal = { type: 'morning' };
   // Period due: asks once a day (the first time the app opens) until she answers or closes it.
   else if (CY.canTrack(S) && CY.shouldAsk(S.cycle, ymdNow())) { S.cycle = CY.markAsked(S.cycle, ymdNow()); store.save(S); ui.modal = { type: 'cycleAsk' }; }
+  else if (S.placedAt && !ui.intro && newsUnseen().length) { setNewsSeen(); ui.modal = { type: 'whatsNew', items: newsUnseen(true) }; }
 }
+// "What's new" for everyone, once after an update (plain words, no version numbers). New athletes skip it.
+const NEWS_KEY = 'stride-quest:whatsNew';
+let newsShown = null;
+function newsUnseen(again) {
+  if (again && newsShown) return newsShown;
+  let seen; try { seen = localStorage.getItem(NEWS_KEY); } catch { return []; }
+  if (seen == null) { seen = now() - S.placedAt > E.DAY ? 'v96' : CHANGELOG[0].v; try { localStorage.setItem(NEWS_KEY, seen); } catch { /* ignore */ } }
+  return (newsShown = CHANGELOG.filter(c => c.user?.length && vNum(c.v) > vNum(seen)).slice(0, 3));
+}
+const setNewsSeen = () => { try { localStorage.setItem(NEWS_KEY, CHANGELOG[0].v); } catch { /* ignore */ } };
 // Today's cycle line: phase, its tip and the lighter / full switch (and a gentle health note if needed).
 function cycleBanner() {
   const c = S.cycle, today = ymdNow();
@@ -983,7 +994,7 @@ function helpPanel() {
       <button class="btn primary wide" data-act="tour-start">▶ Take the tour (about 1 minute)</button>${steps}
       ${GROUPS.map(([g, label]) => { const fs = FEATURES.filter(f => f.group === g && applies(f)); return fs.length ? `<details class="help-group"><summary>${h(label)}</summary>${fs.map(f => `<div class="how-item"><strong>${h(f.title)}</strong><p class="hint">${h(f.text)}</p><button class="btn small" data-act="show-me" data-f="${f.id}">Show me</button></div>`).join('')}</details>` : ''; }).join('')}
       <label class="switch-row"><input type="checkbox" data-act="tips-toggle" ${t.tipsOff ? '' : 'checked'}> <span>First-time tips</span></label>
-      <p class="hint">Still stuck, found a bug or have an idea? <button class="linkish" data-act="feedback">💬 Send feedback</button></p>
+      <p class="hint">Still stuck, found a bug or have an idea? <button class="linkish" data-act="feedback">💬 Send feedback</button> · <button class="linkish" data-act="whats-new">🆕 What's new</button></p>
       <div class="row end"><button type="button" class="btn ghost" data-act="close">Close</button></div></div>`;
 }
 
@@ -2024,7 +2035,7 @@ const unseenVersions = () => CHANGELOG.filter(c => vNum(c.v) > vNum(seenVersion(
 const FB_KINDS = [['bug', '🐞 Something\'s broken'], ['idea', '💡 Idea'], ['like', '❤️ I like…'], ['other', '💬 Other']];
 const isOwner = () => !!(ui.stravaStatus?.admin || stravaState().admin);
 function appFoot() {
-  return `<footer class="app-foot"><button class="linkish" data-act="feedback">💬 Send feedback</button><span>·</span><button class="linkish" data-act="help">❓ Help</button><span class="hint">${APP_VERSION}</span></footer>`;
+  return `<footer class="app-foot"><button class="linkish" data-act="feedback">💬 Send feedback</button><span>·</span><button class="linkish" data-act="help">❓ Help</button><span>·</span><button class="linkish" data-act="whats-new">🆕 What's new</button></footer>`;
 }
 function ownerBell() {
   if (!isOwner()) return '';
@@ -2512,6 +2523,13 @@ function painButtons() {
 }
 
 const MODALS = {
+  whatsNew(m) {
+    const list = m.items?.length ? m.items : CHANGELOG.filter(c => c.user?.length).slice(0, 3);
+    return `<button type="button" class="sheet-x" data-act="close" aria-label="Close">✕</button><h2>🆕 What's new</h2>
+      ${list.map(c => `<p class="q">${h(c.userTitle || c.title)}</p><ul class="plain">${c.user.map(i => `<li>${h(i)}</li>`).join('')}</ul>`).join('')}
+      <p class="hint">Ideas or something not working? <button class="linkish" data-act="feedback">💬 Send feedback</button></p>
+      <div class="row end"><button type="button" class="btn primary" data-act="close">Got it</button></div>`;
+  },
   feedback(m) {
     return `<form id="feedback-form"><button type="button" class="sheet-x" data-act="close" aria-label="Close">✕</button>
       <h2>💬 Send feedback</h2><p class="why">💡 It goes straight to Abdullah, who builds Stride Quest. Every message is read.</p>
@@ -2519,7 +2537,7 @@ const MODALS = {
       <label class="field"><span>Your message</span><textarea name="msg" rows="5" maxlength="2000" placeholder="What happened, or what would make the app better for you?">${h(m.msg || '')}</textarea></label>
       <label class="field"><span>Your email <em class="hint">optional, only if you'd like a reply</em></span><input type="email" name="email" maxlength="254" autocomplete="email" placeholder="you@example.com"></label>
       <label class="switch-row"><input type="checkbox" name="plan"> <span>Include my plan and level, so Abdullah sees what I see</span></label>
-      <p class="hint">🔒 Sent with it: the app version (${APP_VERSION}), the screen you're on and your phone or browser type. Nothing about your training or health unless you tick the box above.</p>
+      <p class="hint">🔒 Sent with it: the app version, the screen you're on and your phone or browser type. Nothing about your training or health unless you tick the box above.</p>
       <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Send</button></div></form>`;
   },
   inbox(m) {
@@ -3135,6 +3153,7 @@ const actions = {
     ui.modal = { type: 'step', track, idx }; renderModal();
   },
   close() { ui.modal = null; render(); },
+  'whats-new'() { setNewsSeen(); ui.modal = { type: 'whatsNew' }; renderModal(); },
   feedback(el) {
     const i = el.dataset.fromChat, msg = i != null ? ui.chat[+i]?.content || '' : '';
     ui.modal = { type: 'feedback', from: ui.modal?.type, msg, kind: msg ? (/\b(wish|add|should|could|feature|idea)\b/i.test(msg) ? 'idea' : 'bug') : '' }; renderModal();
