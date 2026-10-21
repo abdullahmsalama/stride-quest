@@ -1,8 +1,8 @@
 // Offline support. Network first, so new versions show up straight away; the cache is only
 // used when there is no connection. Bump VERSION to drop old caches.
-const VERSION = 'sq-v98';
+const VERSION = 'sq-v99';
 const SHELL = ['./', 'index.html', 'css/style.css', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/logo-96.png', 'icons/favicon-32.png',
-  'js/app.js', 'js/engine.js', 'js/config.js', 'js/store.js', 'js/coach.js', 'js/map.js', 'js/fog.js', 'js/stats.js', 'js/data/norms.js', 'js/data/races.js', 'js/data/features.js', 'js/data/other.js', 'js/events.js', 'js/target.js', 'js/nutrition.js', 'js/splits.js', 'js/age.js', 'js/cycle.js', 'js/data/kids.js', 'js/gym.js', 'js/data/gym.js', 'js/gymmap.js', 'js/intro.js',
+  'js/app.js', 'js/engine.js', 'js/config.js', 'js/store.js', 'js/coach.js', 'js/map.js', 'js/fog.js', 'js/stats.js', 'js/data/norms.js', 'js/data/races.js', 'js/data/features.js', 'js/data/other.js', 'js/events.js', 'js/target.js', 'js/nutrition.js', 'js/splits.js', 'js/age.js', 'js/cycle.js', 'js/data/changelog.js', 'js/data/kids.js', 'js/gym.js', 'js/data/gym.js', 'js/gymmap.js', 'js/intro.js',
   'js/sound.js', 'js/motivation.js', 'js/challenges.js', 'js/calendar.js',
   'js/data/tracks.js', 'js/data/exercises.js', 'js/data/motivation.js', 'js/time.js', 'js/goal.js', 'js/tri.js', 'js/trimap.js', 'js/data/tri.js', 'js/actions.js', 'js/hybrid.js', 'js/data/hybrid.js', 'js/standards.js', 'js/background.js',
   'sounds/stroke.mp3', 'sounds/stroke2.mp3', 'sounds/splash.mp3', 'sounds/pool.mp3', 'sounds/grunt1.mp3', 'sounds/grunt2.mp3', 'sounds/grunt3.mp3', 'sounds/heave.mp3'];

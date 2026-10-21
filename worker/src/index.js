@@ -516,7 +516,8 @@ async function strava(request, env, url, headers, ok) {
     const a = await env.DB.prepare('SELECT status FROM strava_access WHERE device = ?1').bind(body.device).first();
     const admin = await isAdmin(body.device);
     const pending = admin ? (await env.DB.prepare("SELECT COUNT(*) AS n FROM strava_access WHERE status = 'pending'").first()).n : 0;
-    return json({ status: admin ? 'approved' : a?.status || 'none', admin, pending }, 200, headers);
+    const feedback = admin ? (await env.DB.prepare("SELECT COUNT(*) AS n FROM feedback WHERE status = 'new'").first().catch(() => ({ n: 0 }))).n : 0;
+    return json({ status: admin ? 'approved' : a?.status || 'none', admin, pending, feedback }, 200, headers);
   }
   if (url.pathname === '/strava/request') {
     const name = String(body.name || '').trim().slice(0, 60), msg = String(body.msg || '').trim().slice(0, 300);
@@ -579,6 +580,48 @@ async function strava(request, env, url, headers, ok) {
   return json({ error: 'not found' }, 404, headers);
 }
 
+// Feedback from the app: saved for the owner's inbox (🔔 in the app) and emailed with Resend when set up
+// (secrets RESEND_API_KEY and OWNER_EMAIL; the address never appears in the app or this code).
+const FB_KINDS = { bug: '🐞 Something\'s broken', idea: '💡 Idea', like: '❤️ I like…', other: '💬 Other' };
+async function feedback(request, env, url, headers) {
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'bad json' }, 400, headers); }
+  if (!isDevice(body.device)) return json({ error: 'bad device' }, 400, headers);
+  if (url.pathname === '/feedback/admin') {
+    if (!(await env.DB.prepare('SELECT 1 FROM strava_admins WHERE device = ?1').bind(body.device).first())) return json({ error: 'not admin' }, 403, headers);
+    const id = +body.id;
+    if (['read', 'done', 'new'].includes(body.action) && id > 0) await env.DB.prepare('UPDATE feedback SET status = ?2 WHERE id = ?1').bind(id, body.action).run();
+    if (body.action === 'delete' && id > 0) await env.DB.prepare('DELETE FROM feedback WHERE id = ?1').bind(id).run();
+    if (body.action === 'read-all') await env.DB.prepare("UPDATE feedback SET status = 'read' WHERE status = 'new'").run();
+    const items = (await env.DB.prepare('SELECT id, kind, msg, email, version, screen, ua, plan, status, ts FROM feedback ORDER BY ts DESC LIMIT 100').all()).results || [];
+    return json({ items, unread: items.filter(x => x.status === 'new').length }, 200, headers);
+  }
+  const msg = String(body.msg || '').trim().slice(0, 2000);
+  if (msg.length < 3) return json({ error: 'Write a few words first.' }, 400, headers);
+  const kind = FB_KINDS[body.kind] ? body.kind : 'other';
+  const email = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,}$/i.test(String(body.email || '').trim()) ? String(body.email).trim() : null;
+  const cut = (v, n) => (v == null ? null : String(v).slice(0, n));
+  const recent = (await env.DB.prepare('SELECT COUNT(*) AS n FROM feedback WHERE device = ?1 AND ts > ?2').bind(body.device, Date.now() - 3600e3).first()).n;
+  if (recent >= 3) return json({ error: 'Thanks! That\'s 3 this hour already. Send more in a little while.' }, 429, headers);
+  const row = { kind, msg, email, version: cut(body.version, 20), screen: cut(body.screen, 40), ua: cut(body.ua, 200), plan: cut(body.plan, 6000) };
+  await env.DB.prepare('INSERT INTO feedback (device, kind, msg, email, version, screen, ua, plan, ts) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)')
+    .bind(body.device, row.kind, row.msg, row.email, row.version, row.screen, row.ua, row.plan, Date.now()).run();
+  let emailed = false;
+  if (env.RESEND_API_KEY && env.OWNER_EMAIL) {
+    const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const html = `<p><strong>${esc(FB_KINDS[kind])}</strong></p><p style="white-space:pre-wrap">${esc(msg)}</p>
+      <p style="color:#666">${esc(row.version)} · ${esc(row.screen)} · ${esc(row.ua)}${email ? `<br>Reply to: ${esc(email)}` : '<br>No reply email (anonymous)'}</p>
+      ${row.plan ? `<details><summary>Their plan</summary><pre style="white-space:pre-wrap">${esc(row.plan)}</pre></details>` : ''}
+      <p><a href="${esc(env.SITE_URL || '')}">Open Stride Quest</a> → 🔔 for all feedback.</p>`;
+    try {
+      const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: env.FEEDBACK_FROM || 'Stride Quest <onboarding@resend.dev>', to: [env.OWNER_EMAIL], subject: `Stride Quest feedback: ${FB_KINDS[kind]} ${msg.slice(0, 50)}`, html, ...(email ? { reply_to: email } : {}) }) });
+      emailed = r.ok;
+    } catch { /* it's saved in the inbox anyway */ }
+  }
+  return json({ ok: true, emailed }, 200, headers);
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin');
@@ -599,6 +642,11 @@ export default {
       return json({ models: (d.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace('models/', '')) }, 200, headers);
     }
     if (url.pathname.startsWith('/strava/')) return strava(request, env, url, headers, ok);
+    if (url.pathname.startsWith('/feedback') && request.method === 'POST') {
+      if (!ok) return json({ error: 'origin not allowed' }, 403, headers);
+      if (limited(`f:${request.headers.get('CF-Connecting-IP') || 'unknown'}`, 20)) return json({ error: 'slow down' }, 429, headers);
+      return feedback(request, env, url, headers);
+    }
     if (url.pathname === '/videos' && request.method === 'POST') {
       if (!ok) return json({ error: 'origin not allowed' }, 403, headers);
       if (limited(`v:${request.headers.get('CF-Connecting-IP') || 'unknown'}`, 30)) return json({ error: 'slow down' }, 429, headers);

@@ -120,7 +120,7 @@ a { color: var(--brand); font-weight: 600; }
 .choice.small { padding: 6px 10px; border: 0; background: none; font-size: 13px; }
 .orders .choice { border: 0; padding: 8px 0; background: none; }
 .field { display: grid; gap: 6px; margin: 12px 0; font-weight: 600; }
-.field input[type=text], .field input[type=number] { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); }
+.field input[type=text], .field input[type=number], .field input[type=email] { width: 100%; font: 16px var(--body); padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); }
 .with-unit { display: flex; align-items: center; gap: 8px; }
 .with-unit em { font-style: normal; color: var(--ink-2); font-weight: 500; }
 .pain input[type=range] { width: 100%; accent-color: var(--lime); }
@@ -860,7 +860,7 @@ header.top { gap: 10px; }
 .strava-btn { background: #fc4c02; color: #fff; border: 0; border-radius: 8px; padding: 10px 16px; font: 700 14px var(--body); cursor: pointer; }
 .strava-btn:hover { background: #e34402; }
 .count-badge { display: inline-block; min-width: 20px; padding: 1px 6px; border-radius: 10px; background: #fc4c02; color: #fff; font: 700 12px var(--body); text-align: center; vertical-align: middle; }
-.strava-admin { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line, rgba(0,0,0,.1)); }
+.strava-admin { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .strava-admin ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
 .strava-admin li { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
 .strava-card .owner-link { margin: 4px 0 0; font-size: 12px; text-align: right; }
@@ -934,3 +934,17 @@ body:has(#modal:not([hidden])) .coach-fab { display: none; } /* the coach button
 .copy-box p { margin: 0 0 8px; }
 .plain-ol { padding-left: 20px; }
 .plain-ol li { margin-bottom: 8px; }
+
+/* Feedback link at the end of every screen, and the owner's 🔔 inbox */
+.app-foot { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; margin: 28px 0 8px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 14px; }
+.app-foot .hint { margin: 0; }
+.chip.bell { position: relative; cursor: pointer; font: inherit; font-weight: 600; font-size: 13px; color: inherit; }
+.chip.bell .count-badge { position: absolute; top: -7px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #e53935; color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
+.inbox-seg { margin: 8px 0 12px; flex-wrap: wrap; }
+.fb-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.fb-item { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.fb-item.new { border-color: var(--brand); }
+.fb-item.done { opacity: .65; }
+.fb-msg { white-space: pre-wrap; word-break: break-word; margin: 6px 0; }
+.ver { border-bottom: 1px solid var(--line); padding: 6px 0; }
+.ver.new strong { color: var(--brand); }

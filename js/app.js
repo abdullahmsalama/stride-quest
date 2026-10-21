@@ -37,6 +37,7 @@ import { GYM_WORLDS, GYM_STAGES, GYM_SPLITS, PAIRS } from './data/gym.js';
 import { KID_LIKES, MISSIONS, KID_TIPS, missionsFor } from './data/kids.js';
 import { OTHER, EFFORT, otherItems, sessionItem, otherOf, STRAVA_RUN, kindOfStrava, effortOf, stravaMet } from './data/other.js';
 import { FEATURES, GROUPS, FEATURE_BRIEF } from './data/features.js';
+import { CHANGELOG } from './data/changelog.js';
 
 // ---------- state ----------
 // Theme: light by default (the look the app launched with); dark or follow-the-device on request.
@@ -676,9 +677,9 @@ function render() {
   $('#app').innerHTML = `
     <header class="top">
       <button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest"><img class="brand-logo" src="icons/logo-96.png" alt="" width="28" height="28">Stride Quest</button>
-      <div class="chips"><button class="chip help-btn" data-act="help" title="How the app works" aria-label="Help">❓<span class="help-word"> Help</span></button><span class="chip" title="Total XP: ${S.xp}">⚡ ${S.xp >= 10000 ? `${(S.xp / 1000).toFixed(1).replace(/\.0$/, '')}k` : S.xp}<span class="xp-word"> XP</span></span><span class="chip" title="Day streak">🔥 ${E.dayStreak(S, t)}</span></div>
+      <div class="chips"><button class="chip help-btn" data-act="help" title="How the app works" aria-label="Help">❓<span class="help-word"> Help</span></button><span class="chip" title="Total XP: ${S.xp}">⚡ ${S.xp >= 10000 ? `${(S.xp / 1000).toFixed(1).replace(/\.0$/, '')}k` : S.xp}<span class="xp-word"> XP</span></span><span class="chip" title="Day streak">🔥 ${E.dayStreak(S, t)}</span>${ownerBell()}</div>
     </header>
-    <main class="view view-${ui.tab}">${views[ui.tab]()}</main>
+    <main class="view view-${ui.tab}">${views[ui.tab]()}${ui.tab === 'coach' ? '' : appFoot()}</main>
     <nav class="tabs">${(kid ? [['today', '🌟', 'Play'], ['me', '👤', 'Me']] : [['today', '🏠', 'Today'], ['map', '🗺️', 'Map'], ['challenge', '🏆', 'Challenge'], ['events', '🗓️', '<em class="long">Competitions </em>Calendar'], ['stats', '📊', 'Stats'], ['nutrition', '🍽️', 'Nutrition'], ['me', '👤', 'Me']]).map(([k, i, l]) =>
       `<button class="${ui.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}"${k === 'events' ? ' aria-label="Competitions Calendar"' : ''}><span>${i}</span><b class="lbl">${l}</b></button>`).join('')}</nav>
     ${ui.tab === 'coach' || kid ? '' : coachFab()}`;
@@ -982,6 +983,7 @@ function helpPanel() {
       <button class="btn primary wide" data-act="tour-start">▶ Take the tour (about 1 minute)</button>${steps}
       ${GROUPS.map(([g, label]) => { const fs = FEATURES.filter(f => f.group === g && applies(f)); return fs.length ? `<details class="help-group"><summary>${h(label)}</summary>${fs.map(f => `<div class="how-item"><strong>${h(f.title)}</strong><p class="hint">${h(f.text)}</p><button class="btn small" data-act="show-me" data-f="${f.id}">Show me</button></div>`).join('')}</details>` : ''; }).join('')}
       <label class="switch-row"><input type="checkbox" data-act="tips-toggle" ${t.tipsOff ? '' : 'checked'}> <span>First-time tips</span></label>
+      <p class="hint">Still stuck, found a bug or have an idea? <button class="linkish" data-act="feedback">💬 Send feedback</button></p>
       <div class="row end"><button type="button" class="btn ghost" data-act="close">Close</button></div></div>`;
 }
 
@@ -1863,7 +1865,7 @@ function viewCoach() {
   const modeSeg = `<div class="seg coach-seg">${[[false, '⚡ Quick'], [true, '🧠 Smart · slower']].map(([v, l]) => `<button class="${!!ui.smartCoach === v ? 'on' : ''}" data-act="coach-mode" data-v="${v ? 1 : 0}">${l}</button>`).join('')}</div>
     <p class="hint coach-mode-hint">${ui.smartCoach ? '🧠 Smart coach thinks longer and is better at tricky questions like a wrong placement. Replies take about 5-30 seconds.' : '⚡ Quick coach answers in a couple of seconds. Switch to Smart for tricky questions.'}</p>`;
   return `<button class="btn ghost small coach-back" data-act="coach-back">◂ Back</button>${modeSeg}<section class="chat">
-      <div class="chat-log">${msgs.map((m, mi) => `<div class="msg ${m.role}">${md(m.content)}${m.provider === 'offline' ? `<span class="tag warn">${m.reason ? `⚠️ ${h(AI_TROUBLE[m.reason] || AI_TROUBLE.down)} Meanwhile, this answer is from the built-in coach.` : 'built-in coach'}</span>` : m.role === 'assistant' && m.model ? `<span class="tag">${h(aiLabel(m.model, m.provider, m.tier))}</span>` : ''}</div>${m.role === 'user' && ui.chat.length && !(ui.thinking && mi === ui.chat.length - 1) ? `<div class="msg-tools"><button class="linkish" data-act="msg-edit" data-m="${mi}">✏️ Edit</button><button class="linkish" data-act="msg-del" data-m="${mi}">🗑 Delete</button></div>` : ''}${suggestionCards(m, mi)}`).join('')}
+      <div class="chat-log">${msgs.map((m, mi) => `<div class="msg ${m.role}">${md(m.content)}${m.provider === 'offline' ? `<span class="tag warn">${m.reason ? `⚠️ ${h(AI_TROUBLE[m.reason] || AI_TROUBLE.down)} Meanwhile, this answer is from the built-in coach.` : 'built-in coach'}</span>` : m.role === 'assistant' && m.model ? `<span class="tag">${h(aiLabel(m.model, m.provider, m.tier))}</span>` : ''}</div>${m.role === 'user' && ui.chat.length && !(ui.thinking && mi === ui.chat.length - 1) ? `<div class="msg-tools"><button class="linkish" data-act="msg-edit" data-m="${mi}">✏️ Edit</button><button class="linkish" data-act="msg-del" data-m="${mi}">🗑 Delete</button></div>` : ''}${suggestionCards(m, mi)}${feedbackOffer(m, mi)}`).join('')}
         ${ui.thinking ? `<div class="msg assistant typing"><span></span><span></span><span></span>${ui.smartCoach ? '<em class="slow-note">🧠 Thinking it through…</em>' : ''}${ui.slow ? `<em class="slow-note">${ui.smartCoach ? 'Still thinking… smart answers take a bit longer' : 'Still thinking… the AI is busy, a few more seconds'}</em>` : ''}</div>` : ''}</div>
       <div class="quick">${['What should I do today?', 'I feel sore', 'Explain my level', 'How fast should easy runs be?'].map(q => `<button class="pill" data-act="quick" data-q="${h(q)}">${h(q)}</button>`).join('')}</div>
       <form id="chat-form" class="chat-input">
@@ -1924,8 +1926,8 @@ const stravaApi = async (path, body) => { try { const r = await fetch(`${WORKER_
 const stravaDevice = () => { const st = stravaState(); if (st.device) return st.device; const d = crypto.randomUUID(); setStrava({ ...st, device: d }); return d; };
 async function stravaRefreshStatus() {
   const d = await stravaApi('status', {});
-  if (!d.error) { ui.stravaStatus = d; if (d.admin && !ui.stravaAdmin) ui.stravaAdmin = await stravaApi('admin', { action: 'list' }); if (d.admin && !ui.usage) ui.usage = await stravaApi('admin', { action: 'usage' }); }
-  if (ui.tab === 'me') render();
+  if (!d.error) { ui.stravaStatus = d; setStrava({ ...stravaState(), admin: !!d.admin }); if (d.admin && !ui.stravaAdmin) ui.stravaAdmin = await stravaApi('admin', { action: 'list' }); if (d.admin && !ui.usage) ui.usage = await stravaApi('admin', { action: 'usage' }); }
+  if (ui.tab === 'me' || d.admin) render();
 }
 function stravaConnect() {
   const device = stravaDevice();
@@ -2014,6 +2016,39 @@ function stravaCard() {
 // ---------- floating coach ----------
 // A little coach in the corner of every screen (cap, whistle, friendly face). Waves now and then; a dot
 // when the coach has said something you haven't seen.
+// ---------- Feedback (to the app owner) and the owner's 🔔 inbox ----------
+const APPVER_KEY = 'stride-quest:seenVersion';
+const seenVersion = () => { try { return localStorage.getItem(APPVER_KEY) || ''; } catch { return ''; } };
+const vNum = v => +String(v || '').replace(/\D/g, '') || 0;
+const unseenVersions = () => CHANGELOG.filter(c => vNum(c.v) > vNum(seenVersion()));
+const FB_KINDS = [['bug', '🐞 Something\'s broken'], ['idea', '💡 Idea'], ['like', '❤️ I like…'], ['other', '💬 Other']];
+const isOwner = () => !!(ui.stravaStatus?.admin || stravaState().admin);
+function appFoot() {
+  return `<footer class="app-foot"><button class="linkish" data-act="feedback">💬 Send feedback</button><span>·</span><button class="linkish" data-act="help">❓ Help</button><span class="hint">${APP_VERSION}</span></footer>`;
+}
+function ownerBell() {
+  if (!isOwner()) return '';
+  const n = (ui.stravaStatus?.feedback || 0) + (ui.stravaStatus?.pending || 0) + (ui.verSeenThisRun ? 0 : unseenVersions().length);
+  return `<button class="chip bell" data-act="inbox" title="Owner inbox" aria-label="Owner inbox${n ? `, ${n} new` : ''}">🔔${n ? `<b class="count-badge">${n > 99 ? '99+' : n}</b>` : ''}</button>`;
+}
+const fbApi = async (path, body) => { try { const r = await fetch(`${WORKER_URL.replace(/\/$/, '')}/feedback${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: stravaDevice(), ...body }) }); return await r.json(); } catch { return { error: 'offline' }; } };
+// The owner's phone: check the inbox count when the app opens (and the Strava status says admin).
+async function ownerPoll() {
+  if (!WORKER_URL || !stravaState().admin) return;
+  const d = await stravaApi('status', {});
+  if (d.error) return;
+  ui.stravaStatus = d; setStrava({ ...stravaState(), admin: !!d.admin });
+  render();
+}
+// The coach offers to pass a problem or wish on to the owner.
+const FB_HINT = /\b(bug|broken|crash(es|ed)?|glitch|freez(e|es|ing)|doesn'?t (work|load|open|save)|not (working|loading|saving)|won'?t (load|open|work|save)|error|feedback|feature request|the app (should|could|needs)|wish (the|this) app|please add|can you add|add a feature|confusing|annoying)\b/i;
+function feedbackOffer(m, mi) {
+  if (m.role !== 'assistant' || mi !== ui.chat.length - 1) return '';
+  const u = ui.chat[mi - 1];
+  if (!u || u.role !== 'user' || !FB_HINT.test(u.content)) return '';
+  return `<div class="suggest fb-offer"><div><strong>📨 Tell the Stride Quest team?</strong><p class="hint">Send what you wrote to Abdullah, who builds the app.</p></div><div class="row"><button class="btn small" data-act="feedback" data-from-chat="${mi - 1}">Send feedback</button></div></div>`;
+}
+
 function coachFab() {
   return `<button class="coach-fab ${ui.coachUnread ? 'unread' : ''}" data-act="coach-open" aria-label="Open your coach">
     <svg viewBox="0 0 64 64" width="58" height="58" aria-hidden="true">
@@ -2426,6 +2461,7 @@ function viewMe() {
     ${splitCard()}
     <section class="card"><h3>🏋️ My other training</h3>${(S.otherTraining || []).length ? `<ul class="ot-list">${S.otherTraining.map(o => `<li>${h(otherLine(o))}</li>`).join('')}</ul>` : '<p class="hint">Gym, football, padel…? Add it so your plan keeps hard runs off heavy-leg days and your nutrition counts it.</p>'}
       <button class="btn small" data-act="other-edit">${(S.otherTraining || []).length ? 'Edit' : 'Add other training'}</button></section>
+    <section class="card"><h3>💬 Feedback</h3><p class="hint">Something broken, an idea, or something you like? It goes straight to Abdullah, who builds the app. Also at the bottom of every screen.</p><button class="btn" data-act="feedback">Send feedback</button></section>
     <section class="card"><h3>❓ Help</h3><p class="hint">How everything in the app works, with "Show me" buttons. Also under ❓ Help at the top of every screen.</p><button class="btn" data-act="help">Open Help</button></section>
     <section class="card"><h3>Your data</h3>
       <p class="hint">Progress is saved in this browser only. Export it to move to another device.</p>
@@ -2476,6 +2512,35 @@ function painButtons() {
 }
 
 const MODALS = {
+  feedback(m) {
+    return `<form id="feedback-form"><button type="button" class="sheet-x" data-act="close" aria-label="Close">✕</button>
+      <h2>💬 Send feedback</h2><p class="why">💡 It goes straight to Abdullah, who builds Stride Quest. Every message is read.</p>
+      <p class="q">What is it about?</p>${radio('kind', FB_KINDS, m.kind || '')}
+      <label class="field"><span>Your message</span><textarea name="msg" rows="5" maxlength="2000" placeholder="What happened, or what would make the app better for you?">${h(m.msg || '')}</textarea></label>
+      <label class="field"><span>Your email <em class="hint">optional, only if you'd like a reply</em></span><input type="email" name="email" maxlength="254" autocomplete="email" placeholder="you@example.com"></label>
+      <label class="switch-row"><input type="checkbox" name="plan"> <span>Include my plan and level, so Abdullah sees what I see</span></label>
+      <p class="hint">🔒 Sent with it: the app version (${APP_VERSION}), the screen you're on and your phone or browser type. Nothing about your training or health unless you tick the box above.</p>
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Send</button></div></form>`;
+  },
+  inbox(m) {
+    const ss = ui.stravaStatus || {}, fb = ui.fbInbox, sec = m.sec || 'feedback';
+    const ago = ts => { const d = Math.floor((now() - ts) / 864e5); return d <= 0 ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d === 1 ? 'yesterday' : `${d} days ago`; };
+    const kind = k => (FB_KINDS.find(x => x[0] === k) || FB_KINDS[3])[1];
+    const tabs = [['feedback', `💬 Feedback${ss.feedback ? ` (${ss.feedback})` : ''}`], ['strava', `🔗 Strava${ss.pending ? ` (${ss.pending})` : ''}`], ['versions', `🆕 Versions${unseenVersions().length ? ` (${unseenVersions().length})` : ''}`]];
+    let body;
+    if (sec === 'feedback') body = !fb ? '<p class="hint">Loading…</p>' : fb.error ? `<p class="hint">⚠️ Couldn't load feedback (${h(fb.error)}).</p>` : !fb.items.length ? '<p class="hint">No feedback yet.</p>'
+      : `${fb.unread ? '<div class="row end"><button class="btn small ghost" data-act="fb-admin" data-v="read-all">Mark all read</button></div>' : ''}<ul class="fb-list">${fb.items.map(x => `<li class="fb-item ${h(x.status)}">
+          <div class="row wrap"><strong>${h(kind(x.kind))}</strong>${x.status === 'new' ? '<span class="tag">new</span>' : x.status === 'done' ? '<span class="tag">✓ done</span>' : ''}<span class="grow"></span><span class="hint">${ago(x.ts)}</span></div>
+          <p class="fb-msg">${h(x.msg)}</p>
+          <p class="hint">${h([x.version, x.screen, x.ua].filter(Boolean).join(' · '))}${x.email ? ` · <a href="mailto:${h(x.email)}?subject=${encodeURIComponent('Your Stride Quest feedback')}">Reply to ${h(x.email)}</a>` : ' · anonymous'}</p>
+          ${x.plan ? `<details><summary class="hint">Their plan</summary><pre class="copy-box">${h(x.plan)}</pre></details>` : ''}
+          <div class="row wrap">${x.status === 'new' ? `<button class="btn small" data-act="fb-admin" data-v="read" data-id="${x.id}">Mark read</button>` : ''}${x.status !== 'done' ? `<button class="btn small" data-act="fb-admin" data-v="done" data-id="${x.id}">Done</button>` : `<button class="btn small ghost" data-act="fb-admin" data-v="new" data-id="${x.id}">Reopen</button>`}<button class="btn small ghost" data-act="fb-admin" data-v="delete" data-id="${x.id}">Delete</button></div></li>`).join('')}</ul>`;
+    else if (sec === 'strava') body = `<p>${ss.pending ? `<strong>${ss.pending}</strong> Strava access request${ss.pending > 1 ? 's' : ''} waiting.` : 'No Strava requests waiting.'}</p><button class="btn small" data-act="inbox-strava">Open requests in Me</button>`;
+    else body = CHANGELOG.map(c => `<div class="ver ${m.unseen?.includes(c.v) ? 'new' : ''}"><p><strong>${h(c.v)} · ${h(c.title)}</strong>${c.date ? ` <span class="hint">${h(c.date)}</span>` : ''}${m.unseen?.includes(c.v) ? ' <span class="tag">new</span>' : ''}</p><ul class="plain">${c.items.map(i => `<li>${h(i)}</li>`).join('')}</ul></div>`).join('');
+    return `<button type="button" class="sheet-x" data-act="close" aria-label="Close">✕</button><h2>🔔 Owner inbox</h2>
+      <div class="seg inbox-seg">${tabs.map(([k, l]) => `<button class="${sec === k ? 'on' : ''}" data-act="inbox-sec" data-v="${k}">${l}</button>`).join('')}</div>${body}
+      <div class="row end"><button type="button" class="btn ghost" data-act="close">Close</button></div>`;
+  },
   splitPick() {
     const td = K.schedule(S).days.length, cur = S.hybrid?.split || {}, stage = S.hybrid?.strength?.stage ?? 3;
     const days = [['auto', `Auto (${SPL.strengthDays({ hybrid: {} }, td)} with your ${td} training days)`], ...[1, 2, 3, 4, 5, 6].filter(d => d < td || d === 1).map(d => [String(d), `${d} a week`])];
@@ -3070,6 +3135,30 @@ const actions = {
     ui.modal = { type: 'step', track, idx }; renderModal();
   },
   close() { ui.modal = null; render(); },
+  feedback(el) {
+    const i = el.dataset.fromChat, msg = i != null ? ui.chat[+i]?.content || '' : '';
+    ui.modal = { type: 'feedback', from: ui.modal?.type, msg, kind: msg ? (/\b(wish|add|should|could|feature|idea)\b/i.test(msg) ? 'idea' : 'bug') : '' }; renderModal();
+  },
+  async inbox() {
+    ui.modal = { type: 'inbox', sec: ui.stravaStatus?.feedback || !unseenVersions().length ? 'feedback' : 'versions', unseen: unseenVersions().map(c => c.v) };
+    if (!ui.stravaStatus?.feedback && !unseenVersions().length && ui.stravaStatus?.pending) ui.modal.sec = 'strava';
+    if (ui.modal.sec === 'versions') { try { localStorage.setItem(APPVER_KEY, CHANGELOG[0].v); } catch { /* ignore */ } ui.verSeenThisRun = true; }
+    ui.fbInbox = null; renderModal(); render();
+    ui.fbInbox = await fbApi('/admin', { action: 'list' });
+    if (ui.modal?.type === 'inbox') renderModal();
+  },
+  'inbox-sec'(el) {
+    ui.modal.sec = el.dataset.v;
+    if (el.dataset.v === 'versions') { try { localStorage.setItem(APPVER_KEY, CHANGELOG[0].v); } catch { /* ignore */ } ui.verSeenThisRun = true; }
+    renderModal(); render();
+  },
+  'inbox-strava'() { ui.modal = null; ui.tab = 'me'; ui.stravaAdmin = null; stravaRefreshStatus(); render(); setTimeout(() => document.querySelector('.strava-card')?.scrollIntoView({ behavior: 'smooth' }), 100); },
+  async 'fb-admin'(el) {
+    if (el.dataset.v === 'delete' && !confirm('Delete this feedback for good?')) return;
+    ui.fbInbox = await fbApi('/admin', { action: el.dataset.v, id: +el.dataset.id || 0 });
+    if (!ui.fbInbox.error && ui.stravaStatus) ui.stravaStatus = { ...ui.stravaStatus, feedback: ui.fbInbox.unread };
+    render();
+  },
   'cy-yes'() { ui.modal = { type: 'cycleAsk', yes: true }; renderModal(); },
   'cy-started'() { ui.modal = { type: 'cycleAsk', yes: true }; renderModal(); },
   'cy-skip'() { S.cycle = CY.skipCycle(S.cycle); ui.modal = null; commit(S); toast('OK, we\'ll ask again next cycle.'); },
@@ -3699,6 +3788,22 @@ document.addEventListener('submit', e => {
     toast(BG.isFormerAthlete(S) ? 'Background saved: technique credited, comeback fast-track on ⚡' : 'Background saved.');
     return;
   }
+  if (f.id === 'feedback-form') {
+    const msg = f.msg.value.trim();
+    if (!f.kind.value) return toast('Pick what it is about.');
+    if (msg.length < 3) return toast('Write a few words first.');
+    if (!WORKER_URL) return toast('Feedback needs the internet connection to the app server.');
+    if (ui.fbSending) return;
+    const btn = f.querySelector('[type=submit]'); btn.disabled = true; btn.textContent = 'Sending…'; ui.fbSending = true;
+    const screen = [ui.tab, ui.modal?.from].filter(Boolean).join(' / ');
+    const ua = `${/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'desktop'} · ${(/(iPhone|iPad|Android|Mac OS X|Windows|Linux)/.exec(navigator.userAgent) || [''])[0]} · ${(/(Edg|Chrome|Firefox|Safari)\//.exec(navigator.userAgent) || ['', ''])[1]}${matchMedia('(display-mode: standalone)').matches ? ' · installed' : ''}`;
+    fbApi('', { kind: f.kind.value, msg, email: f.email.value.trim(), plan: f.plan.checked ? outsideData().slice(0, 6000) : null, version: APP_VERSION, screen, ua }).then(d => {
+      ui.fbSending = false;
+      if (d.error) { btn.disabled = false; btn.textContent = 'Send'; return toast(d.error === 'offline' ? 'No connection. Your message is still here: try again in a moment.' : d.error); }
+      ui.modal = null; render(); toast('📨 Sent! Thank you, it really helps.');
+    });
+    return;
+  }
   if (f.id === 'ai-paste-form') {
     const text = f.text.value.trim(), from = f.from.value;
     if (!text) return toast('Paste the answer first.');
@@ -4051,4 +4156,5 @@ render();
 countOnce('app:open'); countDaily('app:day'); // anonymous: how many people opened the app, and use it each day
 // Strava: bring new activities in on open, and when coming back to the app (at most every 20 min).
 setTimeout(() => stravaSync(), 1500);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') stravaSync(); });
+setTimeout(() => ownerPoll(), 1200); // the owner's 🔔 count
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { stravaSync(); ownerPoll(); } });
