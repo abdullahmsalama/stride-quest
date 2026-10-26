@@ -350,7 +350,7 @@ export function completeStep(state, track, idx, opts) {
     const part = opts.result === 'partial' ? Math.round(base * 0.5 * mult) : 0;
     award(s, part, now, { kind: opts.result === 'partial' ? 'session' : 'attempt', partial: true, track, level: levelNumber(s, track), idx, title: opts.title || step.title, pain, ...words });
     msgs.push(opts.result === 'partial' ? `Partly done: +${part} XP for the effort. The step stays open: finish it another day 💪` : 'Logged. Not every day is a good day: the step stays open for when you\'re ready 💛');
-    if (track === 'gym' && opts.lifts) GYM.afterGymStep(s, step, opts.lifts, now, msgs); // the sets they did still count
+    if (track === 'gym' && opts.lifts && s.gym.mode !== 'home') GYM.afterGymStep(s, step, opts.lifts, now, msgs); // the sets they did still count
     if (opts.result === 'partial') afterSession(s, now, msgs);
     return out('partial');
   }
@@ -954,7 +954,16 @@ export function coachContext(s, now) {
 
 // The gym part of the coach's picture: split, week of the block, standards and the next weights,
 // all computed by the app (the coach must use these, never invent loads).
+// Home workouts: settings, stage and the next circuit exactly as the app built it.
+function homeContext(s, now) {
+  const g = s.gym, stage = GYM.gymStage(s), w = GYM.gymWorld(s);
+  const out = [`HOME WORKOUTS (no gym): goal ${g.goal}, ${GYM.gymDays(s)} sessions a week of about ${g.minutes} min, equipment: ${(g.have || []).join(', ') || 'none (bodyweight)'}, ${g.jumps === 'no' ? 'NO JUMPING (low impact only)' : 'jumping is fine'}. World "${w.name}", stage ${stage.n} "${stage.name}", ${Math.min(g.count || 0, 6)} of 6 sessions done in this stage (6 clear a stage; each world ends with a Test Day of push-ups, plank and a leg test). Sessions are timed circuits (work / rest seconds, rounds); each move has easier and harder versions ("Too hard" / "Too easy" buttons in the session).`];
+  const next = GYM.gymSteps(s, now).find((x, i) => !g.done[i] && x.home);
+  if (next) out.push(`NEXT HOME SESSION "${next.title}" (app-computed, use exactly): ${next.home.rounds} rounds of ${next.home.moves.map(m => m.id).join(', ')}, ${next.home.work} s on / ${next.home.rest} s off.`);
+  return out;
+}
 function gymContext(s, now) {
+  if (s.gym.mode === 'home') return homeContext(s, now);
   const g = s.gym, sp = GYM.activeSplit(s), info = GYM.weekInfo(s, now), stage = GYM.gymStage(s), bw = GYM.bwOf(s);
   const out = [`GYM: ${g.goal} goal, ${g.exp} experience, ${GYM.gymDays(s)} gym days a week, ${g.minutes} min sessions, equipment: ${g.equip}, focus: ${g.focus}. Split: ${sp.id}${sp.auto ? ' (recommended)' : ' (their pick)'}. World "${GYM.gymWorld(s).name}", stage ${stage.n} "${stage.name}". Block ${info.block}, ${info.deload ? 'DELOAD week (half the sets, lighter)' : `week ${info.week} of ${info.len}`}.`];
   const st = GYM.standing(s).filter(x => x.need != null);

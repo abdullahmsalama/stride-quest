@@ -948,3 +948,21 @@ body:has(#modal:not([hidden])) .coach-fab { display: none; } /* the coach button
 .fb-msg { white-space: pre-wrap; word-break: break-word; margin: 6px 0; }
 .ver { border-bottom: 1px solid var(--line); padding: 6px 0; }
 .ver.new strong { color: var(--brand); }
+
+/* Home workouts: easier / harder buttons and the full-screen circuit timer */
+.home-adj { gap: 6px; margin: 4px 0; }
+.home-timer { position: fixed; inset: 0; z-index: 200; background: var(--ink); color: var(--bg); display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 24px 16px calc(24px + env(safe-area-inset-bottom)); text-align: center; gap: 6px; }
+.home-timer[data-kind="work"] { background: #e8590c; color: #fff; }
+.home-timer[data-kind="rest"] { background: #2b8a3e; color: #fff; }
+.home-timer[data-kind="easy"] { background: #1971c2; color: #fff; }
+.home-timer .ht-top { position: absolute; top: calc(12px + env(safe-area-inset-top)); left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: center; font-weight: 700; }
+.home-timer .ht-x { background: rgba(255,255,255,.2); color: inherit; border: 0; border-radius: 50%; width: 40px; height: 40px; font-size: 18px; cursor: pointer; }
+.home-timer .ht-label { font: 800 clamp(26px, 8vw, 44px)/1.1 var(--display, var(--body)); margin: 0; }
+.home-timer .ht-sec { font: 800 clamp(96px, 34vw, 180px)/1 var(--display, var(--body)); margin: 0; font-variant-numeric: tabular-nums; }
+.home-timer .ht-sub { margin: 0 0 12px; opacity: .9; font-size: 17px; }
+.home-timer .bar { width: min(420px, 100%); height: 8px; background: rgba(255,255,255,.25); border-radius: 99px; overflow: hidden; margin-bottom: 16px; }
+.home-timer .bar div { height: 100%; background: #fff; }
+.home-timer .btn { min-width: 120px; }
+.home-timer .row.center { justify-content: center; gap: 10px; }
+.ex-note { list-style: none; margin: 6px 0; }
+@media (max-width: 700px) { .app-foot { padding-right: 72px; padding-left: 8px; } }

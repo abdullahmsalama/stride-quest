@@ -2,6 +2,9 @@
 // scenery per world (plates, dumbbells, kettlebells, racks, columns), a flag per stage, a trophy per
 // Test Day, and the lifter where the athlete is now. Pure SVG markup; tap a flag for its details.
 import { GYM_WORLDS, GYM_STAGES } from './data/gym.js';
+import { HOME_WORLDS, HOME_STAGES } from './data/home.js';
+// Home workouts use the same path (5 worlds of 2 stages each) with their own names and scenery.
+const homeOf = s => s?.gym?.mode === 'home';
 import { liftFigure, facing } from './trimap.js';
 
 export const W = 400;
@@ -27,6 +30,13 @@ const STYLE = [
   { ground: '#ffe0b2', deep: '#ffb74d', deco: ['bolt', 'rack', 'dumbbell', 'plate'] },
   { ground: '#e1f5fe', deep: '#b3e5fc', deco: ['column', 'cloud', 'column', 'laurel'] },
 ];
+const HOME_STYLE = [
+  { ground: '#f3e5f5', deep: '#ce93d8', deco: ['mat', 'plant', 'sofa', 'bottle'] },
+  { ground: '#fff3e0', deep: '#ffb74d', deco: ['band', 'chair', 'bottle', 'band'] },
+  { ground: '#c8e6c9', deep: '#81c784', deco: ['pine', 'rope', 'cone', 'pine'] },
+  { ground: '#e3f2fd', deep: '#90caf9', deco: ['building', 'sun', 'building', 'cloud'] },
+  { ground: '#fff8e1', deep: '#ffd54f', deco: ['trophy', 'medal', 'trophy', 'laurel'] },
+];
 function bandOf(wi) {
   const idx = NODES.map((x, i) => (x.world === wi ? i + 1 : -1)).filter(i => i > 0);
   const lo = Math.min(...idx), hi = Math.max(...idx);
@@ -48,10 +58,22 @@ const DECO = {
   laurel: (x, y) => `<text x="${x}" y="${y}" font-size="22" text-anchor="middle">🏛️</text>`,
   pine: (x, y) => `<path transform="translate(${x},${y})" d="M0,-20 L12,6 H-12 Z" fill="#558b2f"/>`,
   rock: (x, y) => `<path transform="translate(${x},${y})" d="M-12,8 L-6,-6 L4,-9 L12,8 Z" fill="#90a4ae"/>`,
+  mat: (x, y) => `<g transform="translate(${x},${y}) rotate(-12)"><rect x="-22" y="-7" width="44" height="14" rx="3" fill="#ab47bc"/><circle cx="20" r="7" fill="#8e24aa"/></g>`,
+  plant: (x, y) => `<g transform="translate(${x},${y})"><path d="M-8,4 h16 l-3,12 h-10 Z" fill="#8d6e63"/><path d="M0,4 C-14,-6 -10,-18 0,-10 C10,-18 14,-6 0,4" fill="#66bb6a"/></g>`,
+  sofa: (x, y) => `<g transform="translate(${x},${y})"><rect x="-22" y="-8" width="44" height="16" rx="4" fill="#7986cb"/><rect x="-26" y="-14" width="8" height="22" rx="3" fill="#5c6bc0"/><rect x="18" y="-14" width="8" height="22" rx="3" fill="#5c6bc0"/></g>`,
+  bottle: (x, y) => `<g transform="translate(${x},${y})"><rect x="-5" y="-12" width="10" height="22" rx="3" fill="#4fc3f7"/><rect x="-3" y="-16" width="6" height="5" fill="#0288d1"/></g>`,
+  band: (x, y) => `<path transform="translate(${x},${y})" d="M-18,0 C-18,-14 18,-14 18,0 C18,14 -18,14 -18,0" fill="none" stroke="#ef5350" stroke-width="5"/>`,
+  chair: (x, y) => `<g transform="translate(${x},${y})" fill="#a1887f"><rect x="-10" y="-20" width="4" height="34"/><rect x="-10" y="-2" width="22" height="5"/><rect x="8" y="2" width="4" height="12"/><rect x="-10" y="-20" width="4" height="34"/></g>`,
+  rope: (x, y) => `<g transform="translate(${x},${y})"><path d="M-16,8 C-16,-20 16,-20 16,8" fill="none" stroke="#5d4037" stroke-width="3"/><rect x="-19" y="6" width="6" height="10" rx="2" fill="#e53935"/><rect x="13" y="6" width="6" height="10" rx="2" fill="#e53935"/></g>`,
+  cone: (x, y) => `<g transform="translate(${x},${y})"><path d="M0,-14 L9,10 H-9 Z" fill="#ff7043"/><rect x="-12" y="9" width="24" height="4" fill="#e64a19"/></g>`,
+  building: (x, y) => `<g transform="translate(${x},${y})"><rect x="-14" y="-30" width="28" height="44" fill="#78909c"/>${[-22, -12, -2, 8].map(yy => `<rect x="-9" y="${yy}" width="6" height="5" fill="#fff59d"/><rect x="3" y="${yy}" width="6" height="5" fill="#fff59d"/>`).join('')}</g>`,
+  sun: (x, y) => `<g transform="translate(${x},${y})"><circle r="11" fill="#ffca28"/><circle r="16" fill="none" stroke="#ffca28" stroke-width="2" stroke-dasharray="3 4"/></g>`,
+  trophy: (x, y) => `<text x="${x}" y="${y}" font-size="24" text-anchor="middle">🏆</text>`,
+  medal: (x, y) => `<text x="${x}" y="${y}" font-size="22" text-anchor="middle">🏅</text>`,
 };
-function scenery() {
-  return GYM_WORLDS.map((w, wi) => {
-    const b = bandOf(wi), st = STYLE[wi], r = rng(wi * 77 + 5), out = [];
+function scenery(home) {
+  return (home ? HOME_WORLDS : GYM_WORLDS).map((w, wi) => {
+    const b = bandOf(wi), st = (home ? HOME_STYLE : STYLE)[wi], r = rng(wi * 77 + 5), out = [];
     for (let k = 0; k < 9; k++) {
       const y = b.top + 30 + r() * Math.max(20, b.bottom - b.top - 60), side = k % 2 ? r() * 60 + 20 : W - 20 - r() * 60;
       out.push(DECO[st.deco[k % st.deco.length]](Math.round(side), Math.round(y), st.deep));
@@ -72,11 +94,11 @@ function statusOf(g, node) {
 export const hereIndex = s => (s.gym.finished ? NODES.length - 1 : Math.max(0, NODES.findIndex(n => statusOf(s.gym, n) === 'here')));
 // `at`: where the lifter stands (node index, -1 = start): where they were last seen, until the walk plays.
 export function renderGymMap(s, at = hereIndex(s)) {
-  const g = s.gym;
+  const g = s.gym, home = homeOf(s), WORLDS = home ? HOME_WORLDS : GYM_WORLDS, STAGES = home ? HOME_STAGES : GYM_STAGES;
   const nodes = NODES.map((node, i) => {
     const p = POINTS[i + 1], st = statusOf(g, node), boss = node.kind === 'test';
     const fill = st === 'done' ? '#9ccc65' : st === 'here' || st === 'open' ? '#ff7043' : '#cfd8dc';
-    const label = boss ? GYM_WORLDS[node.world].test : `${node.n} · ${GYM_STAGES[node.n].name}`;
+    const label = boss ? WORLDS[node.world].test : `${node.n} · ${STAGES[node.n].name}`;
     const right = p.x < W / 2;
     return `<g class="gnode ${st}" ${st === 'here' ? 'id="gym-here"' : ''} data-act="gym-node" data-i="${i}" role="button" tabindex="0" transform="translate(${p.x},${p.y})">
       ${st === 'here' ? '<circle r="30" fill="#ff7043" opacity="0.25"><animate attributeName="r" values="24;32;24" dur="2.4s" repeatCount="indefinite"/></circle>' : ''}
@@ -87,8 +109,8 @@ export function renderGymMap(s, at = hereIndex(s)) {
   }).join('');
   const sub = pathD(), av = pointOf(at);
   const segs = SEGS.map((c, i) => `<path id="gm-seg-${i}" d="M${POINTS[i].x},${POINTS[i].y}${c}" fill="none" stroke="none"/>`).join('');
-  return `<div class="gym-svg card"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Gym map">
-    ${scenery()}
+  return `<div class="gym-svg card"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${home ? 'Home workouts map' : 'Gym map'}">
+    ${scenery(home)}
     <path d="${sub}" fill="none" stroke="#5d4037" stroke-width="22" stroke-linecap="round" opacity="0.35"/>
     <path d="${sub}" fill="none" stroke="#fff" stroke-width="5" stroke-dasharray="2 12" stroke-linecap="round"/>
     <g transform="translate(${POINTS[0].x},${POINTS[0].y})"><rect x="-44" y="-16" width="88" height="30" rx="8" fill="#263238"/><text y="5" text-anchor="middle" fill="#fff" font-size="13" font-weight="800">START</text></g>

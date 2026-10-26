@@ -15,6 +15,8 @@
 //     bottom twice → take 10% off and build back.
 import { GYM_STAGES, GYM_WORLDS, GYM_MAX, TEST_LIFTS, EQUIP_CAP, SLOTS, GYM_DAYS, GYM_SPLITS, SPLITS_FOR, PAIRS } from './data/gym.js';
 import { ageOf, isTeen } from './age.js';
+import * as HOME from './home.js';
+import { HOME_MAX } from './data/home.js';
 
 const DAY = 864e5;
 export const hasGym = s => !!s.gym && (s.profile?.tracks || []).includes('gym');
@@ -29,8 +31,9 @@ export const FOCUS = [['balanced', 'Balanced, the whole body'], ['lower', 'Lower
 export const LENGTHS = [['45', '45 min'], ['60', '1 hour'], ['90', '90 min']];
 const XP_RANK = { none: 0, lt1: 1, y1_3: 2, y3: 3 };
 
-export const gymStage = s => GYM_STAGES[Math.min(s.gym.stage, GYM_MAX - 1)];
-export const gymWorld = s => GYM_WORLDS[Math.min(s.gym.world, GYM_WORLDS.length - 1)];
+// Home workouts (s.gym.mode === 'home') run in this track: their stages, steps and tests come from home.js.
+export const gymStage = s => (HOME.isHome(s) ? HOME.homeStage(s) : GYM_STAGES[Math.min(s.gym.stage, GYM_MAX - 1)]);
+export const gymWorld = s => (HOME.isHome(s) ? HOME.homeWorld(s) : GYM_WORLDS[Math.min(s.gym.world, GYM_WORLDS.length - 1)]);
 const sexKey = s => (s.profile?.sex === 'm' ? 'm' : 'f'); // "prefer not to say" gets the more forgiving standards
 
 // Gym days a week: every training day when the gym is all they do, else their own number.
@@ -48,6 +51,7 @@ export function blockLength(s) {
 }
 // Highest stage this athlete can clear: equipment and Teen mode set limits.
 export function stageCap(s) {
+  if (HOME.isHome(s)) return HOME_MAX;
   return Math.min(EQUIP_CAP[s.gym.equip] || GYM_MAX, isTeen(s) ? 4 : GYM_MAX);
 }
 
@@ -83,6 +87,7 @@ export function activeSplit(s) {
 }
 // Every 3 blocks: offer a different split for the same days, for a fresh stimulus and some variety.
 export function rotateOffer(s) {
+  if (HOME.isHome(s)) return null;
   const b = s.gym.block?.n || 0;
   if (b < 3 || b % 3 !== 0 || s.gym.offerSeen === b) return null;
   const cur = activeSplit(s).id, alt = splitOptions(s).find(id => id !== cur);
@@ -91,6 +96,7 @@ export function rotateOffer(s) {
 
 // ---------- the week's sessions ----------
 export function weekInfo(s, now = Date.now()) {
+  if (HOME.isHome(s)) return { block: 1, week: s.gym.week || 1, len: 0, deload: false, comeback: false, home: true };
   const g = s.gym, len = blockLength(s), week = g.block?.week || 1;
   const deload = week > len;
   const last = Math.max(0, ...(s.history || []).filter(h => h.track === 'gym' && h.kind === 'session').map(h => h.ts));
@@ -175,6 +181,7 @@ export function cardioFor(s, plans) {
 }
 // Cardio minutes in this week's sessions, and what to add on free days to reach 150.
 export function weeklyCardio(s, now = Date.now()) {
+  if (HOME.isHome(s)) return HOME.homeCardio(s);
   const steps = gymSteps(s, now).filter(x => x.type === 'lift');
   const inSessions = steps.reduce((t, x) => t + (x.finish?.min || 0) + 5, 0);
   const free = Math.max(0, 7 - gymDays(s));
@@ -185,6 +192,7 @@ export function weeklyCardio(s, now = Date.now()) {
 // Steps for the current gym week: the split's next sessions, then (on a world's last stage, in the
 // deload week) the Test Day.
 export function gymSteps(s, now = Date.now()) {
+  if (HOME.isHome(s)) return HOME.homeSteps(s);
   const g = s.gym, info = weekInfo(s, now), sp = activeSplit(s), days = GYM_SPLITS[sp.id].days, n = gymDays(s);
   const w = GYM_WORLDS[GYM_STAGES[Math.min(g.stage, GYM_MAX - 1)].world];
   const testDue = info.deload && !g.finished && g.stage < stageCap(s) && GYM_STAGES[g.stage]?.std && w.stages.at(-1) === g.stage;
@@ -212,16 +220,18 @@ export function bwOf(s) {
 }
 const NAMES = { squat: 'squat', bench: 'bench press', deadlift: 'deadlift', push: 'push-ups', pull: 'pull-ups', legs: 'Bulgarian split squats' };
 export function testLifts(s) {
+  if (HOME.isHome(s)) return HOME.homeTests(s).map(t => ({ key: t.id, id: t.id, name: t.label }));
   return TEST_LIFTS[s.gym.equip || 'gym'].map(([key, id, f]) => ({ key, id, factor: f, name: NAMES[key] }));
 }
 // Best estimated 1RM (or best reps, bodyweight) on an exercise since a time.
 export function best(s, id, since = 0) {
   const log = (s.gym.lifts?.[id] || []).filter(x => x.ts >= since);
-  if (s.gym.equip === 'bw') return Math.max(0, ...log.flatMap(x => x.reps || []));
+  if (s.gym.equip === 'bw' || HOME.isHome(s)) return Math.max(0, ...log.flatMap(x => x.reps || []));
   return Math.max(0, ...log.map(x => Math.max(0, ...(x.reps || []).map(r => e1rm(x.kg, r)))));
 }
 // Where each test lift stands against a stage's standard.
 export function standing(s, stage = s.gym.stage, since = 0) {
+  if (HOME.isHome(s)) return HOME.homeStanding(s, stage, since);
   const st = GYM_STAGES[Math.min(stage, GYM_MAX - 1)], bw = bwOf(s), sex = sexKey(s), bwMode = s.gym.equip === 'bw';
   const std = bwMode ? st.bw?.[sex] : st.std?.[sex];
   return testLifts(s).map((l, i) => {
@@ -244,6 +254,7 @@ const low = r => +String(r).split('-')[0] || 8;
 const roundTo = (kg, step) => Math.max(step, Math.round(kg / step) * step);
 // Suggested weight for an exercise in a session, from the last time it was logged.
 export function suggestLoad(s, item, info = weekInfo(s)) {
+  if (HOME.isHome(s)) return null;
   if (s.gym.equip === 'bw' || HOLDS.has(item.id)) return null;
   const log = (s.gym.lifts?.[item.id] || []).filter(x => !x.told && x.kg > 0), last = log.at(-1); // the lifts they told us only set the first weight
   const db = s.gym.equip === 'home' || /^db_|dumbbell|hammer|lateral|rear_delt|incline_db/.test(item.id);
@@ -264,6 +275,7 @@ export function suggestLoad(s, item, info = weekInfo(s)) {
 }
 // Main lifts that haven't gone up in their last 3 logs (an early deload helps).
 export function stalled(s) {
+  if (HOME.isHome(s)) return [];
   const out = [];
   for (const [id, log] of Object.entries(s.gym.lifts || {})) {
     if (log.length < 4 || !Object.values(SLOTS).some(sl => sl.kind === 'main' && Object.values(sl).some(v => Array.isArray(v) && v.includes(id)))) continue;
@@ -277,6 +289,7 @@ export function stalled(s) {
 // ---------- placement ----------
 const toKg = (v, unit) => (+v > 0 ? +v * (unit === 'lb' ? 0.4536 : 1) : 0);
 export function placeGym(s, a, now) {
+  if (a.gMode === 'home') return HOME.placeHome(s, a, now);
   const equip = a.gEquip || 'gym', xp = XP_RANK[a.gExp] ?? 1, unit = a.liftUnit || 'kg';
   const gym = {
     goal: a.gGoal || 'muscle', exp: a.gExp || 'lt1', days: +a.gDays || Math.min(4, (a.days || []).length || 3), minutes: +a.gMin || 60,
@@ -313,6 +326,7 @@ export function placeGym(s, a, now) {
 // Saves the logged sets, rolls the week and block, and clears stages whose standard is now met.
 // `logs`: { exerciseId: { kg, reps: [..] } }. Mutates `s` (the engine passes a copy).
 export function afterGymStep(s, step, logs, now, msgs) {
+  if (HOME.isHome(s)) return HOME.afterHome(s, step, now, msgs);
   const g = s.gym;
   g.lifts ||= {};
   for (const [id, x] of Object.entries(logs || {})) {
@@ -362,6 +376,7 @@ function stageUp(s, now, msgs, how) {
 }
 // Test Day: `logs` hold the heavy set on each test lift.
 export function passTest(s, logs, now, msgs) {
+  if (HOME.isHome(s)) return HOME.passHomeTest(s, logs, now, msgs);
   const g = s.gym, w = gymWorld(s);
   afterGymStep(s, { type: 'gate' }, logs, now, msgs);
   const since = now - 1, lifts = gymSteps(s, now).filter(x => x.type !== 'gate').length;
@@ -386,12 +401,14 @@ function progressedSince(s, since) {
 }
 // Not testing this time: the next block starts.
 export function skipTest(state, now) {
+  if (HOME.isHome(state)) return HOME.skipHomeTest(state);
   const s = JSON.parse(JSON.stringify(state)), msgs = [];
   rollWeek(s, gymSteps(s, now).filter(x => x.type !== 'gate').length, now, msgs);
   return s;
 }
 // Start the deload now (main lifts stalled, or the athlete feels run down).
 export function deloadNow(state) {
+  if (HOME.isHome(state)) return state;
   const s = JSON.parse(JSON.stringify(state));
   s.gym.block.week = blockLength(s) + 1; s.gym.done = {};
   return s;
