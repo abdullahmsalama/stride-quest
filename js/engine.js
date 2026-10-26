@@ -960,6 +960,7 @@ export function coachContext(s, now) {
 function homeContext(s, now) {
   const g = s.gym, stage = GYM.gymStage(s), w = GYM.gymWorld(s);
   const out = [`HOME WORKOUTS (no gym): goal ${g.goal}, ${GYM.gymDays(s)} sessions a week of about ${g.minutes} min, equipment: ${(g.have || []).join(', ') || 'none (bodyweight)'}, ${g.jumps === 'no' ? 'NO JUMPING (low impact only)' : 'jumping is fine'}. World "${w.name}", stage ${stage.n} "${stage.name}", ${Math.min(g.count || 0, 6)} of 6 sessions done in this stage (6 clear a stage; each world ends with a Test Day of push-ups, plank and a leg test). Sessions are timed circuits (work / rest seconds, rounds); each move has easier and harder versions ("Too hard" / "Too easy" buttons in the session).`];
+  if (g.checkin) out.push('FIRST: a Check-in session (max push-ups full and on knees, longest plank, squats in 1 minute). The app places them from the results; circuits start after it.');
   const next = GYM.gymSteps(s, now).find((x, i) => !g.done[i] && x.home);
   if (next) out.push(`NEXT HOME SESSION "${next.title}" (app-computed, use exactly): ${next.home.rounds} rounds of ${next.home.moves.map(m => m.id).join(', ')}, ${next.home.work} s on / ${next.home.rest} s off.`);
   return out;

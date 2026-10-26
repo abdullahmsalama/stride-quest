@@ -12,8 +12,10 @@
 //   • Cardio: fit and fat-loss goals get one or two home cardio sessions a week (or a brisk walk).
 //   • A stage clears after 6 sessions. On a world's last stage they open its Test Day: three simple
 //     tests (push-ups, plank, legs). All three met = the next world.
-import { HOME_WORLDS, HOME_STAGES, HOME_MAX, HOME_TESTS, LADDERS, STAGE_SESSIONS } from './data/home.js';
+//   • Didn't know their push-ups or plank? The first session is a Check-in that places them.
+import { HOME_WORLDS, HOME_STAGES, HOME_MAX, HOME_TESTS, HOME_AGE_EASE, HOME_CHECKIN, CHECKIN_MAX_WORLD, LADDERS, STAGE_SESSIONS } from './data/home.js';
 import { gymDays, hasRunning } from './gym.js';
+import { ageOf } from './age.js';
 
 export const isHome = s => s.gym?.mode === 'home';
 export const HAVE = [['band', 'Resistance bands'], ['db', 'Light dumbbells or a kettlebell'], ['chair', 'A sturdy chair or step'], ['mat', 'A yoga mat']];
@@ -88,6 +90,7 @@ export const circuitMinutes = c => Math.round((c.moves.length * c.rounds * (c.wo
 
 // ---------- the week ----------
 export function homeSteps(s) {
+  if (s.gym.checkin) return [{ type: 'gate', test: true, checkin: true, title: '📋 Check-in: find your level', detail: 'Warm up for 5 minutes, then do each test once, with a good rest between: as many push-ups as you can (full, then on your knees), your longest plank, and squats in 1 minute. Your circuits are set from your results.', ex: HOME_CHECKIN.map(x => x.id), legs: true }];
   const g = s.gym, n = gymDays(s), cd = Math.min(cardioDays(s), n - 1), strength = n - cd, steps = [];
   // Strength days alternate A / B (across weeks too); cardio days go in between.
   const order = [];
@@ -111,9 +114,16 @@ export function homeSteps(s) {
 const testDue = s => !s.gym.finished && lastOfWorld(s.gym.stage) && (s.gym.count || 0) >= STAGE_SESSIONS;
 
 // ---------- tests ----------
-// A world's tests with each goal resolved for this athlete (a { m, f } goal picks by sex; unknown sex → m).
-export const homeTests = (s, world = HOME_STAGES[Math.min(s.gym.stage, HOME_MAX - 1)].world) => HOME_TESTS[Math.min(world, HOME_TESTS.length - 1)]
-  .map(t => (typeof t.need === 'object' ? { ...t, need: t.need[s.profile?.sex === 'f' ? 'f' : 'm'] } : t));
+// A world's tests with each goal resolved for this athlete: a { m, f } goal picks by sex (unknown sex → m),
+// and `age: true` goals ease from 50 and 60.
+const ageEase = s => { const a = ageOf(s); return (a != null && HOME_AGE_EASE.find(x => a >= x.from)?.factor) || 1; };
+export const homeTests = (s, world = HOME_STAGES[Math.min(s.gym.stage, HOME_MAX - 1)].world) => {
+  const f = ageEase(s);
+  return HOME_TESTS[Math.min(world, HOME_TESTS.length - 1)].map(t => {
+    const need = typeof t.need === 'object' ? t.need[s.profile?.sex === 'f' ? 'f' : 'm'] : t.need;
+    return { ...t, need: t.age && f < 1 ? Math.max(1, Math.round(need * f)) : need };
+  });
+};
 // Best logged result on a test move (reps or seconds).
 const bestOf = (s, id, since = 0) => Math.max(0, ...(s.gym.lifts?.[id] || []).filter(x => x.ts >= since).flatMap(x => x.reps || []));
 export function homeStanding(s, stage = s.gym.stage, since = 0) {
@@ -127,12 +137,36 @@ export function homeStanding(s, stage = s.gym.stage, since = 0) {
 export function placeHome(s, a, now) {
   const have = HAVE.map(([k]) => k).filter(k => a[`hv_${k}`]);
   let stage = { start: 0, some: 2, regular: 4 }[a.hFit] ?? 0;
-  const push = +a.hPush || 0, plank = +a.hPlank || 0;
+  const push = +a.hPush || 0, plank = +a.hPlank || 0, checkin = !push && !plank; // no numbers: a Check-in first
   if (push >= 15 && plank >= 45) stage = Math.max(stage, 4); else if (push >= 8 && plank >= 30) stage = Math.max(stage, 2);
   const gym = { mode: 'home', have, minutes: +a.hMin || 20, goal: a.hGoal || 'fit', jumps: a.hJump || 'no', fitness: a.hFit || 'start', days: +a.hDays || Math.min(4, (a.days || []).length || 3),
     stage, world: HOME_STAGES[stage].world, done: {}, rot: 0, count: 0, week: 1, adj: {}, lifts: {}, stageAt: now, finished: false,
-    floor: { ...(push >= 10 ? { push: 'pushup' } : push >= 8 ? { push: 'knee_pushup' } : {}), ...(plank >= 45 ? { core: 'plank' } : {}) } };
+    floor: floorsOf(push >= 10, push >= 8, plank), ...(checkin ? { checkin: true } : {}) };
   return gym;
+}
+
+// What they can already do sets a floor on the push-up and plank ladders.
+const floorsOf = (full, knee, plank) => ({ ...(full ? { push: 'pushup' } : knee ? { push: 'knee_pushup' } : {}), ...(plank >= 45 ? { core: 'plank' } : {}) });
+// Check-in results ({ id: n }): the highest world whose Test Day they already pass, up to CHECKIN_MAX_WORLD.
+const PUSH = LADDERS.push.map(x => x.id);
+export function checkinWorld(s, res) {
+  const val = id => (PUSH.includes(id) ? Math.max(0, ...PUSH.slice(PUSH.indexOf(id)).map(k => res[k] || 0)) : res[id] || 0);
+  let w = 0;
+  while (w < CHECKIN_MAX_WORLD && homeTests(s, w).every(t => val(t.id) >= t.need)) w++;
+  return w;
+}
+function placeFromCheckin(s, logs, now, msgs) {
+  const g = s.gym, res = {};
+  for (const [id, x] of Object.entries(logs || {})) {
+    const v = (x.reps || []).map(Number).filter(r => r > 0);
+    if (v.length) { res[id] = v[0]; (g.lifts[id] ||= []).push({ ts: now, kg: 0, reps: v.slice(0, 1) }); }
+  }
+  const w = checkinWorld(s, res);
+  g.stage = HOME_WORLDS[w].stages[0]; g.world = w; g.count = 0; g.stageAt = now; g.adj = {}; g.done = {};
+  g.floor = floorsOf((res.pushup || 0) >= 10, (res.pushup || 0) >= 3 || (res.knee_pushup || 0) >= 8, res.plank || 0);
+  delete g.checkin;
+  msgs.push(`📋 Check-in done! You start in ${homeWorld(s).emoji} ${homeWorld(s).name}, ${homeStage(s).name}. Your circuits are set from your results.`);
+  return true;
 }
 
 // ---------- after a session ----------
@@ -162,6 +196,7 @@ function stageUp(s, now, msgs) {
 export function passHomeTest(s, logs, now, msgs) {
   const g = s.gym, w = homeWorld(s);
   g.lifts ||= {};
+  if (g.checkin) return placeFromCheckin(s, logs, now, msgs);
   for (const [id, x] of Object.entries(logs || {})) {
     const v = (x.reps || []).map(Number).filter(r => r > 0);
     if (v.length) { (g.lifts[id] ||= []).push({ ts: now, kg: 0, reps: v.slice(0, 1) }); g.lifts[id] = g.lifts[id].slice(-30); }
@@ -182,6 +217,7 @@ export function passHomeTest(s, logs, now, msgs) {
 function clearGate(g, steps) { steps.forEach((x, i) => { if (x.type === 'gate') delete g.done[i]; }); }
 export function skipHomeTest(state) {
   const s = JSON.parse(JSON.stringify(state));
+  if (s.gym.checkin) { delete s.gym.checkin; return s; } // no Check-in: they keep the level from "how fit do you feel"
   s.gym.count = STAGE_SESSIONS - 3;
   return s;
 }

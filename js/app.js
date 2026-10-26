@@ -33,7 +33,7 @@ import * as AGE from './age.js';
 import * as CY from './cycle.js';
 import * as GYM from './gym.js';
 import * as HOME from './home.js';
-import { HOME_WORLDS, HOME_STAGES, CAT_LABEL, STAGE_SESSIONS } from './data/home.js';
+import { HOME_WORLDS, HOME_STAGES, HOME_CHECKIN, CAT_LABEL, STAGE_SESSIONS } from './data/home.js';
 import { renderGymMap, NODES as GYM_NODES, moveGym, hereIndex as gymHere, pointOf as gymPoint, H as GYM_H } from './gymmap.js';
 import { GYM_WORLDS, GYM_STAGES, GYM_SPLITS, PAIRS } from './data/gym.js';
 import { KID_LIKES, MISSIONS, KID_TIPS, missionsFor } from './data/kids.js';
@@ -333,8 +333,9 @@ function homeQuestions(a) {
     <p class="q">Can you jump at home?</p>${radio('hJump', HOME.JUMPS, a.hJump || '')}
     <p class="q">How fit do you feel right now?</p>${radio('hFit', HOME.FITNESS, a.hFit || '')}
     ${both ? `<label class="field"><span>Home workout days a week</span>${select('hDays', [1, 2, 3, 4, 5].map(d => [String(d), `${d} day${d > 1 ? 's' : ''}`]), String(a.hDays || 2))}</label>` : ''}
-    <p class="q">Optional: places you more exactly</p>
-    <div class="row wrap">${num('hPush', 'Push-ups in a row (knees are fine)', a.hPush, 'reps')}${num('hPlank', 'Plank hold', a.hPlank, 's')}</div>`;
+    <p class="q">How many push-ups and how long a plank can you do?</p>
+    <div class="row wrap">${num('hPush', 'Push-ups in a row (knees are fine)', a.hPush, 'reps')}${num('hPlank', 'Plank hold', a.hPlank, 's')}</div>
+    <div class="choices">${check('hUnknown', "🤷 I don't know: check me in my first session", a.hUnknown)}</div>`;
 }
 function hybQuestions(a) {
   return `<p class="q">Where do you train?</p>${radio('gym', [['full', 'Gym with sled, rower, SkiErg'], ['gym', 'Gym with barbells, no sled or ergs'], ['home', 'Home: dumbbells / kettlebells'], ['none', 'No equipment yet']], a.gym || 'full')}
@@ -672,7 +673,7 @@ function homePlacedBox(a0, big = false) {
   const inner = `<p class="eyebrow">${w.emoji} ${h(w.name)}</p><h2>${big ? '' : '🏠 Home workouts: '}Stage ${st.n} · ${h(st.name)}</h2>
     <p><strong>${steps.length} session${steps.length > 1 ? 's' : ''} a week, about ${probe.gym.minutes} min</strong>: ${(() => { const c = steps.filter(x => x.label === 'Cardio').length, f = steps.length - c; return `${f} full-body circuit${f > 1 ? 's' : ''}${c ? ` + ${c} home cardio` : ''}`; })()}${probe.gym.jumps === 'no' ? ', no jumping' : ''}</p>
     <p class="hint">Goal: ${h(goal)}. Timed rounds: each move ${HOME.pace(probe)[0]} s on, ${HOME.pace(probe)[1]} s off. Every move has an easier and a harder version.</p>
-    ${first ? `<p class="hint">First session: <strong>${h(first.title)}</strong>: ${h(first.home.moves.map(m => EXERCISES[m.id]?.name || m.id).join(' → '))}</p>` : ''}
+    ${first?.checkin ? `<p class="hint">First session: <strong>${h(first.title)}</strong>: push-ups, a plank and squats, about 15 min. It sets your level and your circuits.</p>` : first ? `<p class="hint">First session: <strong>${h(first.title)}</strong>: ${h(first.home.moves.map(m => EXERCISES[m.id]?.name || m.id).join(' → '))}</p>` : ''}
     <p class="hint">🗺️ Each stage clears after ${STAGE_SESSIONS} sessions. Each world ends with a Test Day: push-ups, a plank and a leg test.</p>`;
   return big ? `<div class="result-badge">${w.emoji}</div>${inner}` : `<div class="dream-box">${inner}</div>`;
 }
@@ -892,6 +893,11 @@ function homePlan(st) {
   return light ? { ...c, rounds: Math.max(1, c.rounds - 1), fin: null, light } : c;
 }
 function homeExHtml(st) {
+  if (st.checkin) {
+    return HOME_CHECKIN.map(t => `<li class="ex"><div><strong>${h(t.label)}</strong></div>${t.hint ? `<p class="hint">${h(t.hint)}</p>` : ''}
+        <div class="gl-row"><label class="gl-r"><input type="number" inputmode="numeric" name="gr_${t.id}_0" min="0" max="600" placeholder="${t.unit === 's' ? 'seconds' : 'reps'}"></label></div>${homeHow(t.id)}</li>`).join('')
+      + '<p class="hint">Good form only: stop when it gets sloppy. There\'s no pass or fail: your results just set your level. <button type="button" class="link small" data-act="gym-skip-test">Skip it: start from how fit I said I feel</button></p>';
+  }
   if (st.test) {
     return HOME.homeTests(S).map(t => { const best = Math.max(0, ...(S.gym.lifts?.[t.id] || []).flatMap(x => x.reps || []));
       return `<li class="ex"><div><strong>${h(t.label)}</strong> <span class="dose">goal: ${t.need} ${t.unit === 's' ? 'seconds' : 'reps'}</span></div>
@@ -3714,7 +3720,11 @@ const actions = {
     homeTimer(plan);
   },
   'gym-deload'() { commit(GYM.deloadNow(S)); toast('😮‍💨 Deload week: half the sets, lighter weights. Back stronger next week.'); },
-  'gym-skip-test'() { ui.modal = null; commit(GYM.skipTest(S, now())); toast('No test this time: your next block starts. The Test Day comes back at the next deload.'); },
+  'gym-skip-test'() {
+    const home = HOME.isHome(S), checkin = home && S.gym.checkin;
+    ui.modal = null; commit(GYM.skipTest(S, now()));
+    toast(checkin ? 'No Check-in: your circuits start from how fit you said you feel. "Too hard" / "Too easy" fine-tune each move.' : home ? 'No test today: 3 more sessions, then your Test Day comes back.' : 'No test this time: your next block starts. The Test Day comes back at the next deload.');
+  },
   'gym-rotate'(el) { S.gym.split = el.dataset.id; S.gym.offerSeen = S.gym.block.n; S.gym.done = {}; commit(S); toast(`New split: ${GYM_SPLITS[el.dataset.id].label} 🔄`); },
   'gym-rotate-keep'() { S.gym.offerSeen = S.gym.block.n; commit(S); },
   'sick-start'() { ui.modal = { type: 'sick' }; renderModal(); },
@@ -3941,6 +3951,7 @@ document.addEventListener('submit', e => {
     if (f.querySelector('[name^=tr_]') && !(ui.ob.a.tracks || []).length) return toast('Pick at least one thing you train for.');
     if (['gym', 'home'].every(k => (ui.ob.a.tracks || []).includes(k))) return toast('Pick Gym or Home workouts, not both: the gym plan can also be done with dumbbells or bodyweight at home.');
     for (const [k, q] of [['hMin', 'how long you can train'], ['hGoal', 'what you want most'], ['hJump', 'if you can jump at home'], ['hFit', 'how fit you feel']]) if (f.querySelector(`[name=${k}]`) && !ui.ob.a[k]) return toast(`Pick ${q}.`);
+    if (f.querySelector('[name=hUnknown]') && !(+ui.ob.a.hPush || +ui.ob.a.hPlank || ui.ob.a.hUnknown)) return toast("Add your push-ups or plank, or tick \"I don't know\".");
     if (f.bdY && !(+ui.ob.a.age >= 4 && +ui.ob.a.age <= 100)) { (f.bdD.value === '0' ? f.bdD : f.bdM.value === '0' ? f.bdM : f.bdY).focus(); return toast('Pick your birthday: day, month and year. It keeps the plan safe for kids and teens.'); }
     if (f.guardian && !f.guardian.checked) return toast('A parent or guardian needs to tick the box to set up Family mode.');
     if (f.querySelector('[name^=d_]') && (ui.ob.a.days || K.defaultDays(3)).length < 2) return toast('Pick at least 2 training days.');
@@ -4013,6 +4024,7 @@ document.addEventListener('submit', e => {
     for (const [k, q] of [['hMin', 'how long you can train'], ['hGoal', 'what you want most'], ['hJump', 'if you can jump at home']]) if (!fd[k]) return toast(`Pick ${q}.`);
     if (f.id === 'home-add-form') {
       if (!fd.hFit) return toast('Pick how fit you feel.');
+      if (!(+fd.hPush || +fd.hPlank || fd.hUnknown)) return toast("Add your push-ups or plank, or tick \"I don't know\".");
       S.profile.tracks = [...new Set([...(S.profile.tracks || ['run']), 'gym'])];
       S.gym = HOME.placeHome(S, { ...fd, days: S.profile.days }, t);
       ui.modal = null; commit(S);
@@ -4247,7 +4259,7 @@ document.addEventListener('submit', e => {
     const { state, outcome } = E.completeStep(S, m.track, m.idx, { pain, passed, race, now: ts, result, actual, note, backdated, lifts, title: ed?.title,
       morningOk: f.querySelector('[name=morning]:checked')?.value !== 'sore' });
     if (m.fromStrava) { const act = state.history.find(x => x.ts === m.fromStrava && x.strava); if (act) { act.linked = true; act.linkedTitle = st?.title; } } // counted once, as the session
-    const stageUp = m.track === 'gym' && state.gym && (state.gym.stage > S.gym.stage || state.gym.world > S.gym.world);
+    const stageUp = m.track === 'gym' && state.gym && !S.gym?.checkin && (state.gym.stage > S.gym.stage || state.gym.world > S.gym.world);
     ui.modal = null; S = state; store.save(S);
     handleOutcome(outcome);
     if (stageUp) { sfx.unlockAudio(); sfx.arrive('strength'); toast(HOME.isHome(S) ? '💪 Stage up! Open your map to watch yourself climb.' : '💪 LIGHT WEIGHT, BABY! Open your Gym map to watch your lifter climb.'); }

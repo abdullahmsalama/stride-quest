@@ -22,14 +22,30 @@ export const STAGE_SESSIONS = 6;
 
 // Each world's Test Day: three simple tests, logged as reps or seconds. All three met = next world.
 // `need` is one number for everyone, or { m, f } when it differs by sex (push-ups: women's goals are lower,
-// as in standard fitness norms; plank and legs are the same). Goals approved by Abdullah (v101/v102).
+// as in standard fitness norms; plank and legs are the same). `age: true` goals ease with age (HOME_AGE_EASE).
+// Goals approved by Abdullah (v101-v103).
 export const HOME_TESTS = [
-  [{ id: 'incline_pushup', label: 'Incline push-ups (hands on a counter or sturdy chair)', need: { m: 10, f: 8 }, unit: 'reps' }, { id: 'plank', label: 'Plank (knees down is fine)', need: 20, unit: 's' }, { id: 'air_squat', label: 'Squats', need: 15, unit: 'reps' }],
-  [{ id: 'knee_pushup', label: 'Knee push-ups', need: { m: 8, f: 6 }, unit: 'reps' }, { id: 'plank', label: 'Plank', need: 30, unit: 's' }, { id: 'air_squat', label: 'Squats', need: 20, unit: 'reps' }],
-  [{ id: 'knee_pushup', label: 'Knee push-ups', need: { m: 15, f: 12 }, unit: 'reps' }, { id: 'plank', label: 'Plank', need: 45, unit: 's' }, { id: 'split_squat', label: 'Split squats, each leg', need: 10, unit: 'reps' }],
-  [{ id: 'pushup', label: 'Push-ups', need: { m: 10, f: 5 }, unit: 'reps' }, { id: 'plank', label: 'Plank', need: 60, unit: 's' }, { id: 'reverse_lunge', label: 'Reverse lunges, each leg', need: 15, unit: 'reps' }],
-  [{ id: 'pushup', label: 'Push-ups', need: { m: 20, f: 12 }, unit: 'reps' }, { id: 'plank', label: 'Plank', need: 90, unit: 's' }, { id: 'bulgarian_split_squat', label: 'Bulgarian split squats, each leg (back foot on a sofa or chair)', need: 10, unit: 'reps' }],
+  [{ id: 'incline_pushup', label: 'Incline push-ups (hands on a counter or sturdy chair)', need: { m: 10, f: 8 }, unit: 'reps', age: true }, { id: 'plank', label: 'Plank (knees down is fine)', need: 20, unit: 's', age: true }, { id: 'air_squat', label: 'Squats', need: 15, unit: 'reps' }],
+  [{ id: 'knee_pushup', label: 'Knee push-ups', need: { m: 8, f: 6 }, unit: 'reps', age: true }, { id: 'plank', label: 'Plank', need: 30, unit: 's', age: true }, { id: 'air_squat', label: 'Squats', need: 20, unit: 'reps' }],
+  [{ id: 'knee_pushup', label: 'Knee push-ups', need: { m: 15, f: 12 }, unit: 'reps', age: true }, { id: 'plank', label: 'Plank', need: 45, unit: 's', age: true }, { id: 'split_squat', label: 'Split squats, each leg', need: 10, unit: 'reps' }],
+  [{ id: 'pushup', label: 'Push-ups', need: { m: 10, f: 5 }, unit: 'reps', age: true }, { id: 'plank', label: 'Plank', need: 60, unit: 's', age: true }, { id: 'reverse_lunge', label: 'Reverse lunges, each leg', need: 15, unit: 'reps' }],
+  [{ id: 'pushup', label: 'Push-ups', need: { m: 20, f: 12 }, unit: 'reps', age: true }, { id: 'plank', label: 'Plank', need: 90, unit: 's', age: true }, { id: 'bulgarian_split_squat', label: 'Bulgarian split squats, each leg (back foot on a sofa or chair)', need: 10, unit: 'reps' }],
 ];
+
+// From 50 and 60, push-up and plank goals (tests marked `age: true`) are lower: strength and muscular
+// endurance drop with age, so the same effort earns the same world. Highest `from` first; goals round, min 1.
+export const HOME_AGE_EASE = [{ from: 60, factor: 0.6 }, { from: 50, factor: 0.75 }];
+
+// First-session Check-in, for people who didn't know their push-ups or plank: they start in the highest
+// world whose Test Day they already pass (at most CHECKIN_MAX_WORLD, i.e. World 3). A harder push-up
+// counts for the easier ones (full ≥ knee ≥ incline).
+export const HOME_CHECKIN = [
+  { id: 'pushup', label: 'Full push-ups in a row', unit: 'reps', hint: 'None yet? Leave it empty.' },
+  { id: 'knee_pushup', label: 'Knee push-ups in a row', unit: 'reps' },
+  { id: 'plank', label: 'Plank hold (knees down is fine)', unit: 's' },
+  { id: 'air_squat', label: 'Squats in 1 minute', unit: 'reps' },
+];
+export const CHECKIN_MAX_WORLD = 2;
 
 // Move ladders: easiest first. need: 'band' | 'db' | 'chair' (equipment), jump: true (left out with "no jumping"),
 // low: true (the low-impact twin of a jump move, used only with "no jumping").

@@ -2,6 +2,12 @@
 // `user` (plain words, optional) shows to everyone once as "What's new". Never show version numbers to users.
 // Add an entry with every release.
 export const CHANGELOG = [
+  { v: 'v103', date: '2026-10-26', title: 'Home: easier goals from 50 and 60, and a first-session Check-in', items: [
+    'Push-up and plank Test Day goals ease with age: ×0.75 from 50, ×0.6 from 60 (HOME_AGE_EASE in js/data/home.js; tests marked age: true). Leg tests stay the same.',
+    'Home questions: "How many push-ups and how long a plank?" is now required, with "🤷 I don\'t know: check me in my first session".',
+    'No numbers → the first session is a Check-in: max full and knee push-ups, longest plank, squats in 1 minute. They start in the highest world whose Test Day they already pass (up to World 3), with matching push-up and plank floors. Skipping it keeps the "how fit do you feel" level.',
+    'Fixed: skipping a home Test Day showed the gym message ("next deload").',
+  ], userTitle: 'Home workouts: a Check-in to find your level', user: ['Not sure how many push-ups you can do? Your first home session can be a short Check-in that sets your level for you.'] },
   { v: 'v102', date: '2026-10-26', title: 'Home Test Days: push-up goals by sex', items: [
     'Home Test Day goals live in js/data/home.js (HOME_TESTS). A goal is one number for everyone, or { m, f } when it differs by sex.',
     'Push-ups for women: 8 incline, 6 knee, 12 knee, 5 full, 12 full (men: 10, 8, 15, 10, 20). Plank and leg tests are the same for everyone.',

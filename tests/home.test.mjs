@@ -12,6 +12,7 @@ function home(a = {}, days = [0, 2, 5]) {
   let { state: s } = E.placeFromAnswers(E.newState(T), { continuous: 'none', pain: 'none' }, T);
   s.profile.tracks = ['gym']; s = K.setSchedule(s, days, 5);
   s.gym = GYM.placeGym(s, { gMode: 'home', hMin: '20', hGoal: 'fit', hJump: 'no', hFit: 'start', ...a }, T);
+  if (!a.checkin) delete s.gym.checkin; // most tests skip the first-session Check-in
   return s;
 }
 const ids = s => GYM.gymSteps(s).flatMap(x => x.home?.moves.map(m => m.id) || []);
@@ -103,4 +104,30 @@ test('home: push-up goals differ by sex, plank and legs do not', () => {
     assert.deepEqual(fr, mr, `world ${w} plank and legs`);
   }
   assert.equal(HOME.homeTests(f, 3)[0].need, 5);
+});
+
+test('home: push-up and plank goals ease from 50 and 60; legs do not', () => {
+  const at = age => { const s = home(); s.profile.sex = 'm'; s.profile.birthYear = new Date().getFullYear() - age; delete s.profile.birthDate; return HOME.homeTests(s, 4); };
+  assert.deepEqual(at(30).map(t => t.need), [20, 90, 10]);
+  assert.deepEqual(at(55).map(t => t.need), [15, 68, 10]);
+  assert.deepEqual(at(65).map(t => t.need), [12, 54, 10]);
+});
+
+test('home: no numbers → a Check-in first, which places them like a Test Day', () => {
+  const s = home({ checkin: true });
+  assert.ok(s.gym.checkin);
+  const steps = GYM.gymSteps(s);
+  assert.equal(steps.length, 1); assert.ok(steps[0].checkin);
+  assert.ok(!home({ checkin: true, hPush: '5' }).gym.checkin, 'numbers given: no Check-in');
+  const go = (lifts, sex = 'f') => { const x = home({ checkin: true }); x.profile.sex = sex; return E.completeStep(x, 'gym', 0, { pain: 0, now: T + E.DAY, lifts }).state; };
+  const r = n => ({ reps: [n] });
+  // Can't do 8 incline-level push-ups: World 1.
+  assert.equal(go({ knee_pushup: r(4), plank: r(30), air_squat: r(25) }).gym.world, 0);
+  // 8 knee push-ups, 30 s plank, 20 squats: passes World 1 and 2 (women's goals) → World 3, knee push-up floor.
+  const b = go({ knee_pushup: r(8), plank: r(35), air_squat: r(22) });
+  assert.equal(b.gym.world, 2); assert.equal(b.gym.stage, 4); assert.ok(!b.gym.checkin);
+  assert.equal(b.gym.floor.push, 'knee_pushup');
+  assert.ok(GYM.gymSteps(b).some(x => x.type === 'lift'), 'circuits start after the Check-in');
+  // Skipping it keeps the self-rated level.
+  assert.ok(!GYM.skipTest(home({ checkin: true }), T).gym.checkin);
 });
