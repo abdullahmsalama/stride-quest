@@ -2,6 +2,9 @@
 // `user` (plain words, optional) shows to everyone once as "What's new". Never show version numbers to users.
 // Add an entry with every release.
 export const CHANGELOG = [
+  { v: 'v104', date: '2026-10-26', title: 'Home: gentler first full push-up goal for women', items: [
+    'Rooftop Circuit Test Day (World 4): women need 3 full push-ups instead of 5 (the knee → full step is the biggest on the map). World 5 stays at 12.',
+  ] },
   { v: 'v103', date: '2026-10-26', title: 'Home: easier goals from 50 and 60, and a first-session Check-in', items: [
     'Push-up and plank Test Day goals ease with age: ×0.75 from 50, ×0.6 from 60 (HOME_AGE_EASE in js/data/home.js; tests marked age: true). Leg tests stay the same.',
     'Home questions: "How many push-ups and how long a plank?" is now required, with "🤷 I don\'t know: check me in my first session".',

@@ -28,7 +28,7 @@ export const HOME_TESTS = [
   [{ id: 'incline_pushup', label: 'Incline push-ups (hands on a counter or sturdy chair)', need: { m: 10, f: 8 }, unit: 'reps', age: true }, { id: 'plank', label: 'Plank (knees down is fine)', need: 20, unit: 's', age: true }, { id: 'air_squat', label: 'Squats', need: 15, unit: 'reps' }],
   [{ id: 'knee_pushup', label: 'Knee push-ups', need: { m: 8, f: 6 }, unit: 'reps', age: true }, { id: 'plank', label: 'Plank', need: 30, unit: 's', age: true }, { id: 'air_squat', label: 'Squats', need: 20, unit: 'reps' }],
   [{ id: 'knee_pushup', label: 'Knee push-ups', need: { m: 15, f: 12 }, unit: 'reps', age: true }, { id: 'plank', label: 'Plank', need: 45, unit: 's', age: true }, { id: 'split_squat', label: 'Split squats, each leg', need: 10, unit: 'reps' }],
-  [{ id: 'pushup', label: 'Push-ups', need: { m: 10, f: 5 }, unit: 'reps', age: true }, { id: 'plank', label: 'Plank', need: 60, unit: 's', age: true }, { id: 'reverse_lunge', label: 'Reverse lunges, each leg', need: 15, unit: 'reps' }],
+  [{ id: 'pushup', label: 'Push-ups', need: { m: 10, f: 3 }, unit: 'reps', age: true }, { id: 'plank', label: 'Plank', need: 60, unit: 's', age: true }, { id: 'reverse_lunge', label: 'Reverse lunges, each leg', need: 15, unit: 'reps' }],
   [{ id: 'pushup', label: 'Push-ups', need: { m: 20, f: 12 }, unit: 'reps', age: true }, { id: 'plank', label: 'Plank', need: 90, unit: 's', age: true }, { id: 'bulgarian_split_squat', label: 'Bulgarian split squats, each leg (back foot on a sofa or chair)', need: 10, unit: 'reps' }],
 ];
 

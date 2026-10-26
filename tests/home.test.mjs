@@ -103,7 +103,7 @@ test('home: push-up goals differ by sex, plank and legs do not', () => {
     assert.ok(typeof mp.need === 'number' && fp.need < mp.need, `world ${w} push-ups`);
     assert.deepEqual(fr, mr, `world ${w} plank and legs`);
   }
-  assert.equal(HOME.homeTests(f, 3)[0].need, 5);
+  assert.equal(HOME.homeTests(f, 3)[0].need, 3);
 });
 
 test('home: push-up and plank goals ease from 50 and 60; legs do not', () => {
