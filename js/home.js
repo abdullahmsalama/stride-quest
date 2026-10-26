@@ -111,7 +111,9 @@ export function homeSteps(s) {
 const testDue = s => !s.gym.finished && lastOfWorld(s.gym.stage) && (s.gym.count || 0) >= STAGE_SESSIONS;
 
 // ---------- tests ----------
-export const homeTests = (s, world = HOME_STAGES[Math.min(s.gym.stage, HOME_MAX - 1)].world) => HOME_TESTS[Math.min(world, HOME_TESTS.length - 1)];
+// A world's tests with each goal resolved for this athlete (a { m, f } goal picks by sex; unknown sex → m).
+export const homeTests = (s, world = HOME_STAGES[Math.min(s.gym.stage, HOME_MAX - 1)].world) => HOME_TESTS[Math.min(world, HOME_TESTS.length - 1)]
+  .map(t => (typeof t.need === 'object' ? { ...t, need: t.need[s.profile?.sex === 'f' ? 'f' : 'm'] } : t));
 // Best logged result on a test move (reps or seconds).
 const bestOf = (s, id, since = 0) => Math.max(0, ...(s.gym.lifts?.[id] || []).filter(x => x.ts >= since).flatMap(x => x.reps || []));
 export function homeStanding(s, stage = s.gym.stage, since = 0) {

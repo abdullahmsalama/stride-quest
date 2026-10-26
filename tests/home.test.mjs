@@ -94,3 +94,13 @@ test('home: no runner-only daily orders for people who do not run', () => {
     assert.ok(!o.some(x => /foot and ankle/.test(x.title)), `day ${d}`);
   }
 });
+
+test('home: push-up goals differ by sex, plank and legs do not', () => {
+  const m = home(), f = home(); m.profile.sex = 'm'; f.profile.sex = 'f';
+  for (let w = 0; w < 5; w++) {
+    const [mp, ...mr] = HOME.homeTests(m, w), [fp, ...fr] = HOME.homeTests(f, w);
+    assert.ok(typeof mp.need === 'number' && fp.need < mp.need, `world ${w} push-ups`);
+    assert.deepEqual(fr, mr, `world ${w} plank and legs`);
+  }
+  assert.equal(HOME.homeTests(f, 3)[0].need, 5);
+});

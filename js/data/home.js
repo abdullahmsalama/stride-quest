@@ -21,12 +21,14 @@ export const HOME_MAX = HOME_STAGES.length;
 export const STAGE_SESSIONS = 6;
 
 // Each world's Test Day: three simple tests, logged as reps or seconds. All three met = next world.
+// `need` is one number for everyone, or { m, f } when it differs by sex (push-ups: women's goals are lower,
+// as in standard fitness norms; plank and legs are the same). Goals approved by Abdullah (v101/v102).
 export const HOME_TESTS = [
-  [{ id: 'incline_pushup', label: 'Incline push-ups (hands on a counter or sturdy chair)', need: 10, unit: 'reps' }, { id: 'plank', label: 'Plank (knees down is fine)', need: 20, unit: 's' }, { id: 'air_squat', label: 'Squats', need: 15, unit: 'reps' }],
-  [{ id: 'knee_pushup', label: 'Knee push-ups', need: 8, unit: 'reps' }, { id: 'plank', label: 'Plank', need: 30, unit: 's' }, { id: 'air_squat', label: 'Squats', need: 20, unit: 'reps' }],
-  [{ id: 'knee_pushup', label: 'Knee push-ups', need: 15, unit: 'reps' }, { id: 'plank', label: 'Plank', need: 45, unit: 's' }, { id: 'split_squat', label: 'Split squats, each leg', need: 10, unit: 'reps' }],
-  [{ id: 'pushup', label: 'Push-ups', need: 10, unit: 'reps' }, { id: 'plank', label: 'Plank', need: 60, unit: 's' }, { id: 'reverse_lunge', label: 'Reverse lunges, each leg', need: 15, unit: 'reps' }],
-  [{ id: 'pushup', label: 'Push-ups', need: 20, unit: 'reps' }, { id: 'plank', label: 'Plank', need: 90, unit: 's' }, { id: 'bulgarian_split_squat', label: 'Bulgarian split squats, each leg (back foot on a sofa or chair)', need: 10, unit: 'reps' }],
+  [{ id: 'incline_pushup', label: 'Incline push-ups (hands on a counter or sturdy chair)', need: { m: 10, f: 8 }, unit: 'reps' }, { id: 'plank', label: 'Plank (knees down is fine)', need: 20, unit: 's' }, { id: 'air_squat', label: 'Squats', need: 15, unit: 'reps' }],
+  [{ id: 'knee_pushup', label: 'Knee push-ups', need: { m: 8, f: 6 }, unit: 'reps' }, { id: 'plank', label: 'Plank', need: 30, unit: 's' }, { id: 'air_squat', label: 'Squats', need: 20, unit: 'reps' }],
+  [{ id: 'knee_pushup', label: 'Knee push-ups', need: { m: 15, f: 12 }, unit: 'reps' }, { id: 'plank', label: 'Plank', need: 45, unit: 's' }, { id: 'split_squat', label: 'Split squats, each leg', need: 10, unit: 'reps' }],
+  [{ id: 'pushup', label: 'Push-ups', need: { m: 10, f: 5 }, unit: 'reps' }, { id: 'plank', label: 'Plank', need: 60, unit: 's' }, { id: 'reverse_lunge', label: 'Reverse lunges, each leg', need: 15, unit: 'reps' }],
+  [{ id: 'pushup', label: 'Push-ups', need: { m: 20, f: 12 }, unit: 'reps' }, { id: 'plank', label: 'Plank', need: 90, unit: 's' }, { id: 'bulgarian_split_squat', label: 'Bulgarian split squats, each leg (back foot on a sofa or chair)', need: 10, unit: 'reps' }],
 ];
 
 // Move ladders: easiest first. need: 'band' | 'db' | 'chair' (equipment), jump: true (left out with "no jumping"),

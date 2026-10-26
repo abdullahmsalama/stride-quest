@@ -2,12 +2,16 @@
 // `user` (plain words, optional) shows to everyone once as "What's new". Never show version numbers to users.
 // Add an entry with every release.
 export const CHANGELOG = [
+  { v: 'v102', date: '2026-10-26', title: 'Home Test Days: push-up goals by sex', items: [
+    'Home Test Day goals live in js/data/home.js (HOME_TESTS). A goal is one number for everyone, or { m, f } when it differs by sex.',
+    'Push-ups for women: 8 incline, 6 knee, 12 knee, 5 full, 12 full (men: 10, 8, 15, 10, 20). Plank and leg tests are the same for everyone.',
+  ] },
   { v: 'v101', date: '2026-10-26', title: 'Home workouts', items: [
     'New tick "🏠 Home workouts (bodyweight, bands)". It runs as the Gym track in home mode (s.gym.mode = home), so week, calendar, map and coach all work.',
     'One questions screen, nothing pre-picked: equipment (bands, light dumbbells, chair, mat), 10/20/30/45 min, goal (fit, tone, stronger, lose fat), jumping or not, how fit (+ optional push-ups and plank for placement).',
     'Sessions: timed full-body circuits A / B (work / rest per world: 30/30 up to 50/10), warm-up and cool-down, a full-screen timer with beeps and the move spoken. Fit and fat-loss goals get 1-2 home cardio days.',
     'Each move comes from a ladder (wall push-up → incline → knees → full → feet up); "Too hard" / "Too easy" moves one rung. "No jumping" uses low-impact twins (step jacks, skater steps, step-back burpees).',
-    'Map: Living Room Arena → Band Camp → Backyard Stadium → Rooftop Circuit → Hall of Home Champions, with home scenery. 6 sessions clear a stage; Test Days check push-ups, plank and a leg test (numbers approved by Abdullah, same for everyone).',
+    'Map: Living Room Arena → Band Camp → Backyard Stadium → Rooftop Circuit → Hall of Home Champions, with home scenery. 6 sessions clear a stage; Test Days check push-ups, plank and a leg test (numbers approved by Abdullah).',
     'Me: "My home workouts" card with settings, "+ Home workouts" for runners and others. Stats: test results. Can\'t tick Gym and Home together.',
     'Home users get their own map character: on a yoga mat, stretching a band.',
     'Daily orders: "5 min foot and ankle work" only shows for people who run (Run, Hybrid, Tri).',

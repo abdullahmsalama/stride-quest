@@ -1,6 +1,6 @@
 // Offline support. Network first, so new versions show up straight away; the cache is only
 // used when there is no connection. Bump VERSION to drop old caches.
-const VERSION = 'sq-v101';
+const VERSION = 'sq-v102';
 const SHELL = ['./', 'index.html', 'css/style.css', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/logo-96.png', 'icons/favicon-32.png',
   'js/app.js', 'js/engine.js', 'js/config.js', 'js/store.js', 'js/coach.js', 'js/map.js', 'js/fog.js', 'js/stats.js', 'js/data/norms.js', 'js/data/races.js', 'js/data/features.js', 'js/data/other.js', 'js/events.js', 'js/target.js', 'js/nutrition.js', 'js/splits.js', 'js/age.js', 'js/cycle.js', 'js/data/changelog.js', 'js/home.js', 'js/data/home.js', 'js/data/kids.js', 'js/gym.js', 'js/data/gym.js', 'js/gymmap.js', 'js/intro.js',
   'js/sound.js', 'js/motivation.js', 'js/challenges.js', 'js/calendar.js',
