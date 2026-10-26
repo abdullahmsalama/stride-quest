@@ -140,8 +140,8 @@ export function placeHome(s, a, now) {
   const push = +a.hPush || 0, plank = +a.hPlank || 0, checkin = !push && !plank; // no numbers: a Check-in first
   if (push >= 15 && plank >= 45) stage = Math.max(stage, 4); else if (push >= 8 && plank >= 30) stage = Math.max(stage, 2);
   const gym = { mode: 'home', have, minutes: +a.hMin || 20, goal: a.hGoal || 'fit', jumps: a.hJump || 'no', fitness: a.hFit || 'start', days: +a.hDays || Math.min(4, (a.days || []).length || 3),
-    stage, world: HOME_STAGES[stage].world, done: {}, rot: 0, count: 0, week: 1, adj: {}, lifts: {}, stageAt: now, finished: false,
-    floor: floorsOf(push >= 10, push >= 8, plank), ...(checkin ? { checkin: true } : {}) };
+    stage: checkin ? 0 : stage, world: checkin ? 0 : HOME_STAGES[stage].world, done: {}, rot: 0, count: 0, week: 1, adj: {}, lifts: {}, stageAt: now, finished: false,
+    floor: floorsOf(push >= 10, push >= 8, plank), ...(checkin ? { checkin: true, guess: stage } : {}) }; // Check-in pending: Stage 0 until it's done ('guess' if they skip it)
   return gym;
 }
 
@@ -149,11 +149,24 @@ export function placeHome(s, a, now) {
 const floorsOf = (full, knee, plank) => ({ ...(full ? { push: 'pushup' } : knee ? { push: 'knee_pushup' } : {}), ...(plank >= 45 ? { core: 'plank' } : {}) });
 // Check-in results ({ id: n }): the highest world whose Test Day they already pass, up to CHECKIN_MAX_WORLD.
 const PUSH = LADDERS.push.map(x => x.id);
+const resultFor = (res, id) => (PUSH.includes(id) ? Math.max(0, ...PUSH.slice(PUSH.indexOf(id)).map(k => res[k] || 0)) : res[id] || 0);
 export function checkinWorld(s, res) {
-  const val = id => (PUSH.includes(id) ? Math.max(0, ...PUSH.slice(PUSH.indexOf(id)).map(k => res[k] || 0)) : res[id] || 0);
   let w = 0;
-  while (w < CHECKIN_MAX_WORLD && homeTests(s, w).every(t => val(t.id) >= t.need)) w++;
+  while (w < CHECKIN_MAX_WORLD && homeTests(s, w).every(t => resultFor(res, t.id) >= t.need)) w++;
   return w;
+}
+// Why the Check-in placed them where it did: each world's Test Day it checked, goal by goal, against
+// their results (a harder push-up counts for an easier one). `capped`: passed every world it checks.
+export function checkinWhy(s) {
+  const c = s.gym.checkinRes;
+  if (!c) return null;
+  const rows = [];
+  for (let w = 0; w <= Math.min(c.world, CHECKIN_MAX_WORLD - 1); w++) {
+    const items = homeTests(s, w).map(t => ({ label: t.label.replace(/ \(.*\)$/, ''), need: t.need, unit: t.unit, have: resultFor(c.res, t.id) }))
+      .map(x => ({ ...x, ok: x.have >= x.need }));
+    rows.push({ world: w, name: HOME_WORLDS[w].name, emoji: HOME_WORLDS[w].emoji, test: HOME_WORLDS[w].test, items, pass: items.every(x => x.ok) });
+  }
+  return { ...c, rows, capped: c.world >= CHECKIN_MAX_WORLD };
 }
 function placeFromCheckin(s, logs, now, msgs) {
   const g = s.gym, res = {};
@@ -164,8 +177,10 @@ function placeFromCheckin(s, logs, now, msgs) {
   const w = checkinWorld(s, res);
   g.stage = HOME_WORLDS[w].stages[0]; g.world = w; g.count = 0; g.stageAt = now; g.adj = {}; g.done = {};
   g.floor = floorsOf((res.pushup || 0) >= 10, (res.pushup || 0) >= 3 || (res.knee_pushup || 0) >= 8, res.plank || 0);
-  delete g.checkin;
-  msgs.push(`📋 Check-in done! You start in ${homeWorld(s).emoji} ${homeWorld(s).name}, ${homeStage(s).name}. Your circuits are set from your results.`);
+  const lower = g.stage < (g.guess || 0);
+  g.checkinRes = { ts: now, res, world: w, guess: g.guess ?? null, sex: s.profile?.sex || null };
+  delete g.checkin; delete g.guess;
+  msgs.push(`📋 Check-in done! You start in ${homeWorld(s).emoji} ${homeWorld(s).name}, Stage ${g.stage} · ${homeStage(s).name}. ${lower ? 'That\'s a bit lower than you guessed, and that\'s fine: starting easy builds the habit, and you\'ll move up quickly.' : 'Your circuits are set from your results.'}`);
   return true;
 }
 
@@ -217,7 +232,10 @@ export function passHomeTest(s, logs, now, msgs) {
 function clearGate(g, steps) { steps.forEach((x, i) => { if (x.type === 'gate') delete g.done[i]; }); }
 export function skipHomeTest(state) {
   const s = JSON.parse(JSON.stringify(state));
-  if (s.gym.checkin) { delete s.gym.checkin; return s; } // no Check-in: they keep the level from "how fit do you feel"
+  if (s.gym.checkin) { // no Check-in: the level from "how fit do you feel"
+    s.gym.stage = s.gym.guess || 0; s.gym.world = HOME_STAGES[s.gym.stage].world;
+    delete s.gym.checkin; delete s.gym.guess; return s;
+  }
   s.gym.count = STAGE_SESSIONS - 3;
   return s;
 }

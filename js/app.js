@@ -33,7 +33,7 @@ import * as AGE from './age.js';
 import * as CY from './cycle.js';
 import * as GYM from './gym.js';
 import * as HOME from './home.js';
-import { HOME_WORLDS, HOME_STAGES, HOME_CHECKIN, CAT_LABEL, STAGE_SESSIONS } from './data/home.js';
+import { HOME_WORLDS, HOME_STAGES, HOME_CHECKIN, CHECKIN_MAX_WORLD, CAT_LABEL, STAGE_SESSIONS } from './data/home.js';
 import { renderGymMap, NODES as GYM_NODES, moveGym, hereIndex as gymHere, pointOf as gymPoint, H as GYM_H } from './gymmap.js';
 import { GYM_WORLDS, GYM_STAGES, GYM_SPLITS, PAIRS } from './data/gym.js';
 import { KID_LIKES, MISSIONS, KID_TIPS, missionsFor } from './data/kids.js';
@@ -670,7 +670,8 @@ function homePlacedBox(a0, big = false) {
   probe.gym = HOME.placeHome(probe, a, now());
   const w = HOME.homeWorld(probe), st = HOME.homeStage(probe), steps = HOME.homeSteps(probe), first = steps[0];
   const goal = (HOME.GOALS.find(([k]) => k === probe.gym.goal) || [, ''])[1].replace(/^\S+ /, '');
-  const inner = `<p class="eyebrow">${w.emoji} ${h(w.name)}</p><h2>${big ? '' : '🏠 Home workouts: '}Stage ${st.n} · ${h(st.name)}</h2>
+  const inner = `<p class="eyebrow">${probe.gym.checkin ? '🏠 Home workouts' : `${w.emoji} ${h(w.name)}`}</p><h2>${big ? '' : '🏠 Home workouts: '}${probe.gym.checkin ? 'First, a short Check-in' : `Stage ${st.n} · ${h(st.name)}`}</h2>
+    ${probe.gym.checkin ? '<p class="hint">Your stage isn\'t set yet: your first session measures your push-ups, plank and squats, and your stage and circuits follow from it.</p>' : ''}
     <p><strong>${steps.length} session${steps.length > 1 ? 's' : ''} a week, about ${probe.gym.minutes} min</strong>: ${(() => { const c = steps.filter(x => x.label === 'Cardio').length, f = steps.length - c; return `${f} full-body circuit${f > 1 ? 's' : ''}${c ? ` + ${c} home cardio` : ''}`; })()}${probe.gym.jumps === 'no' ? ', no jumping' : ''}</p>
     <p class="hint">Goal: ${h(goal)}. Timed rounds: each move ${HOME.pace(probe)[0]} s on, ${HOME.pace(probe)[1]} s off. Every move has an easier and a harder version.</p>
     ${first?.checkin ? `<p class="hint">First session: <strong>${h(first.title)}</strong>: push-ups, a plank and squats, about 15 min. It sets your level and your circuits.</p>` : first ? `<p class="hint">First session: <strong>${h(first.title)}</strong>: ${h(first.home.moves.map(m => EXERCISES[m.id]?.name || m.id).join(' → '))}</p>` : ''}
@@ -1010,7 +1011,8 @@ function rewardQuests() {
   S.xp += QUEST_XP * got.length;
   got.forEach(f => S.history.push({ ts: now(), kind: 'bonus', xp: QUEST_XP, title: `Getting started: ${f.quest.label}` }));
   store.save(S);
-  setTimeout(() => toast(`🧭 +${QUEST_XP * got.length} XP: ${got.map(f => f.quest.label).join(', ')}`), 300);
+  const msg = `🧭 +${QUEST_XP * got.length} XP: ${got.map(f => f.quest.label).join(', ')}`;
+  setTimeout(() => { if (ui.modal?.type === 'checkinResult') { ui.modal.notes = [...(ui.modal.notes || []), msg]; renderModal(); } else toast(msg); }, 300); // no toast over the Check-in pop-up
 }
 function gettingStarted(style = '') {
   if (S.tour?.hidden) return '';
@@ -1300,7 +1302,7 @@ function viewToday() {
   const mode = primaryMode();
   const heroMain = mode === 'gym' ? (() => { const w = GYM.gymWorld(S), st = GYM.gymStage(S), i = GYM.weekInfo(S, t);
       return `<p class="eyebrow">${hello} · ${HOME.isHome(S) ? 'Home workouts' : 'Gym'}</p><h2>${w.emoji} ${h(w.name)}</h2>
-        <p class="hint">Stage ${st.n} · ${h(st.name)} · ${i.home ? `${Math.min(S.gym.count || 0, STAGE_SESSIONS)} of ${STAGE_SESSIONS} sessions done` : i.deload ? '😮‍💨 Deload week' : `Block ${i.block}, week ${i.week} of ${i.len}`}${GYM.hasRunning(S) ? ` · Run Level ${lvl.n}` : ''}</p>${gymBars()}${cardioLine()}`; })()
+        <p class="hint">${S.gym.checkin ? '📋 First: your Check-in sets your stage' : `Stage ${st.n} · ${h(st.name)}`} · ${i.home ? `${Math.min(S.gym.count || 0, STAGE_SESSIONS)} of ${STAGE_SESSIONS} sessions done` : i.deload ? '😮‍💨 Deload week' : `Block ${i.block}, week ${i.week} of ${i.len}`}${GYM.hasRunning(S) ? ` · Run Level ${lvl.n}` : ''}</p>${gymBars()}${cardioLine()}`; })()
     : mode === 'hyb' ? (() => { const w = HYB.hybWorld(S), b = S.hybrid.block.type, lim = HYB.limiter(S);
       return `<p class="eyebrow">${hello} · Hybrid</p><h2>${w.emoji} ${h(w.name)}</h2>
         <p class="hint">${b === 'deload' ? '😮‍💨 Deload week' : b === 'engine' ? '⚡ Engine block' : '🏋️ Strength block'} · ${lim ? `limiter: ${HYB.LANE_ICON[lim.lane]} ${HYB.LANE_LABEL[lim.lane]}` : S.rebuild.active ? 'race gate locked 🔒 (Rebuild)' : 'race gate open 🏁'} · Run Level ${lvl.n}</p>`; })()
@@ -2230,7 +2232,8 @@ function homeCard() {
       <p class="hint">${h(lab(HOME.GOALS, g.goal).replace(/^\S+ /, ''))} · ${g.jumps === 'no' ? 'no jumping' : 'jumping is fine'} · ${have.length ? h(have.join(', ')) : 'no equipment'}</p>
       ${cardioLine()}
       <p class="hint">Full-body circuits A and B take turns: legs, push, glutes, back and core every session.</p>
-      <div class="row wrap"><button class="btn small" data-act="home-edit">Change settings</button></div></section>`;
+      ${g.checkinRes ? `<p class="hint">📋 Your Check-in on ${h(new Date(g.checkinRes.ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }))} placed you in ${h(HOME_WORLDS[g.checkinRes.world].name)}.</p>` : ''}
+      <div class="row wrap"><button class="btn small" data-act="home-edit">Change settings</button>${g.checkinRes ? '<button class="btn small ghost" data-act="checkin-result">📋 Check-in result</button>' : ''}</div></section>`;
 }
 
 function splitCard() {
@@ -2707,6 +2710,35 @@ const MODALS = {
     return `<form id="home-add-form"><h2>🏠 Add home workouts</h2><p class="why">💡 Short circuits at home, built from this.${GYM.hasRunning(S) ? ' They share your training days with your running.' : ''}</p>
       ${homeQuestions(m.a)}
       <div class="row end"><button type="button" class="btn ghost" data-act="close">Cancel</button><button class="btn primary" type="submit">Add home workouts</button></div></form>`;
+  },
+  checkinResult(m) {
+    const why = HOME.checkinWhy(S);
+    if (!why) return '<h2>No Check-in yet</h2><div class="row end"><button class="btn primary" data-act="close">OK</button></div>';
+    const w = HOME_WORLDS[why.world], st = HOME_STAGES[w.stages[0]], unit = x => (x.unit === 's' ? ' s' : '');
+    const yours = HOME_CHECKIN.map(t => `<li>${h(t.label.replace(/ \(.*\)$/, ''))}<strong>${why.res[t.id] ? `${why.res[t.id]}${t.unit === 's' ? ' s' : ''}` : '–'}</strong></li>`).join('');
+    const rows = why.rows.map(r => `<li class="${r.pass ? 'pass' : ''}"><strong>${r.emoji} ${h(r.test)}: ${r.pass ? 'passed ✅' : 'not yet'}</strong>
+        ${r.items.map(x => `<span>${x.ok ? '✅' : '⬜'} ${h(x.label)}: ${x.need}${unit(x)} <em>(you: ${x.have}${x.have ? unit(x) : ''})</em></span>`).join('')}</li>`).join('');
+    const last = why.rows.at(-1), todo = last.items.filter(x => !x.ok);
+    // Next goal: this world's Test Day, and how close they already are.
+    const goal = HOME.homeTests(S, why.world).map(t => `${t.need}${t.unit === 's' ? ' s' : ''} ${h(t.label.replace(/ \(.*\)$/, '').toLowerCase())}`).join(' · ');
+    const cheer = why.capped ? { big: 'Wow, you\'re already strong! 💪', text: `You blew through the first ${CHECKIN_MAX_WORLD} Test Days, so you skip straight to World ${CHECKIN_MAX_WORLD + 1}. The worlds ahead are where it gets spicy.` }
+      : why.world === 0 ? { big: 'Every champion starts at Stage 0 🌱', text: 'You just did the hardest part: you started. Your first weeks are built exactly for where you are, and you\'ll feel stronger long before your first Test Day.' }
+      : { big: 'Great start! 🚀', text: `You already pass ${why.world === 1 ? 'the first Test Day' : `the first ${why.world} Test Days`}, so you skip ahead. Nice one!` };
+    const because = why.capped ? `You passed every Test Day the Check-in looks at. It places you at most in World ${CHECKIN_MAX_WORLD + 1}: the rest you earn on the map.`
+      : `The ${h(last.test)} is the first one you don't pass yet (${todo.map(x => h(x.label.toLowerCase())).join(', ')}), so ${why.world === 0 ? 'you start at the very beginning' : 'that\'s the world you start in'}.`;
+    const lower = why.guess != null && w.stages[0] < why.guess;
+    return `<div class="checkin-pop">
+      <p class="eyebrow">${m?.fresh ? '📋 Check-in done!' : '📋 Your Check-in result'}</p>
+      <div class="result-badge">${w.emoji}</div>
+      <h2>${h(w.name)}</h2><p class="ci-stage">Stage ${st.n} · ${h(st.name)}</p>
+      <p class="ci-cheer"><strong>${cheer.big}</strong><br>${cheer.text}</p>
+      ${lower ? '<p class="hint">A bit lower than you guessed? That\'s a good thing: an easy start builds the habit, and you\'ll climb fast.</p>' : ''}
+      <div class="ci-goal">🎯 <strong>Your next goal:</strong> ${h(w.test)}<br><span>${goal}</span></div>
+      ${m?.notes?.length ? `<p class="ci-chips">${m.notes.map(x => `<span>${h(x)}</span>`).join('')}</p>` : ''}
+      <details class="ci-why"><summary>Why this stage?</summary>
+        <ul class="ci-res">${yours}</ul><p>${because}</p><ul class="ci-tests">${rows}</ul>
+        <p class="hint">A harder push-up counts for an easier one. Moves that feel too hard or too easy? Tap "Too hard" / "Too easy" on them in a session.</p></details>
+      <div class="row end"><button class="btn primary" data-act="close">Let's go! 💪</button></div></div>`;
   },
   homeEdit() {
     const g = S.gym, a = { tracks: S.profile.tracks.length > 1 ? ['run', 'home'] : ['home'], hMin: String(g.minutes), hGoal: g.goal, hJump: g.jumps, hFit: g.fitness, hDays: g.days, ...Object.fromEntries((g.have || []).map(k => [`hv_${k}`, true])) };
@@ -3720,6 +3752,7 @@ const actions = {
     homeTimer(plan);
   },
   'gym-deload'() { commit(GYM.deloadNow(S)); toast('😮‍💨 Deload week: half the sets, lighter weights. Back stronger next week.'); },
+  'checkin-result'() { ui.modal = { type: 'checkinResult' }; renderModal(); },
   'gym-skip-test'() {
     const home = HOME.isHome(S), checkin = home && S.gym.checkin;
     ui.modal = null; commit(GYM.skipTest(S, now()));
@@ -4261,6 +4294,10 @@ document.addEventListener('submit', e => {
     if (m.fromStrava) { const act = state.history.find(x => x.ts === m.fromStrava && x.strava); if (act) { act.linked = true; act.linkedTitle = st?.title; } } // counted once, as the session
     const stageUp = m.track === 'gym' && state.gym && !S.gym?.checkin && (state.gym.stage > S.gym.stage || state.gym.world > S.gym.world);
     ui.modal = null; S = state; store.save(S);
+    if (m.track === 'gym' && HOME.isHome(S) && st?.checkin && S.gym.checkinRes) { // the Check-in: one celebration pop-up, no toasts on top
+      ui.modal = { type: 'checkinResult', fresh: true, notes: outcome.messages.filter(x => !/^📋 Check-in done/.test(x)) };
+      render(); confetti(); sfx.unlockAudio(); sfx.fanfare(); return;
+    }
     handleOutcome(outcome);
     if (stageUp) { sfx.unlockAudio(); sfx.arrive('strength'); toast(HOME.isHome(S) ? '💪 Stage up! Open your map to watch yourself climb.' : '💪 LIGHT WEIGHT, BABY! Open your Gym map to watch your lifter climb.'); }
     if (actual || note || result !== 'full') sessionFeedback(st, { when, ts, result, pain, actual, note });

@@ -12,7 +12,7 @@ function home(a = {}, days = [0, 2, 5]) {
   let { state: s } = E.placeFromAnswers(E.newState(T), { continuous: 'none', pain: 'none' }, T);
   s.profile.tracks = ['gym']; s = K.setSchedule(s, days, 5);
   s.gym = GYM.placeGym(s, { gMode: 'home', hMin: '20', hGoal: 'fit', hJump: 'no', hFit: 'start', ...a }, T);
-  if (!a.checkin) delete s.gym.checkin; // most tests skip the first-session Check-in
+  if (!a.checkin && s.gym.checkin) s = HOME.skipHomeTest(s); // most tests skip the first-session Check-in
   return s;
 }
 const ids = s => GYM.gymSteps(s).flatMap(x => x.home?.moves.map(m => m.id) || []);
@@ -129,5 +129,16 @@ test('home: no numbers → a Check-in first, which places them like a Test Day',
   assert.equal(b.gym.floor.push, 'knee_pushup');
   assert.ok(GYM.gymSteps(b).some(x => x.type === 'lift'), 'circuits start after the Check-in');
   // Skipping it keeps the self-rated level.
-  assert.ok(!GYM.skipTest(home({ checkin: true }), T).gym.checkin);
+  const sk = GYM.skipTest(home({ checkin: true, hFit: 'some' }), T).gym;
+  assert.ok(!sk.checkin); assert.equal(sk.stage, 2);
+  // Pending: Stage 0 shown, not the guess; low numbers after guessing "some" → Stage 0 (and told why).
+  const low = home({ checkin: true, hFit: 'some' }); low.profile.sex = 'f';
+  assert.equal(low.gym.stage, 0);
+  const r2 = E.completeStep(low, 'gym', 0, { pain: 0, now: T + E.DAY, lifts: { knee_pushup: r(3), plank: r(15), air_squat: r(12) } });
+  assert.equal(r2.state.gym.stage, 0);
+  const why = HOME.checkinWhy(r2.state);
+  assert.equal(why.rows.length, 1); assert.ok(!why.rows[0].pass);
+  assert.deepEqual(why.rows[0].items.map(x => [x.have, x.need, x.ok]), [[3, 8, false], [15, 20, false], [12, 15, false]]);
+  const why2 = HOME.checkinWhy(b);
+  assert.deepEqual(why2.rows.map(x => x.pass), [true, true]); assert.ok(why2.capped);
 });

@@ -966,3 +966,24 @@ body:has(#modal:not([hidden])) .coach-fab { display: none; } /* the coach button
 .home-timer .row.center { justify-content: center; gap: 10px; }
 .ex-note { list-style: none; margin: 6px 0; }
 @media (max-width: 700px) { .app-foot { padding-right: 72px; padding-left: 8px; } }
+
+/* Check-in result pop-up */
+.checkin-pop { text-align: center; }
+.checkin-pop .result-badge { font-size: 72px; animation: ci-pop .6s cubic-bezier(.2,1.6,.4,1) both; }
+@keyframes ci-pop { from { transform: scale(.2) rotate(-20deg); opacity: 0; } to { transform: none; opacity: 1; } }
+.checkin-pop h2 { margin: 4px 0 0; }
+.ci-stage { font-weight: 800; color: var(--brand); margin: 2px 0 12px; }
+.ci-cheer { background: var(--brand-soft); border-radius: 14px; padding: 12px 14px; margin: 0 0 10px; line-height: 1.45; }
+.ci-goal { border: 2px dashed var(--brand); border-radius: 14px; padding: 10px 12px; margin: 10px 0; line-height: 1.5; }
+.ci-goal span { color: var(--ink-2); font-size: .92em; }
+.ci-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 8px 0; }
+.ci-chips span { background: var(--surface-2); border-radius: 999px; padding: 4px 10px; font-size: .85em; font-weight: 700; }
+.ci-why { text-align: left; margin: 10px 0; }
+.ci-why summary { cursor: pointer; font-weight: 700; text-align: center; padding: 6px; }
+.ci-res { list-style: none; padding: 0; margin: 8px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ci-res li { background: var(--surface-2); border-radius: 10px; padding: 6px 8px; font-size: .85em; display: flex; flex-direction: column; }
+.ci-res strong { font-size: 1.2em; }
+.ci-tests { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 8px; }
+.ci-tests li { border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; font-size: .9em; }
+.ci-tests li.pass { background: var(--lime-soft); border-color: transparent; }
+.ci-tests em { color: var(--ink-2); font-style: normal; }

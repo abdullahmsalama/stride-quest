@@ -2,6 +2,11 @@
 // `user` (plain words, optional) shows to everyone once as "What's new". Never show version numbers to users.
 // Add an entry with every release.
 export const CHANGELOG = [
+  { v: 'v105', date: '2026-10-26', title: 'Home Check-in: celebration pop-up with the stage and why', items: [
+    'Before the Check-in, no guessed stage is shown: the result screen says "First, a short Check-in" and Today says "Your Check-in sets your stage" (internally Stage 0; skipping restores the "how fit do you feel" stage).',
+    'After the Check-in: a pop-up with confetti and a fanfare: the world and stage, a cheer for every level (Stage 0 included), the next Test Day goal, XP and badges (no toasts on top), and "Why this stage?": their results against each Test Day, goal by goal.',
+    'Me → My home workouts: "📋 Check-in result" reopens it.',
+  ], userTitle: 'Your Check-in result', user: ['After your home Check-in you now see your stage, why you got it, and your next goal.'] },
   { v: 'v104', date: '2026-10-26', title: 'Home: gentler first full push-up goal for women', items: [
     'Rooftop Circuit Test Day (World 4): women need 3 full push-ups instead of 5 (the knee → full step is the biggest on the map). World 5 stays at 12.',
   ] },
