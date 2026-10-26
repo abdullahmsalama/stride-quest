@@ -552,4 +552,14 @@ function popupHtml(s, cfg, p) {
 export { addToMap };
 
 // The Hybrid lifter, for the Gym map: side view, and seen from behind when walking up the map.
+// Home workouts: on a yoga mat, stretching a resistance band overhead (side-on), or walking with it (from behind).
+const homeSide = sex => `<g class="ch-lift ch-home"><rect x="-16" y="-1.5" width="32" height="3.5" rx="1.75" fill="#7e57c2"/><g class="bob">
+      <path d="M-5,0 L-5,-14 M5,0 L5,-14" stroke="#1e2b4d" stroke-width="4.8" stroke-linecap="round"/>
+      <rect x="-6.5" y="-31" width="13" height="18" rx="5" fill="${TOP(sex)}"/>${PONY(sex, -5, -40)}<circle cx="0" cy="-37" r="6.3" fill="${SKIN}"/><path d="M-6,-40 a6.3,6.3 0 0 1 12,0" fill="${HAIR}"/>
+      <g class="press"><path d="M-6,-29 L-15,-43 M6,-29 L15,-43" stroke="${SKIN}" stroke-width="3.6" stroke-linecap="round"/>
+        <path d="M-16,-44 Q0,-50 16,-44" stroke="#43a047" stroke-width="3.2" fill="none" stroke-linecap="round"/></g></g></g>`;
+const homeBack = sex => walker(sex, { top: TOP(sex), band: '#7e57c2', arms: false, extra: `
+      <path d="M-6,-31 L-12,-40 M6,-31 L12,-40" stroke="${SKIN}" stroke-width="3.4" stroke-linecap="round"/>
+      <path d="M-13,-41 Q0,-46 13,-41" stroke="#43a047" stroke-width="3" fill="none" stroke-linecap="round"/>` });
+export const homeFigure = sex => `<g class="face"><g class="v-side">${homeSide(sex)}</g><g class="v-back">${homeBack(sex)}</g></g>`;
 export const liftFigure = sex => `<g class="face"><g class="v-side">${CHAR.strength(sex)}</g><g class="v-back">${BACK.strength(sex)}</g></g>`;

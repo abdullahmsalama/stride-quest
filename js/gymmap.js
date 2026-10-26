@@ -5,7 +5,7 @@ import { GYM_WORLDS, GYM_STAGES } from './data/gym.js';
 import { HOME_WORLDS, HOME_STAGES } from './data/home.js';
 // Home workouts use the same path (5 worlds of 2 stages each) with their own names and scenery.
 const homeOf = s => s?.gym?.mode === 'home';
-import { liftFigure, facing } from './trimap.js';
+import { liftFigure, homeFigure, facing } from './trimap.js';
 
 export const W = 400;
 const STEP = 150;
@@ -115,7 +115,7 @@ export function renderGymMap(s, at = hereIndex(s)) {
     <path d="${sub}" fill="none" stroke="#fff" stroke-width="5" stroke-dasharray="2 12" stroke-linecap="round"/>
     <g transform="translate(${POINTS[0].x},${POINTS[0].y})"><rect x="-44" y="-16" width="88" height="30" rx="8" fill="#263238"/><text y="5" text-anchor="middle" fill="#fff" font-size="13" font-weight="800">START</text></g>
     ${segs}${nodes}
-    <g id="gym-av" class="lane-ch" transform="translate(${av.x},${av.y - 8}) scale(1.25)">${liftFigure(s.profile.sex)}</g></svg></div>`;
+    <g id="gym-av" class="lane-ch" transform="translate(${av.x},${av.y - 8}) scale(1.25)">${(home ? homeFigure : liftFigure)(s.profile.sex)}</g></svg></div>`;
 }
 
 // Walk the lifter from node `from` to node `to` (about 0.8 s a hop), facing the way it goes.

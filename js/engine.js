@@ -835,12 +835,14 @@ export function sickCheckIn(state, now) {
 }
 
 // ---------- daily orders and rest ----------
-export function dailyOrders(now) {
+// Runner-only orders (foot and ankle work) are left out for people who don't run.
+export function dailyOrders(now, runs = true) {
   const k = dayKey(now);
   let h = 0;
   for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const pool = DAILY_ORDERS.map((_, i) => i).filter(i => runs || !/foot and ankle/.test(DAILY_ORDERS[i]));
   const idx = [];
-  while (idx.length < 3) { const i = h % DAILY_ORDERS.length; if (!idx.includes(i)) idx.push(i); h = (h * 1103515245 + 12345) >>> 0; }
+  while (idx.length < 3) { const i = pool[h % pool.length]; if (!idx.includes(i)) idx.push(i); h = (h * 1103515245 + 12345) >>> 0; }
   return idx.map(i => ({ i, title: DAILY_ORDERS[i] }));
 }
 

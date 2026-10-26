@@ -7,8 +7,10 @@ export const CHANGELOG = [
     'One questions screen, nothing pre-picked: equipment (bands, light dumbbells, chair, mat), 10/20/30/45 min, goal (fit, tone, stronger, lose fat), jumping or not, how fit (+ optional push-ups and plank for placement).',
     'Sessions: timed full-body circuits A / B (work / rest per world: 30/30 up to 50/10), warm-up and cool-down, a full-screen timer with beeps and the move spoken. Fit and fat-loss goals get 1-2 home cardio days.',
     'Each move comes from a ladder (wall push-up → incline → knees → full → feet up); "Too hard" / "Too easy" moves one rung. "No jumping" uses low-impact twins (step jacks, skater steps, step-back burpees).',
-    'Map: Living Room Arena → Band Camp → Backyard Stadium → Rooftop Circuit → Hall of Home Champions, with home scenery. 6 sessions clear a stage; Test Days check push-ups, plank and a leg test (draft numbers, to confirm).',
+    'Map: Living Room Arena → Band Camp → Backyard Stadium → Rooftop Circuit → Hall of Home Champions, with home scenery. 6 sessions clear a stage; Test Days check push-ups, plank and a leg test (numbers approved by Abdullah, same for everyone).',
     'Me: "My home workouts" card with settings, "+ Home workouts" for runners and others. Stats: test results. Can\'t tick Gym and Home together.',
+    'Home users get their own map character: on a yoga mat, stretching a band.',
+    'Daily orders: "5 min foot and ankle work" only shows for people who run (Run, Hybrid, Tri).',
   ], userTitle: 'Home workouts', user: ['New: short workouts at home with just your body, bands or light dumbbells, with a timer that counts every move for you. Add them in Me → ＋ Home workouts.'] },
   { v: 'v100', date: '2026-10-21', title: 'What\'s new for everyone; no version number for users', items: [
     'Users no longer see the version number anywhere (footer and feedback form).',

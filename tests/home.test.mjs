@@ -86,3 +86,11 @@ test('home: the coach gets the next circuit exactly', () => {
   assert.match(E.coachContext(s, T), /HOME WORKOUTS.*NO JUMPING/);
   assert.match(E.coachContext(s, T), /NEXT HOME SESSION/);
 });
+
+test('home: no runner-only daily orders for people who do not run', () => {
+  for (let d = 0; d < 60; d++) {
+    const o = E.dailyOrders(T + d * E.DAY, false);
+    assert.equal(o.length, 3);
+    assert.ok(!o.some(x => /foot and ankle/.test(x.title)), `day ${d}`);
+  }
+});

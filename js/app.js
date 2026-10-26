@@ -1285,7 +1285,7 @@ function viewToday() {
   const lvl = E.runLevel(S.run.level);
   const prog = E.levelProgress(S);
   const pct = Math.min(100, Math.round(prog.earned / Math.max(1, prog.target) * 100));
-  const orders = E.dailyOrders(t);
+  const orders = E.dailyOrders(t, GYM.hasRunning(S));
   const doneOrders = S.daily[E.dayKey(t)]?.orders || [];
   const restDone = S.daily[E.dayKey(t)]?.rest;
   const hello = S.profile.name ? `Hi ${h(S.profile.name)}!` : 'Hi!';
