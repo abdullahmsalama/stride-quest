@@ -2,6 +2,9 @@
 // `user` (plain words, optional) shows to everyone once as "What's new". Never show version numbers to users.
 // Add an entry with every release.
 export const CHANGELOG = [
+  { v: 'v108', date: '2026-10-31', title: 'Preview the "Pick your look" pop-up', items: [
+    'Open the app with ?pick (…/stride-quest/?pick) to see the pop-up any time; the link cleans itself up. Owners also get "👀 Show the Pick your look pop-up" in Me → Look.',
+  ] },
   { v: 'v107', date: '2026-10-31', title: '"Pick your look" pop-up', items: [
     'Once per device, for athletes placed a day+ ago who haven\'t picked a look: a pop-up with a small drawing of each look (New: week dots, hero, START, 4 tabs · Classic: stacked cards, 7 tabs), the one they\'re on marked, and two big buttons. The choice is saved (counts as chosen, so UI_DEFAULT no longer changes it) and counted (ui:A|B:open).',
     'Picking the new look: confetti and "your next session is right at the top". It replaces the What\'s new pop-up that day. Brand-new athletes get it from their second day.',

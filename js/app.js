@@ -47,6 +47,10 @@ import { CHANGELOG } from './data/changelog.js';
 const UI_KEY = 'stride-quest:ui';
 { // ?ui=a|b in the link: applied once when the app opens, then removed from the address
   const q = new URLSearchParams(location.search).get('ui');
+  if (new URLSearchParams(location.search).has('pick')) { // ?pick: open the "Pick your look" pop-up (to preview it)
+    globalThis.__pickLook = true;
+    const u = new URL(location.href); u.searchParams.delete('pick'); history.replaceState(null, '', u.pathname + u.search + u.hash);
+  }
   if (q && /^[ab]$/i.test(q)) {
     try { localStorage.setItem(UI_KEY, JSON.stringify({ v: q.toUpperCase(), chosen: true })); } catch { /* ignore */ }
     const u = new URL(location.href); u.searchParams.delete('ui'); history.replaceState(null, '', u.pathname + u.search + u.hash);
@@ -840,6 +844,7 @@ function queueModals() {
   else if (E.pendingChecks(S, t).length && !ui.dismissed.has('morning')) ui.modal = { type: 'morning' };
   // Period due: asks once a day (the first time the app opens) until she answers or closes it.
   else if (CY.canTrack(S) && CY.shouldAsk(S.cycle, ymdNow())) { S.cycle = CY.markAsked(S.cycle, ymdNow()); store.save(S); ui.modal = { type: 'cycleAsk' }; }
+  else if (S.placedAt && globalThis.__pickLook) { globalThis.__pickLook = false; ui.modal = { type: 'lookPick' }; }
   else if (S.placedAt && !ui.intro && now() - S.placedAt > E.DAY && !lookChosen() && !lookAsked()) { try { localStorage.setItem(LOOK_ASKED, '1'); } catch { /* ignore */ } setNewsSeen(); ui.modal = { type: 'lookPick' }; }
   else if (S.placedAt && !ui.intro && newsUnseen().length) { setNewsSeen(); ui.modal = { type: 'whatsNew', items: newsUnseen(true) }; }
 }
@@ -2740,6 +2745,7 @@ function viewMe() {
     <section class="card look-card"><h3>Look</h3>
       <div class="seg">${[['B', '✨ New look'], ['A', '📋 Classic']].map(([k, l]) => `<button class="${uiLook() === k ? 'on' : ''}" data-act="set-look" data-v="${k}">${l}</button>`).join('')}</div>
       <p class="hint">The new look puts your next session first, with everything else one tap away. Same features and progress in both: switch any time.</p>
+      ${isOwner() ? '<button class="btn small ghost" data-act="look-popup">👀 Show the "Pick your look" pop-up</button>' : ''}
     </section>
     <section class="card"><h3>Theme</h3>
       <div class="seg">${[['light', '☀️ Light'], ['dark', '🌙 Dark'], ['auto', '🖥️ Auto']].map(([k, l]) => `<button class="${theme() === k ? 'on' : ''}" data-act="set-theme" data-t="${k}">${l}</button>`).join('')}</div>
@@ -3824,6 +3830,7 @@ const actions = {
     ui.lanePopup = { map: el.dataset.map, kind: 'lane', lane }; ui.frameTop = document.querySelector('.worldmap')?.scrollTop ?? null;
     const before = window.scrollY; render(); window.scrollTo(0, before);
   },
+  'look-popup'() { ui.modal = { type: 'lookPick' }; renderModal(); },
   'pick-look'(el) {
     const v = el.dataset.v; setUiLook(v, true); count(`ui:${v}:open`); ui.modal = null;
     if (v === 'A' && ui.tab === 'you') ui.tab = 'me';
