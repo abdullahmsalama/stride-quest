@@ -39,6 +39,13 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+/* iPhone browsers (all WebKit) widen the whole page if anything sticks out even a little, cutting off the
+   right edge of every card. Never scroll sideways, and let flex/grid children shrink below their text. */
+html, body { overflow-x: clip; max-width: 100%; }
+@supports not (overflow-x: clip) { html, body { overflow-x: hidden; } }
+#app, .card, main, .tabs { min-width: 0; max-width: 100%; }
+.card * , .tabs button, .chips > * { min-width: 0; }
+.card, .card p, .card li, .card h2, .card h3 { overflow-wrap: anywhere; }
 body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); -webkit-font-smoothing: antialiased; }
 #app { max-width: 720px; margin: 0 auto; padding: 0 16px calc(96px + env(safe-area-inset-bottom)); }
 h1, h2, h3 { font-family: var(--display); letter-spacing: .01em; line-height: 1.1; margin: 0 0 8px; }
@@ -193,12 +200,12 @@ a { color: var(--brand); font-weight: 600; }
 .mic.on { background: var(--danger-soft); border-color: var(--danger); animation: pulse 1.5s infinite; }
 
 /* me */
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 8px 0; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
 .stats div { background: var(--surface-2); border-radius: 12px; padding: 10px; text-align: center; }
 .stats strong { display: block; font: 800 24px var(--display); }
 .stats span { font-size: 12px; color: var(--ink-2); }
-@media (max-width: 420px) { .stats { grid-template-columns: repeat(2, 1fr); } }
-.badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+@media (max-width: 420px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(96px, 100%), 1fr)); gap: 8px; }
 .badge { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px; border-radius: 12px; background: var(--surface-2); font-size: 12px; font-weight: 600; text-align: center; opacity: .45; filter: grayscale(1); }
 .badge span { font-size: 26px; }
 .badge.on { opacity: 1; filter: none; background: var(--brand-soft); }
@@ -250,7 +257,7 @@ a { color: var(--brand); font-weight: 600; }
 .btn.small { min-height: 34px; padding: 6px 12px; font-size: 13px; }
 .map-hud .btn { box-shadow: 0 3px 10px rgba(0, 0, 0, .2); }
 .seg { display: flex; background: var(--surface-2); border-radius: 12px; padding: 4px; margin-bottom: 12px; }
-.seg button { flex: 1; border: 0; background: none; padding: 9px 8px; border-radius: 9px; font: 600 14px var(--body); color: var(--ink-2); cursor: pointer; }
+.seg button { flex: 1; min-width: 0; border: 0; background: none; padding: 9px 8px; border-radius: 9px; font: 600 14px var(--body); color: var(--ink-2); cursor: pointer; }
 .seg button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
 
 /* placement intro */
@@ -832,7 +839,7 @@ header.top { gap: 10px; }
 /* Nutrition */
 .nutri-kcal { margin: 6px 0 10px; font-size: 15px; }
 .nutri-kcal b { font: 800 34px var(--display); }
-.nutri-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.nutri-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .nutri-grid div { padding: 10px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
 .nutri-grid b { font: 800 20px var(--display); }
 .nutri-grid span { font-size: 12px; color: var(--ink-2); }
@@ -848,7 +855,7 @@ header.top { gap: 10px; }
 .nutri-check.info { background: rgba(30, 136, 229, .1); border-left: 5px solid #1e88e5; }
 .fuel { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 6px; font-size: 14px; }
 .fuel b { display: inline-block; min-width: 96px; }
-.carb-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; font-size: 11px; }
+.carb-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; text-align: center; font-size: 11px; }
 .carb-week div { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 0; border-radius: 8px; }
 .carb-week div.today { background: var(--brand-soft); }
 .carb-week i { display: block; width: 14px; border-radius: 4px; background: var(--brand); }
@@ -1004,7 +1011,7 @@ body:has(#modal:not([hidden])) .coach-fab { display: none; } /* the coach button
 .b-greet h1 { font-size: 32px; margin: 0; }
 
 /* the week: 7 dots */
-.b-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 0 0 16px; }
+.b-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin: 0 0 16px; }
 .b-day { border: 0; background: none; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; color: var(--ink-2); font: 700 12px var(--body); min-height: var(--tap); }
 .b-day i { font-style: normal; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font: 700 15px var(--body); background: var(--surface); color: var(--ink); border: 2px solid var(--line); }
 .b-day.plan i { border-style: dashed; border-color: var(--brand); }
@@ -1120,3 +1127,22 @@ body:has(#modal:not([hidden])) .coach-fab { display: none; } /* the coach button
 .lp-tabs4, .lp-tabs7 { position: absolute; left: 0; right: 0; bottom: 0; height: 14px; background: var(--surface); border-top: 1px solid var(--line); }
 .lp-tabs4 { background-image: radial-gradient(circle, var(--brand) 2px, transparent 2.5px), radial-gradient(circle, var(--ink-2) 2px, transparent 2.5px); background-size: 25% 100%, 25% 100%; background-position: 0 0, 25% 0; background-repeat: no-repeat, repeat-x; }
 .lp-tabs7 { background-image: radial-gradient(circle, var(--ink-2) 1.6px, transparent 2px); background-size: calc(100% / 7) 100%; }
+
+/* Header: the chips never push past the screen (brand shrinks first, then the Help word hides). */
+.top { gap: 8px; min-width: 0; }
+.top .brand { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top .chips { flex-shrink: 0; }
+@media (max-width: 400px) { .help-word, .xp-word { display: none; } .top .brand { font-size: 21px; } }
+.tabs button .lbl { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* iPhone zooms in when you tap a text box or drop-down under 16px, and often stays zoomed (the page then
+   looks too big and slides sideways). 16px everywhere on touch screens stops that; pinch-zoom still works. */
+@media (pointer: coarse) { input, select, textarea { font-size: max(16px, 1em) !important; } }
+/* "Add as an app icon?" */
+.b-logo { border: 0; background: none; padding: 0; cursor: pointer; display: inline-flex; }
+.app-icon { text-align: center; }
+.app-icon img { border-radius: 20px; box-shadow: 0 8px 22px rgba(20, 33, 61, .25); margin: 4px auto 12px; display: block; }
+.app-icon .row { margin-top: 12px; }
+.icon-steps { text-align: left; margin: 12px 0; padding-left: 22px; display: grid; gap: 8px; }
+.icon-steps li { padding-left: 4px; }
+.brand-name { font: inherit; letter-spacing: inherit; }
+.ui-b .b-top .brand { font-size: 22px; }

@@ -2,6 +2,13 @@
 // `user` (plain words, optional) shows to everyone once as "What's new". Never show version numbers to users.
 // Add an entry with every release.
 export const CHANGELOG = [
+  { v: 'v109', date: '2026-11-01', title: 'Look picked after the questionnaire, app-icon prompt, iPhone zoom fix, lifts asked once', items: [
+    'Questionnaire: the "How much do you want to see?" question is gone. Right after "Start", the "Pick your look" window opens ("Your plan is ready · last thing"), nothing pre-marked; Classic shows the full day.',
+    'Header: the logo asks "Add Stride Quest as an app icon?" (one tap where the browser allows it, else the steps for iPhone / Android / computer); the name "Stride Quest" still opens About (both looks).',
+    'iPhone: drop-downs and some text boxes were under 16px, so tapping them zoomed the page in and it stayed zoomed (cards cut off on the right). All inputs are 16px+ on touch screens; the page can never scroll sideways; rows of buttons can shrink.',
+    'Gym + Hybrid: squat and deadlift typed in the Hybrid step are carried into the Gym step (editable, with a note), not asked twice. The AI reading of "other lifts" only shows when it\'s actually used (typed numbers always win).',
+    'Tips, the "New here?" offer and XP toasts wait until pop-ups are closed.',
+  ], userTitle: 'Smoother start', user: ['Tap the logo to add Stride Quest as an app icon. New: pick your look right after the questions. Fixed: on iPhone the page could stay zoomed in after typing.'] },
   { v: 'v108', date: '2026-10-31', title: 'Preview the "Pick your look" pop-up', items: [
     'Open the app with ?pick (…/stride-quest/?pick) to see the pop-up any time; the link cleans itself up. Owners also get "👀 Show the Pick your look pop-up" in Me → Look.',
   ] },

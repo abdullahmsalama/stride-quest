@@ -285,8 +285,6 @@ function obStepsAdult(a) {
       <div class="choices">${SELF_TEST.map(([k, l, ex]) => `${check(k, `${h(l)} <a href="${videoLink(ex)}" target="_blank" rel="noopener">demo</a>`, a.selfTest?.[k])}`).join('')}</div>` });
   }
   if (a.sex === 'f' && !(+a.age > 0 && +a.age < 13)) steps.push({ title: 'Your cycle (optional)', why: 'Some days feel harder than others. Your plan can go a bit lighter on period days, and your food tips follow your phase.', body: cycleFields(a) });
-  steps.push({ title: 'How much do you want to see?', why: 'Some people like every detail, some just want to know what to do next.', body:
-    radio('view', [['simple', 'Keep it simple: just tell me what to do next'], ['full', 'Show me everything: my week, levels and details']], a.view || 'simple') + '<p class="hint">You can switch any time at the top of Today.</p>' });
   steps.push({ title: 'Your starting point', result: true });
   return steps;
 }
@@ -331,6 +329,13 @@ const backgroundOf = a => BG.SPORTS.map(([k]) => k).filter(k => a[`bg_${k}`]).ma
 
 function gymQuestions(a) {
   const u = a.liftUnit || 'kg', both = (a.tracks || []).length > 1;
+  // Hybrid is asked first and has the squat and deadlift already: carry them over (editable), don't ask twice.
+  const fromHyb = (a.tracks || []).includes('hybrid') && (a.gEquip || 'gym') === 'gym' && a.liftMode !== 'unknown' && (+a.squat5 > 0 || +a.deadlift5 > 0);
+  if (fromHyb) {
+    const reps = a.liftMode === '1' ? 1 : 5;
+    if (!(+a.gSquat > 0) && +a.squat5 > 0) { a.gSquat = a.squat5; a.gSquatR = reps; }
+    if (!(+a.gDead > 0) && +a.deadlift5 > 0) { a.gDead = a.deadlift5; a.gDeadR = reps; }
+  }
   const lift = (k, label) => `<div class="row wrap lift-row">${num(k, label, a[k], u)}<label class="field"><span>for how many reps</span><span class="with-unit"><input type="number" inputmode="numeric" name="${k}R" min="1" max="12" step="1" value="${h(a[`${k}R`] ?? '')}" placeholder="5"><em>reps</em></span></label></div>`;
   return `<p class="q">Your main goal</p>${radio('gGoal', GYM.GOALS, a.gGoal || 'muscle')}
     <p class="q">Lifting experience</p>${radio('gExp', GYM.EXPERIENCE, a.gExp || 'lt1')}
@@ -345,7 +350,7 @@ function gymQuestions(a) {
     ${(a.gEquip || 'gym') === 'bw' ? `${num('gPush', 'Push-ups in a row', a.gPush, 'reps')}${num('gPull', 'Strict pull-ups in a row', a.gPull, 'reps')}${num('gLegs', 'Bulgarian split squats, each leg', a.gLegs, 'reps')}`
       : (a.gEquip || 'gym') === 'home' ? `${lift('gSquat', 'Goblet squat (one dumbbell)')}${lift('gBench', 'Dumbbell bench press (both dumbbells together)')}${lift('gDead', 'Dumbbell Romanian deadlift (both together)')}`
       : `${lift('gSquat', 'Back squat')}${lift('gBench', 'Bench press')}${lift('gDead', 'Deadlift')}`}
-    <p class="hint">A recent set with good form: weight and reps (up to 12). Don't know? Leave it empty: your first sessions find your weights.</p>`;
+    <p class="hint">${fromHyb ? '✅ Squat and deadlift are filled in from your Hybrid answers: just add your bench (or change them). ' : ''}A recent set with good form: weight and reps (up to 12). Don't know? Leave it empty: your first sessions find your weights.</p>`;
 }
 // Home workouts: what she has, how long, what for, jumping or not, and how fit she feels. Nothing is pre-picked.
 function homeQuestions(a) {
@@ -660,7 +665,7 @@ function renderOnboarding() {
         ${(ui.ob.a.tracks || []).includes('hybrid') ? (() => { const hy = HYB.placeHybrid(preview.state, normalize(ui.ob.a), now()); const w = HYBRID_WORLDS[hy.world];
           const lr = HYB.readLifts(normalize(ui.ob.a), ui.ob.a.sex);
           return `<div class="dream-box"><strong>🏋️⚙️🏃 Hybrid: ${w.emoji} ${h(w.name)}</strong>${lr.level ? `<br><span class="hint">Read as: ${[lr.sqRatio ? `squat ${lr.sqRatio.toFixed(1)}x bodyweight` : '', lr.dlRatio ? `deadlift ${lr.dlRatio.toFixed(1)}x` : ''].filter(Boolean).join(' · ')} (bodyweight ${Math.round(lr.bwKg)} kg). Wrong? Check kg / lb.</span>` : ''}<br><span class="hint">Strength: ${h(ST.sexText(HYB.laneTarget('strength', hy.strength.stage + 1), ui.ob.a.sex))} next · Engine: ${h(HYB.laneTarget('engine', hy.engine.stage + 1))} next · starting with a ${hy.block.type === 'engine' ? '⚡ Engine' : '🏋️ Strength'} block</span></div>
-            ${ui.ob.a.liftsAI ? `<div class="ai-read ${ui.ob.a.liftsAI.accepted ? '' : 'off'}"><span>🤖 I read your lifts as: <strong>${h(ui.ob.a.liftsAI.summary || '')}</strong>${ui.ob.a.liftsAI.confidence === 'low' ? ' <em class="hint">(rough estimate)</em>' : ''}</span>
+            ${ui.ob.a.liftsAI && (ui.ob.a.liftMode === 'unknown' || !(+ui.ob.a.squat5 || +ui.ob.a.deadlift5)) ? `<div class="ai-read ${ui.ob.a.liftsAI.accepted ? '' : 'off'}"><span>🤖 I read your lifts as: <strong>${h(ui.ob.a.liftsAI.summary || '')}</strong>${ui.ob.a.liftsAI.confidence === 'low' ? ' <em class="hint">(rough estimate)</em>' : ''}</span>
               <div class="row"><button type="button" class="btn ghost small" data-act="lifts-ai" data-v="${ui.ob.a.liftsAI.accepted ? 0 : 1}">${ui.ob.a.liftsAI.accepted ? 'Not quite' : 'Use this estimate'}</button></div>
               ${!ui.ob.a.liftsAI.accepted ? aiFixBox('lifts', 'Correct it, e.g. "those were in lb" or "bench 100 kg for 3"') : ''}</div>` : ''}`; })() : ''}
         ${(ui.ob.a.tracks || []).includes('tri') ? (() => { const tri = TRI.placeTri(preview.state, normalize(ui.ob.a)); const w = TRI_WORLDS[tri.world];
@@ -676,7 +681,7 @@ function renderOnboarding() {
   } else body = st.body;
   $('#app').innerHTML = `
     <main class="onboarding">
-      <div class="ob-top"><button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest"><img class="brand-logo" src="icons/logo-96.png" alt="" width="28" height="28">Stride Quest</button><div class="progress"><div style="width:${((i + 1) / steps.length) * 100}%"></div></div></div>
+      <div class="ob-top"><span class="brand brand-btn"><button type="button" class="b-logo" data-act="logo-tap" title="Add Stride Quest as an app icon" aria-label="Add Stride Quest as an app icon"><img class="brand-logo" src="icons/logo-96.png" alt="" width="28" height="28"></button><button type="button" class="brand-btn brand-name" data-act="about-me" title="About Stride Quest">Stride Quest</button></span><div class="progress"><div style="width:${((i + 1) / steps.length) * 100}%"></div></div></div>
       ${returning}
       <form id="ob-form" class="card ob-card" autocomplete="off">
         ${!st.welcome && !st.result ? `<p class="eyebrow">Question ${i} of ${steps.length - 2}</p>` : ''}
@@ -735,7 +740,7 @@ function render() {
   if (!kid && isB()) return renderB(views, t);
   $('#app').innerHTML = `
     <header class="top">
-      <button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest"><img class="brand-logo" src="icons/logo-96.png" alt="" width="28" height="28">Stride Quest</button>
+      <span class="brand brand-btn"><button type="button" class="b-logo" data-act="logo-tap" title="Add Stride Quest as an app icon" aria-label="Add Stride Quest as an app icon"><img class="brand-logo" src="icons/logo-96.png" alt="" width="28" height="28"></button><button type="button" class="brand-btn brand-name" data-act="about-me" title="About Stride Quest">Stride Quest</button></span>
       <div class="chips"><button class="chip help-btn" data-act="help" title="How the app works" aria-label="Help">❓<span class="help-word"> Help</span></button><span class="chip" title="Total XP: ${S.xp}">⚡ ${S.xp >= 10000 ? `${(S.xp / 1000).toFixed(1).replace(/\.0$/, '')}k` : S.xp}<span class="xp-word"> XP</span></span><span class="chip" title="Day streak">🔥 ${E.dayStreak(S, t)}</span>${ownerBell()}</div>
     </header>
     <main class="view view-${ui.tab}">${views[ui.tab]()}${ui.tab === 'coach' ? '' : appFoot()}</main>
@@ -767,7 +772,7 @@ function renderB(views, t) {
   const titles = { stats: '📊 Stats', nutrition: '🍽️ Nutrition', challenge: '🏆 Challenges', events: '🗓️ Races', me: '⚙️ Profile & settings', map: '🗺️ My map', coach: '💬 Coach' };
   const xp = S.xp >= 10000 ? `${(S.xp / 1000).toFixed(1).replace(/\.0$/, '')}k` : S.xp;
   $('#app').innerHTML = `
-    <header class="top b-top">${sub ? `<button class="b-back" data-act="tab" data-tab="you" aria-label="Back to You">‹</button><b class="b-title">${titles[ui.tab]}</b>` : ui.tab === 'today' ? '<img class="brand-logo" src="icons/logo-96.png" alt="Stride Quest" width="30" height="30">' : `<b class="b-title">${titles[ui.tab] || ''}</b>`}
+    <header class="top b-top">${sub ? `<button class="b-back" data-act="tab" data-tab="you" aria-label="Back to You">‹</button><b class="b-title">${titles[ui.tab]}</b>` : ui.tab === 'today' ? '<span class="brand brand-btn"><button type="button" class="b-logo" data-act="logo-tap" aria-label="Add Stride Quest as an app icon"><img class="brand-logo" src="icons/logo-96.png" alt="" width="30" height="30"></button><button type="button" class="brand-btn brand-name" data-act="about-me" title="About Stride Quest">Stride Quest</button></span>' : `<b class="b-title">${titles[ui.tab] || ''}</b>`}
       <div class="chips"><span class="chip b-streak" title="Day streak">🔥 ${E.dayStreak(S, t)}</span><button class="chip" data-act="tab" data-tab="map" title="Total XP: ${S.xp}">⚡ ${xp}</button><button class="chip help-btn" data-act="help" aria-label="Help">❓</button>${ownerBell()}</div>
     </header>
     <main class="view view-${ui.tab}">${views[ui.tab]()}${ui.tab === 'coach' ? '' : appFoot()}</main>
@@ -1073,7 +1078,10 @@ function rewardQuests() {
   got.forEach(f => S.history.push({ ts: now(), kind: 'bonus', xp: QUEST_XP, title: `Getting started: ${f.quest.label}` }));
   store.save(S);
   const msg = `🧭 +${QUEST_XP * got.length} XP: ${got.map(f => f.quest.label).join(', ')}`;
-  setTimeout(() => { if (ui.modal?.type === 'checkinResult') { ui.modal.notes = [...(ui.modal.notes || []), msg]; renderModal(); } else toast(msg); }, 300); // no toast over the Check-in pop-up
+  // Never over a pop-up: inside the Check-in result, else once the pop-up is closed.
+  const say = (n = 0) => (ui.modal?.type === 'checkinResult' ? (ui.modal.notes = [...(ui.modal.notes || []), msg], renderModal())
+    : ui.modal && n < 40 ? setTimeout(() => say(n + 1), 500) : toast(msg));
+  setTimeout(say, 300);
 }
 function gettingStarted(style = '') {
   if (S.tour?.hidden) return '';
@@ -2793,6 +2801,7 @@ function renderModal() {
   root.hidden = false;
   root.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${MODALS[m.type](m)}</div>`;
   document.querySelector('.tour-bar')?.remove(); // the tour waits while a pop-up is open
+  document.querySelector('.tip-bubble')?.remove(); // so do tips and the "New here?" offer (they come back after)
 }
 
 const t0 = () => now();
@@ -2821,16 +2830,27 @@ function painButtons() {
 
 const MODALS = {
   dayB(m) { return dayB(m.i); },
+  // Tapping the logo: "Add as an app icon?" with the steps for this phone (one tap where the browser allows it).
+  appIcon() {
+    const how = installEvent ? '<button class="btn primary wide" data-act="install">📲 Add it to my home screen</button>'
+      : isIOS() ? `<ol class="icon-steps"><li>Tap <b>Share</b> <span class="ios-share" aria-hidden="true">⬆️</span> (in Safari: bottom bar · in Chrome: top right)</li><li>Scroll down and tap <b>Add to Home Screen</b></li><li>Tap <b>Add</b>. Done: Stride Quest opens like an app 🎉</li></ol>`
+      : /android/i.test(navigator.userAgent) ? '<ol class="icon-steps"><li>Open your browser menu <b>⋮</b> (top right)</li><li>Tap <b>Install app</b> or <b>Add to Home screen</b></li><li>Tap <b>Install</b>. Done 🎉</li></ol>'
+      : '<p>On your computer: open the browser menu and pick <b>Install Stride Quest</b> (Chrome, Edge), or add it to your Dock (Safari: File → Add to Dock).</p>';
+    return `<div class="app-icon"><img src="icons/logo-96.png" alt="" width="84" height="84"><h2>Add Stride Quest as an app icon?</h2>
+      <p>One tap from your home screen, full screen like a real app, works offline, and it keeps your progress safe${isIOS() ? ' (Safari can clear websites you haven\'t opened for a week)' : ''}.</p>
+      ${how}
+      <div class="row end"><button class="btn ghost" data-act="about-me">About Stride Quest</button><button class="btn ghost" data-act="close">Not now</button></div></div>`;
+  },
   // Which look: a small drawing of each, the one they're on marked, two clear buttons.
-  lookPick() {
-    const on = uiLook();
+  lookPick(m) {
+    const on = m.first ? null : uiLook(); // nothing pre-marked for a brand-new athlete
     const mini = (k, title, sub) => `<button type="button" class="look-opt ${on === k ? 'cur' : ''}" data-act="pick-look" data-v="${k}" aria-label="${title}">
       <span class="look-phone ${k === 'B' ? 'pb' : 'pa'}">${k === 'B'
         ? '<i class="lp-dots"><b></b><b></b><b></b><b class="t"></b><b></b><b></b><b></b></i><i class="lp-hero"><em></em><em class="s"></em><u>START</u></i><i class="lp-row"></i><i class="lp-row"></i><i class="lp-tabs4"></i>'
         : '<i class="lp-card h"></i><i class="lp-card"></i><i class="lp-card"></i><i class="lp-card"></i><i class="lp-card"></i><i class="lp-tabs7"></i>'}</span>
       <b>${title}</b><small>${sub}</small>${on === k ? '<span class="look-now">You\'re on this one</span>' : ''}</button>`;
-    return `<div class="look-pick"><p class="eyebrow">✨ New in Stride Quest</p><h2>Pick your look</h2>
-      <p>We made a <strong>simpler look</strong>: your next session first, with one big Start button, and everything else one tap away. Same features, same progress.</p>
+    return `<div class="look-pick"><p class="eyebrow">${m.first ? '🎉 Your plan is ready' : '✨ New in Stride Quest'}</p><h2>Pick your look</h2>
+      <p>${m.first ? 'Last thing: how do you like to see your training? Both have the same plan and features.' : 'We made a <strong>simpler look</strong>: your next session first, with one big Start button, and everything else one tap away. Same features, same progress.'}</p>
       <div class="look-opts">${mini('B', '✨ New look', 'Simple: just what to do next')}${mini('A', '📋 Classic', 'Everything on one page')}</div>
       <p class="hint" style="text-align:center">Change your mind any time in Me → Look.</p></div>`;
   },
@@ -3475,7 +3495,7 @@ const actions = {
     state.profile.tracks = tracks;
     state.otherTraining = otherFrom(ui.ob.a);
     state.profile.primary = tracks.includes(a.primary) ? a.primary : tracks[0];
-    state.profile.view = a.view === 'full' ? 'full' : 'simple';
+    state.profile.view = S.profile?.view || 'full'; // how much they see: the look they pick right after (classic shows the full day)
     if (+ui.ob.a.age >= 13 && +ui.ob.a.age < 18) { const cap = +ui.ob.a.age < 16 ? 8 : 10; if (state.run.level > cap) { state.run.level = cap; state.run.done = {}; } }
     if (+ui.ob.a.age > 0) { state.profile.birthYear = new Date(now()).getFullYear() - +ui.ob.a.age; state.profile.birthDate = ui.ob.a.birthDate || state.profile.birthDate || null; state.profile.kid = false; state.profile.ageGroup = state.profile.ageGroup || AGE.ageGroupOf(+ui.ob.a.age); state.nutrition = { ...(state.nutrition || {}), age: state.nutrition?.age || +ui.ob.a.age }; }
     state.tri = tracks.includes('tri') ? TRI.placeTri(state, a) : state.tri || null;
@@ -3503,6 +3523,7 @@ const actions = {
     commit(state);
     ui.mapMode = primaryMode();
     if (!fresh) window.scrollTo(0, 0); // a new placement scrolls the map to its START line instead
+    if (fresh && !lookChosen()) { try { localStorage.setItem(LOOK_ASKED, '1'); } catch { /* ignore */ } ui.modal = { type: 'lookPick', first: true }; renderModal(); } // pick a look right away
   },
   'open-step'(el) {
     let track = el.dataset.track, idx = +el.dataset.idx;
@@ -3838,6 +3859,7 @@ const actions = {
     render(); window.scrollTo(0, 0);
     if (v === 'B') { confetti(); toast('✨ Welcome to the new look! Your next session is right at the top.'); } else toast('📋 Classic look it is. The new look waits in Me → Look.');
   },
+  'logo-tap'() { if (standalone()) return actions['about-me'](); ui.modal = { type: 'appIcon' }; renderModal(); },
   'b-day'(el) { ui.modal = { type: 'dayB', i: +el.dataset.i }; renderModal(); },
   'b-modes'() { ui.modal = { type: 'modesB' }; renderModal(); },
   'set-look'(el) { setUiLook(el.dataset.v, true); count(`ui:${el.dataset.v}:open`); if (el.dataset.v === 'A' && ui.tab === 'you') ui.tab = 'me'; render(); window.scrollTo(0, 0); toast(el.dataset.v === 'B' ? '✨ New look on. You can switch back here any time.' : 'Classic look on. The new look is here when you want it.'); },
