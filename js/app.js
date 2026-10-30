@@ -61,6 +61,9 @@ function uiLook() {
 }
 function setUiLook(v, chosen) { try { localStorage.setItem(UI_KEY, JSON.stringify({ v, chosen })); } catch { /* ignore */ } }
 const isB = () => uiLook() === 'B';
+const lookChosen = () => { try { return !!JSON.parse(localStorage.getItem(UI_KEY) || 'null')?.chosen; } catch { return true; } };
+const LOOK_ASKED = 'stride-quest:lookAsked';
+const lookAsked = () => { try { return !!localStorage.getItem(LOOK_ASKED); } catch { return true; } };
 const THEME_KEY = 'stride-quest:theme';
 const theme = () => { try { return localStorage.getItem(THEME_KEY) || 'light'; } catch { return 'light'; } };
 function applyTheme(t = theme()) {
@@ -837,6 +840,7 @@ function queueModals() {
   else if (E.pendingChecks(S, t).length && !ui.dismissed.has('morning')) ui.modal = { type: 'morning' };
   // Period due: asks once a day (the first time the app opens) until she answers or closes it.
   else if (CY.canTrack(S) && CY.shouldAsk(S.cycle, ymdNow())) { S.cycle = CY.markAsked(S.cycle, ymdNow()); store.save(S); ui.modal = { type: 'cycleAsk' }; }
+  else if (S.placedAt && !ui.intro && now() - S.placedAt > E.DAY && !lookChosen() && !lookAsked()) { try { localStorage.setItem(LOOK_ASKED, '1'); } catch { /* ignore */ } setNewsSeen(); ui.modal = { type: 'lookPick' }; }
   else if (S.placedAt && !ui.intro && newsUnseen().length) { setNewsSeen(); ui.modal = { type: 'whatsNew', items: newsUnseen(true) }; }
 }
 // "What's new" for everyone, once after an update (plain words, no version numbers). New athletes skip it.
@@ -2811,6 +2815,19 @@ function painButtons() {
 
 const MODALS = {
   dayB(m) { return dayB(m.i); },
+  // Which look: a small drawing of each, the one they're on marked, two clear buttons.
+  lookPick() {
+    const on = uiLook();
+    const mini = (k, title, sub) => `<button type="button" class="look-opt ${on === k ? 'cur' : ''}" data-act="pick-look" data-v="${k}" aria-label="${title}">
+      <span class="look-phone ${k === 'B' ? 'pb' : 'pa'}">${k === 'B'
+        ? '<i class="lp-dots"><b></b><b></b><b></b><b class="t"></b><b></b><b></b><b></b></i><i class="lp-hero"><em></em><em class="s"></em><u>START</u></i><i class="lp-row"></i><i class="lp-row"></i><i class="lp-tabs4"></i>'
+        : '<i class="lp-card h"></i><i class="lp-card"></i><i class="lp-card"></i><i class="lp-card"></i><i class="lp-card"></i><i class="lp-tabs7"></i>'}</span>
+      <b>${title}</b><small>${sub}</small>${on === k ? '<span class="look-now">You\'re on this one</span>' : ''}</button>`;
+    return `<div class="look-pick"><p class="eyebrow">✨ New in Stride Quest</p><h2>Pick your look</h2>
+      <p>We made a <strong>simpler look</strong>: your next session first, with one big Start button, and everything else one tap away. Same features, same progress.</p>
+      <div class="look-opts">${mini('B', '✨ New look', 'Simple: just what to do next')}${mini('A', '📋 Classic', 'Everything on one page')}</div>
+      <p class="hint" style="text-align:center">Change your mind any time in Me → Look.</p></div>`;
+  },
   modesB() { return `<h2>Not feeling 100%?</h2><p class="hint">Your plan adapts. Nothing is lost: your streak and progress are safe.</p>${modesCard().replace('<section class="card modes"', '<section class="modes b-flat"') || '<p>You\'re already in a special mode. End it from the banner on Today.</p>'}<div class="row end"><button class="btn ghost" data-act="close">Close</button></div>`; },
   whatsNew(m) {
     const list = m.items?.length ? m.items : CHANGELOG.filter(c => c.user?.length).slice(0, 3);
@@ -3806,6 +3823,13 @@ const actions = {
     triFollow(nodePoint(cfg, lane, Math.min(cfg.value(S, lane), cfg.worlds.at(-1)[lane])).y);
     ui.lanePopup = { map: el.dataset.map, kind: 'lane', lane }; ui.frameTop = document.querySelector('.worldmap')?.scrollTop ?? null;
     const before = window.scrollY; render(); window.scrollTo(0, before);
+  },
+  'pick-look'(el) {
+    const v = el.dataset.v; setUiLook(v, true); count(`ui:${v}:open`); ui.modal = null;
+    if (v === 'A' && ui.tab === 'you') ui.tab = 'me';
+    if (v === 'B' && ['stats', 'nutrition', 'challenge', 'events'].includes(ui.tab)) ui.tab = 'today';
+    render(); window.scrollTo(0, 0);
+    if (v === 'B') { confetti(); toast('✨ Welcome to the new look! Your next session is right at the top.'); } else toast('📋 Classic look it is. The new look waits in Me → Look.');
   },
   'b-day'(el) { ui.modal = { type: 'dayB', i: +el.dataset.i }; renderModal(); },
   'b-modes'() { ui.modal = { type: 'modesB' }; renderModal(); },

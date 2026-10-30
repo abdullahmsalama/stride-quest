@@ -2,6 +2,10 @@
 // `user` (plain words, optional) shows to everyone once as "What's new". Never show version numbers to users.
 // Add an entry with every release.
 export const CHANGELOG = [
+  { v: 'v107', date: '2026-10-31', title: '"Pick your look" pop-up', items: [
+    'Once per device, for athletes placed a day+ ago who haven\'t picked a look: a pop-up with a small drawing of each look (New: week dots, hero, START, 4 tabs · Classic: stacked cards, 7 tabs), the one they\'re on marked, and two big buttons. The choice is saved (counts as chosen, so UI_DEFAULT no longer changes it) and counted (ui:A|B:open).',
+    'Picking the new look: confetti and "your next session is right at the top". It replaces the What\'s new pop-up that day. Brand-new athletes get it from their second day.',
+  ] },
   { v: 'v106', date: '2026-10-31', title: 'Look B: a new, simpler look (A/B test)', items: [
     'Users said Full day is too long and they don\'t know what to do next. Look B (research: Runna, Fitbod, Whoop, Oura, Duolingo, Uber, Revolut, Material 3 Expressive, NN/g): Today = greeting, the week as 7 dots, ONE hero card (today\'s session, why it matters, a big Start), quick actions (Log activity, Not 100%?, Ask coach), a map card ("you are here"), and everything else folded into one-line rows (checklist, week, daily orders, goal, lanes, getting started, daily boost).',
     '4 tabs instead of 7: Today · Map · Coach · You. You = profile + tiles for Stats, Nutrition, Challenges, Races, plus Settings and Help (back arrow on each). No coach bubble in B (Coach is a tab). Every feature is still there; look A is untouched.',
