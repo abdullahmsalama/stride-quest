@@ -2,6 +2,12 @@
 // `user` (plain words, optional) shows to everyone once as "What's new". Never show version numbers to users.
 // Add an entry with every release.
 export const CHANGELOG = [
+  { v: 'v106', date: '2026-10-31', title: 'Look B: a new, simpler look (A/B test)', items: [
+    'Users said Full day is too long and they don\'t know what to do next. Look B (research: Runna, Fitbod, Whoop, Oura, Duolingo, Uber, Revolut, Material 3 Expressive, NN/g): Today = greeting, the week as 7 dots, ONE hero card (today\'s session, why it matters, a big Start), quick actions (Log activity, Not 100%?, Ask coach), a map card ("you are here"), and everything else folded into one-line rows (checklist, week, daily orders, goal, lanes, getting started, daily boost).',
+    '4 tabs instead of 7: Today · Map · Coach · You. You = profile + tiles for Stats, Nutrition, Challenges, Races, plus Settings and Help (back arrow on each). No coach bubble in B (Coach is a tab). Every feature is still there; look A is untouched.',
+    'A/B: UI_DEFAULT in js/config.js: \'ab\' = new devices get A or B at random; \'A\' or \'B\' = everyone who didn\'t pick gets that look (one-line rollback). Anyone can switch in Me → Look. Test links: ?ui=a / ?ui=b.',
+    'Anonymous counts per look: ui:A|B:open (devices), :day (active days), :session (sessions logged).',
+  ], userTitle: 'A new, simpler look', user: ['Some of you see a new look: your next session first, with one big Start button, and everything else one tap away. You can switch between the new and classic look in Me → Look.'] },
   { v: 'v105', date: '2026-10-26', title: 'Home Check-in: celebration pop-up with the stage and why', items: [
     'Before the Check-in, no guessed stage is shown: the result screen says "First, a short Check-in" and Today says "Your Check-in sets your stage" (internally Stage 0; skipping restores the "how fit do you feel" stage).',
     'After the Check-in: a pop-up with confetti and a fanfare: the world and stage, a cheer for every level (Stage 0 included), the next Test Day goal, XP and badges (no toasts on top), and "Why this stage?": their results against each Test Day, goal by goal.',

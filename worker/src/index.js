@@ -359,8 +359,9 @@ async function stats(request, env, headers) {
 
 // Anonymous tallies (no ID): "one more athlete is preparing for Alpha X". Only these keys count.
 // app:open = a device opened the app (once), app:placed = finished the setup (once), app:day = active that day
+// ui:A|B:open|day|session = the look A/B test: devices per look, active days per look, sessions logged per look
 // (once a day), track:x = which sports people picked.
-const COUNT_KEYS = /^(view:(race-card|videos)|prep:(hyrox|alphax)(:(open|pro|base))?|site:(hyrox|alphax|calendar)|app:(open|placed|day)|track:(run|hybrid|tri|gym))$/;
+const COUNT_KEYS = /^(view:(race-card|videos)|prep:(hyrox|alphax)(:(open|pro|base))?|site:(hyrox|alphax|calendar)|app:(open|placed|day)|track:(run|hybrid|tri|gym|home)|ui:[AB]:(open|day|session))$/;
 async function tally(request, env, headers) {
   if (!env.DB) return json({ error: 'not set up' }, 503, headers);
   let body;

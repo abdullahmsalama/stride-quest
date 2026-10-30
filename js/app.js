@@ -13,7 +13,7 @@ import * as K from './calendar.js';
 import { parseTime, formatTime, raceMinutes, estimateKm } from './time.js';
 import { dreamTarget, weeksUntil, targetFromAI } from './goal.js';
 import * as ST from './standards.js';
-import { APP_VERSION } from './config.js';
+import { APP_VERSION, UI_DEFAULT } from './config.js';
 import * as BG from './background.js';
 import * as TRI from './tri.js';
 import { renderLaneMap, gateY as laneGateY, TH as LANE_H, TW as LANE_W, MAPS as LANE_MAPS, nodePoint, moveCharacter, celebrate, signature, START_POINT, laneFogParts, bandAtY, setPlates } from './trimap.js';
@@ -43,6 +43,24 @@ import { CHANGELOG } from './data/changelog.js';
 
 // ---------- state ----------
 // Theme: light by default (the look the app launched with); dark or follow-the-device on request.
+// Look: 'A' classic or 'B' new. { v, chosen } on this device; ?ui=a|b in the link forces one (for testing).
+const UI_KEY = 'stride-quest:ui';
+{ // ?ui=a|b in the link: applied once when the app opens, then removed from the address
+  const q = new URLSearchParams(location.search).get('ui');
+  if (q && /^[ab]$/i.test(q)) {
+    try { localStorage.setItem(UI_KEY, JSON.stringify({ v: q.toUpperCase(), chosen: true })); } catch { /* ignore */ }
+    const u = new URL(location.href); u.searchParams.delete('ui'); history.replaceState(null, '', u.pathname + u.search + u.hash);
+  }
+}
+function uiLook() {
+  let x; try { x = JSON.parse(localStorage.getItem(UI_KEY) || 'null'); } catch { x = null; }
+  if (x?.chosen) return x.v;
+  if (UI_DEFAULT === 'A' || UI_DEFAULT === 'B') return UI_DEFAULT;
+  if (!x) { x = { v: Math.random() < 0.5 ? 'A' : 'B', chosen: false }; try { localStorage.setItem(UI_KEY, JSON.stringify(x)); } catch { /* ignore */ } }
+  return x.v;
+}
+function setUiLook(v, chosen) { try { localStorage.setItem(UI_KEY, JSON.stringify({ v, chosen })); } catch { /* ignore */ } }
+const isB = () => uiLook() === 'B';
 const THEME_KEY = 'stride-quest:theme';
 const theme = () => { try { return localStorage.getItem(THEME_KEY) || 'light'; } catch { return 'light'; } };
 function applyTheme(t = theme()) {
@@ -707,6 +725,7 @@ function render() {
   const kid = AGE.isKid(S);
   if (kid && !['today', 'me'].includes(ui.tab)) ui.tab = 'today';
   const views = kid ? { today: viewKids, me: viewKidMe } : { today: viewToday, map: viewMap, challenge: viewChallenge, events: viewCompetitions, stats: viewStats, nutrition: viewNutrition, coach: viewCoach, me: viewMe };
+  if (!kid && isB()) return renderB(views, t);
   $('#app').innerHTML = `
     <header class="top">
       <button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest"><img class="brand-logo" src="icons/logo-96.png" alt="" width="28" height="28">Stride Quest</button>
@@ -716,6 +735,37 @@ function render() {
     <nav class="tabs">${(kid ? [['today', '🌟', 'Play'], ['me', '👤', 'Me']] : [['today', '🏠', 'Today'], ['map', '🗺️', 'Map'], ['challenge', '🏆', 'Challenge'], ['events', '🗓️', '<em class="long">Competitions </em>Calendar'], ['stats', '📊', 'Stats'], ['nutrition', '🍽️', 'Nutrition'], ['me', '👤', 'Me']]).map(([k, i, l]) =>
       `<button class="${ui.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}"${k === 'events' ? ' aria-label="Competitions Calendar"' : ''}><span>${i}</span><b class="lbl">${l}</b></button>`).join('')}</nav>
     ${ui.tab === 'coach' || kid ? '' : coachFab()}`;
+  queueModals();
+  renderModal();
+  if (ui.tab === 'coach') { const log = $('.chat-log'); if (log) log.scrollTop = log.scrollHeight; }
+  if (ui.tab === 'coach' && ui.chatDraft != null) { const inp = document.querySelector('#chat-form [name=msg]'); if (inp) { inp.value = ui.chatDraft; inp.focus(); } ui.chatDraft = null; }
+  if (ui.tab === 'map' && ui.mapMode === 'world') afterMapRender();
+  if (ui.tab === 'map' && ui.mapMode === 'gym') afterGymRender();
+  if (ui.tab === 'map' && (ui.mapMode === 'tri' || ui.mapMode === 'hyb')) afterTriRender();
+  fogRevealedToast();
+  tourFlag(`tab_${ui.tab}`);
+  rewardQuests();
+  document.querySelector('.tip-bubble:not(.offer)')?.remove();
+  tourBar();
+  if (!ui.tour && !ui.helpReturn) setTimeout(maybeTip, 600);
+}
+
+// Look B: the same screens behind 4 tabs (Today · Map · Coach · You); Stats, Nutrition, Challenges, Races and
+// Settings open from You, with a back link. A slim header: streak, XP (opens the map), help, the owner bell.
+function renderB(views, t) {
+  $('#app').className = 'shell ui-b';
+  if (ui.tab === 'you' && !views.you) views.you = viewYouB;
+  views.today = viewTodayB; views.you = viewYouB;
+  const sub = ['stats', 'nutrition', 'challenge', 'events', 'me'].includes(ui.tab);
+  const titles = { stats: '📊 Stats', nutrition: '🍽️ Nutrition', challenge: '🏆 Challenges', events: '🗓️ Races', me: '⚙️ Profile & settings', map: '🗺️ My map', coach: '💬 Coach' };
+  const xp = S.xp >= 10000 ? `${(S.xp / 1000).toFixed(1).replace(/\.0$/, '')}k` : S.xp;
+  $('#app').innerHTML = `
+    <header class="top b-top">${sub ? `<button class="b-back" data-act="tab" data-tab="you" aria-label="Back to You">‹</button><b class="b-title">${titles[ui.tab]}</b>` : ui.tab === 'today' ? '<img class="brand-logo" src="icons/logo-96.png" alt="Stride Quest" width="30" height="30">' : `<b class="b-title">${titles[ui.tab] || ''}</b>`}
+      <div class="chips"><span class="chip b-streak" title="Day streak">🔥 ${E.dayStreak(S, t)}</span><button class="chip" data-act="tab" data-tab="map" title="Total XP: ${S.xp}">⚡ ${xp}</button><button class="chip help-btn" data-act="help" aria-label="Help">❓</button>${ownerBell()}</div>
+    </header>
+    <main class="view view-${ui.tab}">${views[ui.tab]()}${ui.tab === 'coach' ? '' : appFoot()}</main>
+    <nav class="tabs b-tabs">${[['today', '🏠', 'Today'], ['map', '🗺️', 'Map'], ['coach', '💬', 'Coach'], ['you', '👤', 'You']].map(([k, i, l]) =>
+      `<button class="${B_TAB[ui.tab] === k ? 'on' : ''}" data-act="${k === 'coach' ? 'coach-open' : 'tab'}" data-tab="${k}"><span>${i}</span><b class="lbl">${l}</b>${k === 'coach' && ui.coachUnread ? '<i class="b-dot"></i>' : ''}</button>`).join('')}</nav>`;
   queueModals();
   renderModal();
   if (ui.tab === 'coach') { const log = $('.chat-log'); if (log) log.scrollTop = log.scrollHeight; }
@@ -999,7 +1049,9 @@ const TOUR_KEY = 'stride-quest:tour';
 const tourLocal = () => { try { return JSON.parse(localStorage.getItem(TOUR_KEY)) || {}; } catch { return {}; } };
 const setTourLocal = v => { try { localStorage.setItem(TOUR_KEY, JSON.stringify(v)); } catch { /* ignore */ } };
 function tourFlag(k) { const t = tourLocal(); if (t.flags?.[k]) return; setTourLocal({ ...t, flags: { ...(t.flags || {}), [k]: true } }); }
-const applies = (f, s = S) => !f.when || f.when(s);
+const applies = (f, s = S) => (!f.when || f.when(s)) && !(isB() && f.id === 'views'); // look B has no Just next / Full day switch
+// Look B: where the same things sit in the new layout.
+const SEL_B = { '.card.next': '.b-hero', '.today-seg': '.b-week' };
 const quests = () => FEATURES.filter(f => f.quest && applies(f) && (!f.quest.when || f.quest.when(S)));
 const questDone = f => !!f.quest.done(S, tourLocal().flags || {});
 const QUEST_XP = 5;
@@ -1090,8 +1142,9 @@ function showMe(id, { keepBar = false } = {}) {
   if (sh.view && S.profile.view !== sh.view) { S.profile.view = sh.view; store.save(S); }
   render();
   setTimeout(() => {
-    const el = sh.sel && document.querySelector(sh.sel);
+    const el = sh.sel && document.querySelector(isB() && ui.tab === 'today' ? SEL_B[sh.sel] || sh.sel : sh.sel);
     if (!el) { if (!ui.tour) toast(`${f.title}: ${f.text}`); return; } // on the tour, the bar already explains it
+    const fold = el.closest('details:not([open])'); if (fold) fold.open = true; // look B: open the folded row it sits in
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     el.classList.add('spotlight');
     setTimeout(() => el.classList.remove('spotlight'), 2600);
@@ -1337,6 +1390,17 @@ const credit = '<p class="byline credit">Developed by <button type="button" clas
       ${M.progressLine(S) ? `<p class="hint">${h(M.progressLine(S))}</p>` : ''}
     </section>`;
   const install = S.history.some(x => x.kind === 'session') ? installCard('today').replace('<section class="card install"', `<section class="card install" ${o(4)}`) : '';
+  const levelSteps = levelCheck(track, steps, o(9)), daily = dailyCard(t, o(10)), modes = modesCard(o(11));
+
+  // Two columns on wide screens; on phones the wrappers dissolve and `order` restores one column.
+  return `${toggle}<div class="cols">
+      <div class="col-main"><div ${o(1)}>${banners()}</div>${waitCard}${p.today}${p.week}${p.nextWeek}${levelSteps}</div>
+      <div class="col-side">${hero}${targetCard(o(3))}${gettingStarted(o(4))}${raceCard(o(5))}${boost}${install}${p.tracks}${daily}${modes}</div>
+    </div>${credit}`;
+}
+
+// The level's (or gym week's) whole checklist, folded into one line. Shared by both looks.
+function levelCheck(track, steps, style = '') {
   // The whole level's sessions, not today's plan: folded into one line ("Level 8 checklist: 2 of 9 done").
   const doneN = steps.filter(st => st.status === 'done').length, waitN = steps.filter(st => st.status === 'provisional').length;
   const levelName = track === 'run' ? `Level ${S.run.level}` : trackTitle(track).replace(/^\S+\s/, '').split(' · ')[0];
@@ -1355,27 +1419,129 @@ const credit = '<p class="byline credit">Developed by <button type="button" clas
     </div>` : '';
   const summary = track === 'gym' ? `📋 This ${HOME.isHome(S) ? 'home workout' : 'gym'} week: ${doneN} of ${steps.length} done` : blockedNow ? `📋 Level ${S.run.level} checklist: done ✓ · 🧱 needs Prep P${nextLvl.needsPrep} for Level ${nextLvl.n}`
     : `📋 ${h(levelName)} checklist: ${doneN} of ${steps.length} done${waitN ? ` · ⏳ ${waitN} confirmed tomorrow` : ''}${prepShort ? ` · 🧱 Level ${nextLvl.n} also needs Prep P${nextLvl.needsPrep}` : ''}`;
-  const levelSteps = `<details class="card level-check" ${o(9)} ${blockedNow ? 'open' : ''}>
+  return `<details class="card level-check" ${style} ${blockedNow ? 'open' : ''}>
       <summary><span class="lc-title">${summary}</span><span class="hint">${trackTitle(track)} · ${track === 'gym' ? (HOME.isHome(S) ? 'this week\'s sessions' : 'this week\'s split days') : 'the whole level, spread over your weeks'}</span></summary>
       <ul class="steps">${steps.map(st => stepRow(track, st)).join('')}</ul>
       ${needs}
     </details>`;
-  const daily = `<section class="card" ${o(10)}>
+}
+// Daily orders and the rest / sick day check-in.
+function dailyCard(t, style = '') {
+  const orders = E.dailyOrders(t, GYM.hasRunning(S)), doneOrders = S.daily[E.dayKey(t)]?.orders || [], restDone = S.daily[E.dayKey(t)]?.rest;
+  return `<section class="card daily-card" ${style}>
       <h3>Daily orders <span class="hint">+${E.XP.daily} XP each</span></h3>
       <ul class="orders">${orders.map(x => `<li><label class="choice"><input type="checkbox" data-act="order" data-i="${x.i}" ${doneOrders.includes(x.i) ? 'checked disabled' : ''}><span>${h(x.title)}</span></label></li>`).join('')}</ul>
       ${S.mode?.type === 'sick'
         ? `<button class="btn ghost" data-act="sick-checkin" ${S.daily[E.dayKey(t)]?.sick ? 'disabled' : ''}>${S.daily[E.dayKey(t)]?.sick ? 'Sick day logged ✓' : `🤒 Sick day check-in (+${E.XP.restDay} XP)`}</button>`
         : `<button class="btn ghost" data-act="rest" ${restDone ? 'disabled' : ''}>${restDone ? 'Rest day logged ✓' : `😴 Rest day check-in (+${E.XP.restDay} XP)`}</button>`}
     </section>`;
-  const modes = S.mode ? '' : `<section class="card modes" ${o(11)}><p class="hint">Not feeling 100% or short on time?</p><div class="row wrap">
-      <button class="btn small" data-act="sick-start">🤒 I'm sick</button><button class="btn small" data-act="busy-start">🧳 Busy or travelling</button></div></section>`;
-
-  // Two columns on wide screens; on phones the wrappers dissolve and `order` restores one column.
-  return `${toggle}<div class="cols">
-      <div class="col-main"><div ${o(1)}>${banners()}</div>${waitCard}${p.today}${p.week}${p.nextWeek}${levelSteps}</div>
-      <div class="col-side">${hero}${targetCard(o(3))}${gettingStarted(o(4))}${raceCard(o(5))}${boost}${install}${p.tracks}${daily}${modes}</div>
-    </div>${credit}`;
 }
+// Not 100% or short on time: sick and busy modes.
+function modesCard(style = '') {
+  return S.mode ? '' : `<section class="card modes" ${style}><p class="hint">Not feeling 100% or short on time?</p><div class="row wrap">
+      <button class="btn small" data-act="sick-start">🤒 I'm sick</button><button class="btn small" data-act="busy-start">🧳 Busy or travelling</button></div></section>`;
+}
+
+// ---------- Look B: Today ----------
+// One clear next step first (a big Start), the week as 7 dots, where you are on your map, and everything
+// else one tap away in folded rows. Same features and data as look A; only the arrangement differs.
+const WHY = { easy: 'Builds your aerobic base: the engine for everything else', long: 'Builds endurance, the biggest step to longer races', hard: 'Makes you faster: quality over quantity', test: 'Pass it to unlock your next level', strength: 'Strong muscles and tendons keep you running injury-free', impact: 'Springy, strong legs for faster, safer running', swim: 'Technique and fitness in the water', bike: 'Aerobic fitness with zero impact', upper: 'Balanced strength for a better posture' };
+function weekStripB(t) {
+  const w = K.buildWeek(S, t), D = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  return `<div class="b-week" role="list">${w.days.map((d, i) => {
+    const open = d.items.filter(x => !x.done), done = d.items.filter(x => x.done);
+    const state = done.length && !open.length ? 'done' : d.today ? 'today' : open.length ? (d.past ? 'missed' : 'plan') : 'rest';
+    return `<button role="listitem" class="b-day ${state}" data-act="b-day" data-i="${i}" aria-label="${K.DAY_NAMES[i]} ${new Date(d.date).getDate()}: ${state}"><span>${D[i]}</span><i>${state === 'done' ? '✓' : new Date(d.date).getDate()}</i></button>`;
+  }).join('')}</div>`;
+}
+function heroB(t, track, steps) {
+  const w = K.buildWeek(S, t), today = w.days[w.today], open = today.items.filter(i => !i.done), done = today.items.filter(i => i.done);
+  const waiting = steps.find(st => st.status === 'provisional' && (st.type === 'gate' || st.boss));
+  if (open.length) {
+    const it = open[0], why = it.phaseNote || WHY[it.cls] || '';
+    return `<section class="b-hero"><p class="b-eyebrow">Today's session${open.length > 1 ? ` · 1 of ${open.length}` : ''}</p>
+      <div class="b-hero-main"><span class="b-ico">${CLS_ICON[it.cls] || '🏃'}</span><div><h2>${h(it.title)}</h2>${it.detail ? `<p class="b-detail">${h(it.detail)}</p>` : ''}</div></div>
+      ${why ? `<p class="b-why">💡 ${h(why)}</p>` : ''}
+      <div class="b-tags">${it.keySession ? '<span>⭐ Key session</span>' : ''}${it.optional ? '<span>Optional</span>' : ''}${it.track === 'prep' ? '<span>🧱 Prep</span>' : ''}</div>
+      ${it.idx != null && !it.sick ? `<button class="b-start" data-act="open-step" data-track="${it.track}" data-idx="${it.idx}">Start ▸</button>` : ''}
+      ${open.length > 1 ? `<p class="b-more">Also today: ${open.slice(1).map(x => x.idx != null ? `<button class="linkish" data-act="open-step" data-track="${x.track}" data-idx="${x.idx}">${h(x.title)}</button>` : h(x.title)).join(' · ')}</p>` : ''}
+    </section>`;
+  }
+  const win = K.buildWindow(S, t, 2, 7), nextDay = win.days.slice(3).find(d => d.items.some(i => !i.done)), nx = nextDay?.items.find(i => !i.done);
+  const restDone = S.daily[E.dayKey(t)]?.rest;
+  const head = waiting ? `⏳ ${h(waiting.title)}: done!` : done.length ? (done.every(i => i.attempt) ? 'Logged for today 💛' : 'Done for today ✅') : S.mode?.type === 'sick' ? 'Rest and recover 💤' : 'Rest day 😴';
+  const sub = waiting ? 'It counts tomorrow morning, after a quick check of how you feel.' : done.length ? 'Great work. Recovery is when you get fitter.' : 'Rest is training too: your body adapts today.';
+  return `<section class="b-hero rest"><p class="b-eyebrow">Today</p><h2>${head}</h2><p class="b-detail">${sub}</p>
+    ${nx ? `<div class="b-next"><span>Next · ${h(nextDay.name)}</span><b>${CLS_ICON[nx.cls] || '•'} ${h(nx.title)}</b>${nx.idx != null ? `<button class="b-ghost" data-act="open-step" data-track="${nx.track}" data-idx="${nx.idx}">Preview</button>` : ''}</div>` : ''}
+    ${!done.length && S.mode?.type !== 'sick' ? `<button class="b-ghost wide" data-act="rest" ${restDone ? 'disabled' : ''}>${restDone ? 'Rest day logged ✓' : `😴 Log my rest day · +${E.XP.restDay} XP`}</button>` : ''}
+  </section>`;
+}
+// Where you are on your map, in one card that opens it.
+function mapCardB() {
+  const mode = primaryMode();
+  let ico, title, line, pct;
+  if (mode === 'gym') { const w = GYM.gymWorld(S), st = GYM.gymStage(S), i = GYM.weekInfo(S, now()); ico = w.emoji; title = `${w.name} · Stage ${st.n}`; line = S.gym.checkin ? 'Your Check-in sets your stage' : i.home ? `${Math.min(S.gym.count || 0, STAGE_SESSIONS)} of ${STAGE_SESSIONS} sessions to the next stage` : i.deload ? 'Deload week' : `Block ${i.block} · week ${i.week} of ${i.len}`; pct = i.home ? Math.round(Math.min(S.gym.count || 0, STAGE_SESSIONS) / STAGE_SESSIONS * 100) : Math.round(i.week / Math.max(1, i.len) * 100); }
+  else if (mode === 'hyb') { const w = HYB.hybWorld(S), lim = HYB.limiter(S); ico = w.emoji; title = w.name; line = lim ? `Focus: ${HYB.LANE_LABEL[lim.lane]}` : 'Race gate open 🏁'; pct = null; }
+  else if (mode === 'tri') { const w = TRI.triWorld(S), lim = TRI.limiter(S); ico = w.emoji; title = w.name; line = lim ? `Focus: ${TRI.LANE_LABEL[lim.lane]}` : 'Transition gate open 🌉'; pct = null; }
+  else { const l = E.runLevel(S.run.level), pr = E.levelProgress(S); ico = E.worldOf(l).emoji; title = `Level ${l.n} · ${l.name}`; pct = Math.min(100, Math.round(pr.earned / Math.max(1, pr.target) * 100)); line = pr.earned >= pr.target ? 'Your gate test is open 🏁' : `${pr.target - pr.earned} XP to your gate test`; }
+  return `<button class="b-card b-map" data-act="tab" data-tab="map"><span class="b-map-ico">${ico}</span><span class="b-map-txt"><b>${h(title)}</b><small>${h(line)}</small>${pct != null ? `<i class="b-bar"><i style="width:${pct}%"></i></i>` : ''}</span><span class="b-chev">›</span></button>`;
+}
+// A folded row: one line with a summary, the full card inside.
+const rowB = (ico, title, sub, body, open = false) => (body ? `<details class="b-row" ${open ? 'open' : ''}><summary><span class="b-row-ico">${ico}</span><span class="b-row-txt"><b>${title}</b>${sub ? `<small>${sub}</small>` : ''}</span><span class="b-chev">›</span></summary><div class="b-row-body">${body}</div></details>` : '');
+function viewTodayB() {
+  const t = now(), track = GYM.hasRunning(S) ? E.activeTrack(S) : 'gym', steps = E.trackSteps(S, track), p = todayParts(t);
+  const doneN = steps.filter(st => st.status === 'done').length;
+  const orders = E.dailyOrders(t, GYM.hasRunning(S)), doneOrders = (S.daily[E.dayKey(t)]?.orders || []).length;
+  const gs = gettingStarted(), target = targetCard(), race = raceCard(), lanes = p.tracks;
+  const strava = (p.today.match(/<div class="strava-match">[\s\S]*?<\/div><\/div>/) || [''])[0];
+  const hello = S.profile.name ? `Hi ${h(S.profile.name)}` : 'Hi';
+  return `<div class="b-today">
+    <div class="b-greet"><div><p class="b-eyebrow">${new Date(t).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p><h1>${hello} 👋</h1></div></div>
+    ${banners()}
+    ${weekStripB(t)}
+    ${heroB(t, track, steps)}
+    ${strava ? `<section class="b-card">${strava}</section>` : ''}
+    <div class="b-quick"><button data-act="extra-add">➕ Log activity</button><button data-act="b-modes">🤒 Not 100%?</button><button data-act="coach-open">💬 Ask coach</button></div>
+    ${mapCardB()}
+    <div class="b-rows">
+      ${rowB('📋', track === 'gym' ? 'This week\'s sessions' : `Level ${track === 'run' ? S.run.level : ''} checklist`.replace('Level  ', ''), `${doneN} of ${steps.length} done`, levelCheck(track, steps).replace('<details class="card level-check"', '<details class="level-check b-flat" open'))}
+      ${rowB('🗓️', 'Your week', 'Move sessions, change training days', p.week.replace('<section class="card week"', '<section class="week b-flat"'))}
+      ${rowB('✅', 'Daily orders', `${doneOrders} of ${orders.length} · +${E.XP.daily} XP each`, dailyCard(t).replace('<section class="card daily-card"', '<section class="daily-card b-flat"'))}
+      ${target || race ? rowB('🎯', 'My goal', S.target ? 'Your race and how ready you are' : 'Set a goal race', target + race) : ''}
+      ${lanes ? rowB('🧩', 'My lanes', `${[HYB.hasHybrid(S) && 'Hybrid', TRI.hasTri(S) && 'Triathlon'].filter(Boolean).join(' and ')} progress`, lanes) : ''}
+      ${gs ? rowB('🧭', 'Getting started', 'A few quick wins to learn the app', gs) : ''}
+      ${rowB('💡', 'Daily boost', '', `<p class="boost-line">${h(M.dailyBoost(S, t))}</p>${M.progressLine(S) ? `<p class="hint">${h(M.progressLine(S))}</p>` : ''}`)}
+    </div>
+    <p class="byline credit">Developed by <button type="button" class="linkish" data-act="about-me">Abdullah Salama</button></p>
+  </div>`;
+}
+// Look B "You": your profile at a glance, then everything else as big tiles (nothing is hidden, just grouped).
+function viewYouB() {
+  const t = now(), l = E.runLevel(S.run.level);
+  const tile = (tab, ico, title, sub) => `<button class="b-tile" data-act="tab" data-tab="${tab}"><span>${ico}</span><b>${title}</b><small>${sub}</small></button>`;
+  return `<div class="b-you">
+    <section class="b-profile"><div class="b-avatar">${h((S.profile.name || '?').trim().charAt(0).toUpperCase())}</div><div><h1>${h(S.profile.name || 'You')}</h1>
+      <p>${GYM.hasRunning(S) ? `${E.worldOf(l).emoji} Level ${l.n} · ` : ''}⚡ ${S.xp} XP · 🔥 ${E.dayStreak(S, t)} day streak</p></div></section>
+    <div class="b-tiles">
+      ${tile('stats', '📊', 'Stats', 'Progress, records, trends')}
+      ${tile('nutrition', '🍽️', 'Nutrition', 'What to eat today')}
+      ${tile('challenge', '🏆', 'Challenges', 'Friends and challenges')}
+      ${tile('events', '🗓️', 'Races', 'Competition calendar')}
+    </div>
+    <button class="b-card b-map" data-act="tab" data-tab="me"><span class="b-map-ico">⚙️</span><span class="b-map-txt"><b>Profile & settings</b><small>Training days, tracks, Strava, theme, look</small></span><span class="b-chev">›</span></button>
+    <button class="b-card b-map" data-act="help"><span class="b-map-ico">❓</span><span class="b-map-txt"><b>Help</b><small>How the app works</small></span><span class="b-chev">›</span></button>
+  </div>`;
+}
+// The day sheet: what's planned on a day of the week strip.
+function dayB(i) {
+  const w = K.buildWeek(S, now()), d = w.days[i];
+  return `<h2>${d.today ? 'Today' : K.DAY_NAMES[i]} · ${new Date(d.date).getDate()}</h2>
+    ${d.items.length ? `<ul class="b-daylist">${d.items.map(it => `<li class="${it.done ? 'done' : ''}"><span>${it.done ? (it.attempt ? '✗' : it.partial ? '◐' : '✅') : CLS_ICON[it.cls] || '•'}</span><div><b>${h(it.title)}</b>${it.detail && !it.done ? `<small>${h(it.detail)}</small>` : ''}</div>
+      ${it.done && it.ts ? `<button class="btn small ghost" data-act="log-info" data-ts="${it.ts}">View</button>` : !it.done && it.idx != null && !it.sick ? `<button class="btn small primary" data-act="open-step" data-track="${it.track}" data-idx="${it.idx}">${d.past ? 'Log it' : d.today ? 'Start' : 'Preview'}</button>` : ''}</li>`).join('')}</ul>`
+      : `<p class="hint">${d.past ? 'Nothing was planned.' : d.available ? 'A free day: nothing planned.' : 'Rest day.'}</p>`}
+    <div class="row end"><button class="btn ghost" data-act="close">Close</button></div>`;
+}
+const B_TAB = { today: 'today', map: 'map', coach: 'coach', me: 'you', you: 'you', stats: 'you', nutrition: 'you', challenge: 'you', events: 'you' };
 
 const CLS_ICON = { long: '🛣️', hard: '⚡', test: '🏁', easy: '🏃', strength: '🧱', impact: '🦘', rest: '😴', done: '✅', swim: '🏊', bike: '🚴', upper: '💪' };
 
@@ -2567,6 +2733,10 @@ function viewMe() {
       <div class="row wrap"><button class="btn" data-act="shout-rec">${ui.recording ? '⏺ Recording…' : '🎤 Record (3 s)'}</button>
         <label class="btn">⬆️ Upload<input type="file" accept="audio/*" data-act="shout-file" hidden></label>
         <button class="btn" data-act="shout-play">▶ Play</button>${sfx.hasShout() ? '<button class="btn ghost" data-act="shout-clear">Remove my clip</button>' : ''}</div></section>` : ''}
+    <section class="card look-card"><h3>Look</h3>
+      <div class="seg">${[['B', '✨ New look'], ['A', '📋 Classic']].map(([k, l]) => `<button class="${uiLook() === k ? 'on' : ''}" data-act="set-look" data-v="${k}">${l}</button>`).join('')}</div>
+      <p class="hint">The new look puts your next session first, with everything else one tap away. Same features and progress in both: switch any time.</p>
+    </section>
     <section class="card"><h3>Theme</h3>
       <div class="seg">${[['light', '☀️ Light'], ['dark', '🌙 Dark'], ['auto', '🖥️ Auto']].map(([k, l]) => `<button class="${theme() === k ? 'on' : ''}" data-act="set-theme" data-t="${k}">${l}</button>`).join('')}</div>
       <p class="hint">Auto follows your device's light/dark setting.</p>
@@ -2640,6 +2810,8 @@ function painButtons() {
 }
 
 const MODALS = {
+  dayB(m) { return dayB(m.i); },
+  modesB() { return `<h2>Not feeling 100%?</h2><p class="hint">Your plan adapts. Nothing is lost: your streak and progress are safe.</p>${modesCard().replace('<section class="card modes"', '<section class="modes b-flat"') || '<p>You\'re already in a special mode. End it from the banner on Today.</p>'}<div class="row end"><button class="btn ghost" data-act="close">Close</button></div>`; },
   whatsNew(m) {
     const list = m.items?.length ? m.items : CHANGELOG.filter(c => c.user?.length).slice(0, 3);
     return `<button type="button" class="sheet-x" data-act="close" aria-label="Close">✕</button><h2>🆕 What's new</h2>
@@ -3635,6 +3807,9 @@ const actions = {
     ui.lanePopup = { map: el.dataset.map, kind: 'lane', lane }; ui.frameTop = document.querySelector('.worldmap')?.scrollTop ?? null;
     const before = window.scrollY; render(); window.scrollTo(0, before);
   },
+  'b-day'(el) { ui.modal = { type: 'dayB', i: +el.dataset.i }; renderModal(); },
+  'b-modes'() { ui.modal = { type: 'modesB' }; renderModal(); },
+  'set-look'(el) { setUiLook(el.dataset.v, true); count(`ui:${el.dataset.v}:open`); if (el.dataset.v === 'A' && ui.tab === 'you') ui.tab = 'me'; render(); window.scrollTo(0, 0); toast(el.dataset.v === 'B' ? '✨ New look on. You can switch back here any time.' : 'Classic look on. The new look is here when you want it.'); },
   'set-theme'(el) { try { localStorage.setItem(THEME_KEY, el.dataset.t); } catch { /* ignore */ } applyTheme(el.dataset.t); render(); },
   'lifts-ai'(el) { if (ui.ob.a.liftsAI) { ui.ob.a.liftsAI.accepted = el.dataset.v === '1'; renderOnboarding(); } },
   'fix-field'(el) {
@@ -4300,6 +4475,7 @@ document.addEventListener('submit', e => {
     }
     handleOutcome(outcome);
     if (stageUp) { sfx.unlockAudio(); sfx.arrive('strength'); toast(HOME.isHome(S) ? '💪 Stage up! Open your map to watch yourself climb.' : '💪 LIGHT WEIGHT, BABY! Open your Gym map to watch your lifter climb.'); }
+    count(`ui:${uiLook()}:session`);
     if (actual || note || result !== 'full') sessionFeedback(st, { when, ts, result, pain, actual, note });
     return;
   }
@@ -4434,6 +4610,9 @@ if (location.hash === '#owner') { try { localStorage.setItem(OWNER_KEY, '1'); } 
 stravaReturn();
 render();
 countOnce('app:open'); countDaily('app:day'); // anonymous: how many people opened the app, and use it each day
+// Look A/B test (anonymous): devices on each look, active days per look, sessions logged per look.
+countOnce(`ui:${uiLook()}:open`);
+try { const k = `${COUNT_KEY}:uiday`, d = `${E.dayKey(now())}:${uiLook()}`; if (localStorage.getItem(k) !== d) { localStorage.setItem(k, d); count(`ui:${uiLook()}:day`); } } catch { /* ignore */ }
 // Strava: bring new activities in on open, and when coming back to the app (at most every 20 min).
 setTimeout(() => stravaSync(), 1500);
 setTimeout(() => ownerPoll(), 1200); // the owner's 🔔 count
