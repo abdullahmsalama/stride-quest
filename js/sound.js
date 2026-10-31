@@ -44,7 +44,7 @@ export const audioState = () => (ctx ? ctx.state : 'none');
 if (typeof document !== 'undefined') {
   const EVENTS = ['touchend', 'click', 'keydown', 'pointerup'];
   const tryUnlock = () => {
-    unlockAudio();
+    unlockAudio(); unlockVoice();
     if (ctx && ctx.state === 'running' && unlocked) EVENTS.forEach(e => document.removeEventListener(e, tryUnlock, true));
   };
   EVENTS.forEach(e => document.addEventListener(e, tryUnlock, true));
@@ -245,9 +245,20 @@ export function playShout() {
 }
 
 // Short spoken lines through the device's own voice (no recordings).
+// iPhones only let the voice speak after it has spoken once during a tap, and lines like "Light weight,
+// baby!" come later (after the lifter's walk). So the first tap speaks a silent line to unlock it.
+let voiceUnlocked = false;
+const speaking = []; // keep each line referenced until it ends (some browsers drop it mid-way otherwise)
+function unlockVoice() {
+  if (voiceUnlocked || typeof speechSynthesis === 'undefined') return;
+  voiceUnlocked = true;
+  try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch { /* not supported */ }
+}
 export function say(text, { pitch = 1, rate = 1 } = {}) {
   if (!soundOn() || typeof speechSynthesis === 'undefined') return;
+  try { speechSynthesis.resume(); } catch { /* ignore */ } // phones can leave it paused after the app was in the background
   const u = new SpeechSynthesisUtterance(text);
   u.pitch = pitch; u.rate = rate; u.volume = 1;
+  speaking.push(u); u.onend = u.onerror = () => speaking.splice(speaking.indexOf(u), 1);
   speechSynthesis.speak(u);
 }

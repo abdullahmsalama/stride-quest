@@ -683,7 +683,7 @@ function renderOnboarding() {
   } else body = st.body;
   $('#app').innerHTML = `
     <main class="onboarding">
-      <div class="ob-top"><span class="brand brand-btn"><button type="button" class="b-logo" data-act="logo-tap" title="Add Stride Quest as an app icon" aria-label="Add Stride Quest as an app icon"><img class="brand-logo" src="icons/logo-96.png" alt="" width="28" height="28"></button><button type="button" class="brand-btn brand-name" data-act="about-me" title="About Stride Quest">Stride Quest</button></span><div class="progress"><div style="width:${((i + 1) / steps.length) * 100}%"></div></div></div>
+      <div class="ob-top"><button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest"><img class="brand-logo" src="icons/logo-96.png" alt="" width="28" height="28">Stride Quest</button><div class="progress"><div style="width:${((i + 1) / steps.length) * 100}%"></div></div></div>
       ${returning}
       <form id="ob-form" class="card ob-card" autocomplete="off">
         ${!st.welcome && !st.result ? `<p class="eyebrow">Question ${i} of ${steps.length - 2}</p>` : ''}
@@ -742,7 +742,7 @@ function render() {
   if (!kid && isB()) return renderB(views, t);
   $('#app').innerHTML = `
     <header class="top">
-      <span class="brand brand-btn"><button type="button" class="b-logo" data-act="logo-tap" title="Add Stride Quest as an app icon" aria-label="Add Stride Quest as an app icon"><img class="brand-logo" src="icons/logo-96.png" alt="" width="28" height="28"></button><button type="button" class="brand-btn brand-name" data-act="about-me" title="About Stride Quest">Stride Quest</button></span>
+      <button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest"><img class="brand-logo" src="icons/logo-96.png" alt="" width="28" height="28">Stride Quest</button>
       <div class="chips"><button class="chip help-btn" data-act="help" title="How the app works" aria-label="Help">❓<span class="help-word"> Help</span></button><span class="chip" title="Total XP: ${S.xp}">⚡ ${S.xp >= 10000 ? `${(S.xp / 1000).toFixed(1).replace(/\.0$/, '')}k` : S.xp}<span class="xp-word"> XP</span></span><span class="chip" title="Day streak">🔥 ${E.dayStreak(S, t)}</span>${ownerBell()}</div>
     </header>
     <main class="view view-${ui.tab}">${views[ui.tab]()}${ui.tab === 'coach' ? '' : appFoot()}</main>
@@ -774,7 +774,7 @@ function renderB(views, t) {
   const titles = { stats: '📊 Stats', nutrition: '🍽️ Nutrition', challenge: '🏆 Challenges', events: '🗓️ Races', me: '⚙️ Profile & settings', map: '🗺️ My map', coach: '💬 Coach' };
   const xp = S.xp >= 10000 ? `${(S.xp / 1000).toFixed(1).replace(/\.0$/, '')}k` : S.xp;
   $('#app').innerHTML = `
-    <header class="top b-top">${sub ? `<button class="b-back" data-act="tab" data-tab="you" aria-label="Back to You">‹</button><b class="b-title">${titles[ui.tab]}</b>` : ui.tab === 'today' ? '<span class="brand brand-btn"><button type="button" class="b-logo" data-act="logo-tap" aria-label="Add Stride Quest as an app icon"><img class="brand-logo" src="icons/logo-96.png" alt="" width="30" height="30"></button><button type="button" class="brand-btn brand-name" data-act="about-me" title="About Stride Quest">Stride Quest</button></span>' : `<b class="b-title">${titles[ui.tab] || ''}</b>`}
+    <header class="top b-top">${sub ? `<button class="b-back" data-act="tab" data-tab="you" aria-label="Back to You">‹</button><b class="b-title">${titles[ui.tab]}</b>` : ui.tab === 'today' ? '<button type="button" class="brand brand-btn" data-act="about-me" title="About Stride Quest"><img class="brand-logo" src="icons/logo-96.png" alt="" width="30" height="30">Stride Quest</button>' : `<b class="b-title">${titles[ui.tab] || ''}</b>`}
       <div class="chips"><span class="chip b-streak" title="Day streak">🔥 ${E.dayStreak(S, t)}</span><button class="chip" data-act="tab" data-tab="map" title="Total XP: ${S.xp}">⚡ ${xp}</button><button class="chip help-btn" data-act="help" aria-label="Help">❓</button>${ownerBell()}</div>
     </header>
     <main class="view view-${ui.tab}">${views[ui.tab]()}${ui.tab === 'coach' ? '' : appFoot()}</main>
@@ -1533,6 +1533,8 @@ function viewTodayB() {
     ${heroB(t, track, steps)}
     ${strava ? `<section class="b-card">${strava}</section>` : ''}
     <div class="b-quick"><button data-act="extra-add">➕ Log activity</button><button data-act="b-modes">🤒 Not 100%?</button><button data-act="coach-open">💬 Ask coach</button></div>
+    ${!standalone() && !installHidden() && S.history.some(x => x.kind === 'session') ? `<div class="b-card b-install"><span class="b-map-ico">📲</span><span class="b-map-txt"><b>Add Stride Quest to your home screen</b><small>Opens like an app, one tap away, and keeps your progress safe</small></span>
+      <span class="b-install-act"><button class="btn small primary" data-act="app-icon">Add</button><button class="b-x" data-act="install-hide" aria-label="Not now">✕</button></span></div>` : ''}
     ${mapCardB()}
     <div class="b-rows">
       ${rowB('📋', track === 'gym' ? 'This week\'s sessions' : `Level ${track === 'run' ? S.run.level : ''} checklist`.replace('Level  ', ''), `${doneN} of ${steps.length} done`, levelCheck(track, steps).replace('<details class="card level-check"', '<details class="level-check b-flat" open'))}
@@ -1560,6 +1562,7 @@ function viewYouB() {
       ${tile('events', '🗓️', 'Races', 'Competition calendar')}
     </div>
     <button class="b-card b-map" data-act="tab" data-tab="me"><span class="b-map-ico">⚙️</span><span class="b-map-txt"><b>Profile & settings</b><small>Training days, tracks, Strava, theme, look</small></span><span class="b-chev">›</span></button>
+    ${standalone() ? '' : '<button class="b-card b-map" data-act="app-icon"><span class="b-map-ico">📲</span><span class="b-map-txt"><b>Add to home screen</b><small>Stride Quest as an app icon on your phone</small></span><span class="b-chev">›</span></button>'}
     <button class="b-card b-map" data-act="help"><span class="b-map-ico">❓</span><span class="b-map-txt"><b>Help</b><small>How the app works</small></span><span class="b-chev">›</span></button>
   </div>`;
 }
@@ -2844,7 +2847,7 @@ function painButtons() {
 
 const MODALS = {
   dayB(m) { return dayB(m.i); },
-  // Tapping the logo: "Add as an app icon?" with the steps for this phone (one tap where the browser allows it).
+  // "Add as an app icon?" with the steps for this phone (one tap where the browser allows it).
   appIcon() {
     const how = installEvent ? '<button class="btn primary wide" data-act="install">📲 Add it to my home screen</button>'
       : isIOS() ? `<ol class="icon-steps"><li>Tap <b>Share</b> <span class="ios-share" aria-hidden="true">⬆️</span> (in Safari: bottom bar · in Chrome: top right)</li><li>Scroll down and tap <b>Add to Home Screen</b></li><li>Tap <b>Add</b>. Done: Stride Quest opens like an app 🎉</li></ol>`
@@ -3866,7 +3869,7 @@ const actions = {
     render(); window.scrollTo(0, 0);
     if (v === 'B') { confetti(); toast('✨ Welcome to the new look! Your next session is right at the top.'); } else toast('📋 Classic look it is. The new look waits in Me → Look.');
   },
-  'logo-tap'() { if (standalone()) return actions['about-me'](); ui.modal = { type: 'appIcon' }; renderModal(); },
+  'app-icon'() { ui.modal = { type: 'appIcon' }; renderModal(); },
   'b-day'(el) { ui.modal = { type: 'dayB', i: +el.dataset.i }; renderModal(); },
   'b-modes'() { ui.modal = { type: 'modesB' }; renderModal(); },
   'set-look'(el) { setUiLook(el.dataset.v, true); count(`ui:${el.dataset.v}:open`); if (el.dataset.v === 'A' && ui.tab === 'you') ui.tab = 'me'; render(); window.scrollTo(0, 0); toast(el.dataset.v === 'B' ? '✨ New look on. You can switch back here any time.' : 'Classic look on. The new look is here when you want it.'); },

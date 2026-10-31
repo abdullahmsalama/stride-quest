@@ -2,6 +2,11 @@
 // `user` (plain words, optional) shows to everyone once as "What's new". Never show version numbers to users.
 // Add an entry with every release.
 export const CHANGELOG = [
+  { v: 'v111', date: '2026-11-01', title: '"Light weight, baby!" on iPhone; logo opens About again; app-icon prompt moved', items: [
+    'The lifting shout uses the phone\'s voice after the lifter\'s walk, i.e. not during a tap, and iPhones only allow that once the voice has spoken during a tap. The first tap now speaks a silent line to unlock it; lines are kept referenced until they end and the voice is resumed after the app was in the background.',
+    'Header: the logo and the name open About again (both looks, and in the questionnaire).',
+    '"Add as an app icon?" now lives where install prompts work best: look B Today shows a small dismissible card after the first logged session (✕ hides it, like look A\'s card), and You has an "Add to home screen" row until it\'s installed. Look A keeps its Today and Me cards.',
+  ], userTitle: 'Fixes', user: ['"Light weight, baby!" is back on iPhone. You can add Stride Quest to your home screen from You → Add to home screen.'] },
   { v: 'v110', date: '2026-11-01', title: '"Pick your look" is the questionnaire\'s last question', items: [
     'The same two cards (New look / Classic, with the phone drawings) are now question N of N, nothing pre-picked, required ("Pick the look you like: tap one of the two."). Saved as their choice when they tap Start. Not shown in Family mode.',
     'Athletes who were already using the app still get the "Pick your look" pop-up once (unchanged). The after-Start pop-up from v109 is gone.',
