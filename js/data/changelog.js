@@ -2,6 +2,10 @@
 // `user` (plain words, optional) shows to everyone once as "What's new". Never show version numbers to users.
 // Add an entry with every release.
 export const CHANGELOG = [
+  { v: 'v110', date: '2026-11-01', title: '"Pick your look" is the questionnaire\'s last question', items: [
+    'The same two cards (New look / Classic, with the phone drawings) are now question N of N, nothing pre-picked, required ("Pick the look you like: tap one of the two."). Saved as their choice when they tap Start. Not shown in Family mode.',
+    'Athletes who were already using the app still get the "Pick your look" pop-up once (unchanged). The after-Start pop-up from v109 is gone.',
+  ] },
   { v: 'v109', date: '2026-11-01', title: 'Look picked after the questionnaire, app-icon prompt, iPhone zoom fix, lifts asked once', items: [
     'Questionnaire: the "How much do you want to see?" question is gone. Right after "Start", the "Pick your look" window opens ("Your plan is ready · last thing"), nothing pre-marked; Classic shows the full day.',
     'Header: the logo asks "Add Stride Quest as an app icon?" (one tap where the browser allows it, else the steps for iPhone / Android / computer); the name "Stride Quest" still opens About (both looks).',

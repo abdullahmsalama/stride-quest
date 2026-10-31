@@ -285,6 +285,8 @@ function obStepsAdult(a) {
       <div class="choices">${SELF_TEST.map(([k, l, ex]) => `${check(k, `${h(l)} <a href="${videoLink(ex)}" target="_blank" rel="noopener">demo</a>`, a.selfTest?.[k])}`).join('')}</div>` });
   }
   if (a.sex === 'f' && !(+a.age > 0 && +a.age < 13)) steps.push({ title: 'Your cycle (optional)', why: 'Some days feel harder than others. Your plan can go a bit lighter on period days, and your food tips follow your phase.', body: cycleFields(a) });
+  if (!(+a.age > 0 && +a.age < 13)) steps.push({ title: 'Pick your look', why: 'Same plan and features in both: this is just how you see them. Change it any time in Me → Look.', body:
+    `<p class="q">How do you like to see your training?</p>${lookCards(null, a.look || '')}` });
   steps.push({ title: 'Your starting point', result: true });
   return steps;
 }
@@ -1064,6 +1066,18 @@ const tourLocal = () => { try { return JSON.parse(localStorage.getItem(TOUR_KEY)
 const setTourLocal = v => { try { localStorage.setItem(TOUR_KEY, JSON.stringify(v)); } catch { /* ignore */ } };
 function tourFlag(k) { const t = tourLocal(); if (t.flags?.[k]) return; setTourLocal({ ...t, flags: { ...(t.flags || {}), [k]: true } }); }
 const applies = (f, s = S) => (!f.when || f.when(s)) && !(isB() && f.id === 'views'); // look B has no Just next / Full day switch
+// The two looks as cards with a little phone drawing each. on = the look they're on (pop-up); radio = the
+// questionnaire's last question (nothing picked until they tap one).
+function lookCards(on, radio = null) {
+  const q = radio != null; // a question: radios ('' = nothing picked yet)
+  const card = (k, title, sub) => `<${q ? 'label' : 'button type="button"'} class="look-opt ${on === k ? 'cur' : ''}" ${q ? '' : `data-act="pick-look" data-v="${k}"`} aria-label="${title}">
+      ${q ? `<input type="radio" name="look" value="${k}" ${radio === k ? 'checked' : ''} class="sr-only">` : ''}
+      <span class="look-phone ${k === 'B' ? 'pb' : 'pa'}">${k === 'B'
+        ? '<i class="lp-dots"><b></b><b></b><b></b><b class="t"></b><b></b><b></b><b></b></i><i class="lp-hero"><em></em><em class="s"></em><u>START</u></i><i class="lp-row"></i><i class="lp-row"></i><i class="lp-tabs4"></i>'
+        : '<i class="lp-card h"></i><i class="lp-card"></i><i class="lp-card"></i><i class="lp-card"></i><i class="lp-card"></i><i class="lp-tabs7"></i>'}</span>
+      <b>${title}</b><small>${sub}</small>${on === k ? '<span class="look-now">You\'re on this one</span>' : ''}</${q ? 'label' : 'button'}>`;
+  return `<div class="look-opts">${card('B', '✨ New look', 'Simple: just what to do next')}${card('A', '📋 Classic', 'Everything on one page')}</div>`;
+}
 // Look B: where the same things sit in the new layout.
 const SEL_B = { '.card.next': '.b-hero', '.today-seg': '.b-week' };
 const quests = () => FEATURES.filter(f => f.quest && applies(f) && (!f.quest.when || f.quest.when(S)));
@@ -2842,17 +2856,10 @@ const MODALS = {
       <div class="row end"><button class="btn ghost" data-act="about-me">About Stride Quest</button><button class="btn ghost" data-act="close">Not now</button></div></div>`;
   },
   // Which look: a small drawing of each, the one they're on marked, two clear buttons.
-  lookPick(m) {
-    const on = m.first ? null : uiLook(); // nothing pre-marked for a brand-new athlete
-    const mini = (k, title, sub) => `<button type="button" class="look-opt ${on === k ? 'cur' : ''}" data-act="pick-look" data-v="${k}" aria-label="${title}">
-      <span class="look-phone ${k === 'B' ? 'pb' : 'pa'}">${k === 'B'
-        ? '<i class="lp-dots"><b></b><b></b><b></b><b class="t"></b><b></b><b></b><b></b></i><i class="lp-hero"><em></em><em class="s"></em><u>START</u></i><i class="lp-row"></i><i class="lp-row"></i><i class="lp-tabs4"></i>'
-        : '<i class="lp-card h"></i><i class="lp-card"></i><i class="lp-card"></i><i class="lp-card"></i><i class="lp-card"></i><i class="lp-tabs7"></i>'}</span>
-      <b>${title}</b><small>${sub}</small>${on === k ? '<span class="look-now">You\'re on this one</span>' : ''}</button>`;
-    return `<div class="look-pick"><p class="eyebrow">${m.first ? '🎉 Your plan is ready' : '✨ New in Stride Quest'}</p><h2>Pick your look</h2>
-      <p>${m.first ? 'Last thing: how do you like to see your training? Both have the same plan and features.' : 'We made a <strong>simpler look</strong>: your next session first, with one big Start button, and everything else one tap away. Same features, same progress.'}</p>
-      <div class="look-opts">${mini('B', '✨ New look', 'Simple: just what to do next')}${mini('A', '📋 Classic', 'Everything on one page')}</div>
-      <p class="hint" style="text-align:center">Change your mind any time in Me → Look.</p></div>`;
+  lookPick() {
+    return `<div class="look-pick"><p class="eyebrow">✨ New in Stride Quest</p><h2>Pick your look</h2>
+      <p>We made a <strong>simpler look</strong>: your next session first, with one big Start button, and everything else one tap away. Same features, same progress.</p>
+      ${lookCards(uiLook())}<p class="hint" style="text-align:center">Change your mind any time in Me → Look.</p></div>`;
   },
   modesB() { return `<h2>Not feeling 100%?</h2><p class="hint">Your plan adapts. Nothing is lost: your streak and progress are safe.</p>${modesCard().replace('<section class="card modes"', '<section class="modes b-flat"') || '<p>You\'re already in a special mode. End it from the banner on Today.</p>'}<div class="row end"><button class="btn ghost" data-act="close">Close</button></div>`; },
   whatsNew(m) {
@@ -3495,7 +3502,8 @@ const actions = {
     state.profile.tracks = tracks;
     state.otherTraining = otherFrom(ui.ob.a);
     state.profile.primary = tracks.includes(a.primary) ? a.primary : tracks[0];
-    state.profile.view = S.profile?.view || 'full'; // how much they see: the look they pick right after (classic shows the full day)
+    state.profile.view = S.profile?.view || 'full'; // how much they see is the look (classic shows the full day)
+    if (a.look === 'A' || a.look === 'B') { setUiLook(a.look, true); count(`ui:${a.look}:open`); try { localStorage.setItem(LOOK_ASKED, '1'); } catch { /* ignore */ } }
     if (+ui.ob.a.age >= 13 && +ui.ob.a.age < 18) { const cap = +ui.ob.a.age < 16 ? 8 : 10; if (state.run.level > cap) { state.run.level = cap; state.run.done = {}; } }
     if (+ui.ob.a.age > 0) { state.profile.birthYear = new Date(now()).getFullYear() - +ui.ob.a.age; state.profile.birthDate = ui.ob.a.birthDate || state.profile.birthDate || null; state.profile.kid = false; state.profile.ageGroup = state.profile.ageGroup || AGE.ageGroupOf(+ui.ob.a.age); state.nutrition = { ...(state.nutrition || {}), age: state.nutrition?.age || +ui.ob.a.age }; }
     state.tri = tracks.includes('tri') ? TRI.placeTri(state, a) : state.tri || null;
@@ -3523,7 +3531,6 @@ const actions = {
     commit(state);
     ui.mapMode = primaryMode();
     if (!fresh) window.scrollTo(0, 0); // a new placement scrolls the map to its START line instead
-    if (fresh && !lookChosen()) { try { localStorage.setItem(LOOK_ASKED, '1'); } catch { /* ignore */ } ui.modal = { type: 'lookPick', first: true }; renderModal(); } // pick a look right away
   },
   'open-step'(el) {
     let track = el.dataset.track, idx = +el.dataset.idx;
@@ -4212,6 +4219,7 @@ document.addEventListener('submit', e => {
     if (f.querySelector('[name^=tr_]') && !(ui.ob.a.tracks || []).length) return toast('Pick at least one thing you train for.');
     if (['gym', 'home'].every(k => (ui.ob.a.tracks || []).includes(k))) return toast('Pick Gym or Home workouts, not both: the gym plan can also be done with dumbbells or bodyweight at home.');
     for (const [k, q] of [['hMin', 'how long you can train'], ['hGoal', 'what you want most'], ['hJump', 'if you can jump at home'], ['hFit', 'how fit you feel']]) if (f.querySelector(`[name=${k}]`) && !ui.ob.a[k]) return toast(`Pick ${q}.`);
+    if (f.querySelector('[name=look]') && !ui.ob.a.look) return toast('Pick the look you like: tap one of the two.');
     if (f.querySelector('[name=hUnknown]') && !(+ui.ob.a.hPush || +ui.ob.a.hPlank || ui.ob.a.hUnknown)) return toast("Add your push-ups or plank, or tick \"I don't know\".");
     if (f.bdY && !(+ui.ob.a.age >= 4 && +ui.ob.a.age <= 100)) { (f.bdD.value === '0' ? f.bdD : f.bdM.value === '0' ? f.bdM : f.bdY).focus(); return toast('Pick your birthday: day, month and year. It keeps the plan safe for kids and teens.'); }
     if (f.guardian && !f.guardian.checked) return toast('A parent or guardian needs to tick the box to set up Family mode.');

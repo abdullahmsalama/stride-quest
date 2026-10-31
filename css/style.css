@@ -1146,3 +1146,8 @@ body:has(#modal:not([hidden])) .coach-fab { display: none; } /* the coach button
 .icon-steps li { padding-left: 4px; }
 .brand-name { font: inherit; letter-spacing: inherit; }
 .ui-b .b-top .brand { font-size: 22px; }
+/* the look cards as the questionnaire's last question: the picked one lights up */
+.look-opt:has(input:checked) { border-color: var(--brand); box-shadow: 0 0 0 4px var(--brand-soft); }
+.look-opt:has(input:focus-visible) { outline: 3px solid var(--info); outline-offset: 2px; }
+.look-opt input.sr-only { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+label.look-opt { position: relative; }
