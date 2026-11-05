@@ -2,6 +2,9 @@
 // `user` (plain words, optional) shows to everyone once as "What's new". Never show version numbers to users.
 // Add an entry with every release.
 export const CHANGELOG = [
+  { v: 'v112', date: '2026-11-05', title: 'Sounds mix with your music instead of stopping it', items: [
+    'iPhone: the page told iOS it was a media player (audioSession \'playback\'), so the silent unlock sound on the first tap, and again after coming back to the app, paused music playing in other apps (e.g. when logging a set). It is now \'ambient\': effects and the voice play over the music. Trade-off: with the phone on silent, the effects are muted.',
+  ] },
   { v: 'v111', date: '2026-11-01', title: '"Light weight, baby!" on iPhone; logo opens About again; app-icon prompt moved', items: [
     'The lifting shout uses the phone\'s voice after the lifter\'s walk, i.e. not during a tap, and iPhones only allow that once the voice has spoken during a tap. The first tap now speaks a silent line to unlock it; lines are kept referenced until they end and the voice is resumed after the app was in the background.',
     'Header: the logo and the name open About again (both looks, and in the questionnaire).',

@@ -13,13 +13,14 @@ export function setSound(on) {
 // Phones are stricter than laptops:
 // - iOS only accepts some gestures (touchend / click, not the first touch-down), and fully unlocks
 //   Web Audio only once something is actually played inside that gesture: a silent blip below.
-// - iPhones mute Web Audio with the ring/silent switch unless the page says it plays media
-//   (navigator.audioSession, Safari 17+).
+// - The page says its sounds are 'ambient' (navigator.audioSession, Safari 17+), so they mix with
+//   the athlete's own music instead of pausing it. Trade-off: the ring/silent switch mutes them.
+//   ('playback' played through silent mode but stopped other apps' music on every tap.)
 let unlocked = false;
 export function unlockAudio() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
-  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* older browsers */ }
+  try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch { /* older browsers */ }
   if (!ctx) {
     ctx = new AC();
     master = ctx.createGain();
