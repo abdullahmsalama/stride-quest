@@ -2,6 +2,9 @@
 // `user` (plain words, optional) shows to everyone once as "What's new". Never show version numbers to users.
 // Add an entry with every release.
 export const CHANGELOG = [
+  { v: 'v114', date: '2026-11-05', title: 'Video sound asked every time', items: [
+    '"Play videos with sound?" now shows before every demo video instead of once per device (nothing saved). The 🔊/🔇 button on the player still switches during the video.',
+  ] },
   { v: 'v113', date: '2026-11-05', title: 'Demo videos with or without sound', items: [
     'v112 made all page audio \'ambient\', which also muted YouTube demos on silent iPhones. The first video now asks "Play videos with sound?" (🔊 With sound / 🔇 Without sound); the answer is remembered on the device and the 🔊/🔇 button on the player switches it any time.',
     'Without sound: the video plays muted and other music keeps going. With sound: the page switches to \'playback\' only while the video plays (YouTube reports play/pause/end by postMessage); paused, ended, closed or app in the background, it goes back to \'ambient\', so music resumed in another app keeps playing while logging sets.',

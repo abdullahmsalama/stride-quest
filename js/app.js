@@ -1021,12 +1021,12 @@ function videoList(panel, q, list) {
     <details class="vid-suggest"><summary class="hint">Know a better video? Paste a link</summary>
       <div class="ai-fix"><input type="url" placeholder="https://youtube.com/watch?v=…" maxlength="200"><button type="button" class="btn small" data-act="vid-suggest">Add</button></div></details>`;
 }
-// Video sound: asked on the first video, remembered on this device, switchable on the player.
+// Video sound: asked before every video, switchable on the player.
 // With sound, the page is a media player only while the video plays (it pauses other music);
 // paused, ended or gone, it goes back to 'ambient' so music resumed in another app keeps playing.
-const VSOUND_KEY = 'stride-quest:video-sound';
-const videoSound = () => { try { return localStorage.getItem(VSOUND_KEY); } catch { return null; } }; // 'on' | 'off' | null
-const setVideoSound = on => { try { localStorage.setItem(VSOUND_KEY, on ? 'on' : 'off'); } catch { /* ignore */ } };
+let vidSound = 'off';
+const videoSound = () => vidSound;
+const setVideoSound = on => { vidSound = on ? 'on' : 'off'; };
 let vidPlaying = false;
 const vidFrame = () => document.querySelector('.vid-frame iframe');
 const syncVideoAudio = () => sfx.setMediaMode(!!vidFrame() && vidPlaying && videoSound() === 'on' && document.visibilityState !== 'hidden');
@@ -3782,8 +3782,8 @@ const actions = {
     count('view:videos');
     videoList(panel, q, d.videos);
   },
-  'vid-play'(el) { const panel = el.closest('.vid-panel'), q = panel.dataset.q; const v = vidCache[q]?.videos.find(x => x.id === el.dataset.id); if (!v) return; if (!videoSound()) videoSoundAsk(panel, v.id); else videoPlayer(panel, q, v); },
-  'vid-sound-pick'(el) { setVideoSound(el.dataset.s === 'on'); actions['vid-play'](el); },
+  'vid-play'(el) { const panel = el.closest('.vid-panel'), q = panel.dataset.q; const v = vidCache[q]?.videos.find(x => x.id === el.dataset.id); if (v) videoSoundAsk(panel, v.id); },
+  'vid-sound-pick'(el) { const panel = el.closest('.vid-panel'), q = panel.dataset.q; const v = vidCache[q]?.videos.find(x => x.id === el.dataset.id); setVideoSound(el.dataset.s === 'on'); if (v) videoPlayer(panel, q, v); },
   'vid-sound'(el) {
     const on = videoSound() !== 'on', frame = el.closest('.vid-panel')?.querySelector('iframe');
     setVideoSound(on);
