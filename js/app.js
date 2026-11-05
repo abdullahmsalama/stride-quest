@@ -1021,14 +1021,49 @@ function videoList(panel, q, list) {
     <details class="vid-suggest"><summary class="hint">Know a better video? Paste a link</summary>
       <div class="ai-fix"><input type="url" placeholder="https://youtube.com/watch?v=…" maxlength="200"><button type="button" class="btn small" data-act="vid-suggest">Add</button></div></details>`;
 }
+// Video sound: asked on the first video, remembered on this device, switchable on the player.
+// With sound, the page is a media player only while the video plays (it pauses other music);
+// paused, ended or gone, it goes back to 'ambient' so music resumed in another app keeps playing.
+const VSOUND_KEY = 'stride-quest:video-sound';
+const videoSound = () => { try { return localStorage.getItem(VSOUND_KEY); } catch { return null; } }; // 'on' | 'off' | null
+const setVideoSound = on => { try { localStorage.setItem(VSOUND_KEY, on ? 'on' : 'off'); } catch { /* ignore */ } };
+let vidPlaying = false;
+const vidFrame = () => document.querySelector('.vid-frame iframe');
+const syncVideoAudio = () => sfx.setMediaMode(!!vidFrame() && vidPlaying && videoSound() === 'on' && document.visibilityState !== 'hidden');
+const ytSend = (frame, msg) => { try { frame.contentWindow.postMessage(JSON.stringify(msg), '*'); } catch { /* frame gone */ } };
+function listenToPlayer(frame) {
+  // YouTube's embed reports play/pause by postMessage once the page says it's listening.
+  let tries = 0;
+  const ask = () => { if (!frame.isConnected || frame.dataset.heard || tries++ > 20) return; ytSend(frame, { event: 'listening', id: 1, channel: 'widget' }); setTimeout(ask, 250); };
+  frame.addEventListener('load', ask);
+}
+window.addEventListener('message', e => {
+  const frame = vidFrame();
+  if (!frame || e.source !== frame.contentWindow || !/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(e.origin)) return;
+  let d; try { d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch { return; }
+  const st = d?.event === 'onStateChange' ? d.info : d?.event === 'infoDelivery' ? d.info?.playerState : undefined;
+  frame.dataset.heard = '1';
+  if (typeof st !== 'number') return;
+  vidPlaying = st === 1 || st === 3; // playing or buffering; paused (2), ended (0) and cued (5) are not
+  syncVideoAudio();
+});
+new MutationObserver(() => { if (sfx.inMediaMode() && !vidFrame()) { vidPlaying = false; syncVideoAudio(); } }).observe(document.body, { childList: true, subtree: true });
+document.addEventListener('visibilitychange', syncVideoAudio);
+function videoSoundAsk(panel, id) {
+  panel.innerHTML = `<p class="q">Play videos with sound?</p>
+    <div class="row wrap"><button type="button" class="btn small" data-act="vid-sound-pick" data-id="${h(id)}" data-s="on">🔊 With sound</button><button type="button" class="btn small" data-act="vid-sound-pick" data-id="${h(id)}" data-s="off">🔇 Without sound</button></div>`;
+}
 function videoPlayer(panel, q, v) {
-  const mine = myVotes()[`${q}|${v.id}`] || 0;
-  panel.innerHTML = `<div class="vid-frame"><iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(v.id)}?autoplay=1&playsinline=1&rel=0&modestbranding=1" title="${h(v.title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen loading="lazy"></iframe></div>
+  const mine = myVotes()[`${q}|${v.id}`] || 0, on = videoSound() === 'on';
+  vidPlaying = on; // autoplay starts it; set now, inside the tap, so the first second isn't silent
+  panel.innerHTML = `<div class="vid-frame"><iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(v.id)}?autoplay=1&playsinline=1&rel=0&modestbranding=1&enablejsapi=1&mute=${on ? 0 : 1}&origin=${encodeURIComponent(location.origin)}" title="${h(v.title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen loading="lazy"></iframe></div>
     <p class="vid-title"><strong>${h(v.title)}</strong> <span class="hint">${h(v.channel || '')}</span></p>
     <div class="row wrap vid-rate"><span class="hint">Was it helpful?</span>
       <button type="button" class="btn small ${mine === 1 ? 'on' : ''}" data-act="vid-vote" data-id="${h(v.id)}" data-v="1">👍 Helpful${v.up + (mine === 1 ? 0 : 0) ? ` · ${v.up}` : ''}</button>
       <button type="button" class="btn small ${mine === -1 ? 'on' : ''}" data-act="vid-vote" data-id="${h(v.id)}" data-v="-1">👎 Not great</button>
-      <span class="grow"></span><button type="button" class="btn ghost small" data-act="vid-back">◂ Other videos</button></div>`;
+      <span class="grow"></span><button type="button" class="btn ghost small vid-sound" data-act="vid-sound" aria-label="${on ? 'Sound on: tap to mute' : 'Sound off: tap for sound'}" title="${on ? 'Sound on' : 'Sound off'}">${on ? '🔊' : '🔇'}</button><button type="button" class="btn ghost small" data-act="vid-back">◂ Other videos</button></div>`;
+  listenToPlayer(panel.querySelector('iframe'));
+  syncVideoAudio();
 }
 const panelOf = el => el.closest('.ex')?.querySelector('.vid-panel');
 
@@ -3747,7 +3782,15 @@ const actions = {
     count('view:videos');
     videoList(panel, q, d.videos);
   },
-  'vid-play'(el) { const panel = el.closest('.vid-panel'), q = panel.dataset.q; const v = vidCache[q]?.videos.find(x => x.id === el.dataset.id); if (v) videoPlayer(panel, q, v); },
+  'vid-play'(el) { const panel = el.closest('.vid-panel'), q = panel.dataset.q; const v = vidCache[q]?.videos.find(x => x.id === el.dataset.id); if (!v) return; if (!videoSound()) videoSoundAsk(panel, v.id); else videoPlayer(panel, q, v); },
+  'vid-sound-pick'(el) { setVideoSound(el.dataset.s === 'on'); actions['vid-play'](el); },
+  'vid-sound'(el) {
+    const on = videoSound() !== 'on', frame = el.closest('.vid-panel')?.querySelector('iframe');
+    setVideoSound(on);
+    if (frame) ytSend(frame, { event: 'command', func: on ? 'unMute' : 'mute', args: [] });
+    el.textContent = on ? '🔊' : '🔇'; el.title = on ? 'Sound on' : 'Sound off'; el.setAttribute('aria-label', on ? 'Sound on: tap to mute' : 'Sound off: tap for sound');
+    syncVideoAudio();
+  },
   'vid-back'(el) { const panel = el.closest('.vid-panel'), q = panel.dataset.q; videoList(panel, q, vidCache[q]?.videos || []); },
   'vid-vote'(el) {
     const panel = el.closest('.vid-panel'), q = panel.dataset.q, id = el.dataset.id, v = +el.dataset.v, k = `${q}|${id}`;

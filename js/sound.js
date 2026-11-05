@@ -17,10 +17,16 @@ export function setSound(on) {
 //   the athlete's own music instead of pausing it. Trade-off: the ring/silent switch mutes them.
 //   ('playback' played through silent mode but stopped other apps' music on every tap.)
 let unlocked = false;
+// A demo video playing with sound needs 'playback' (heard on silent, pauses other music);
+// everything else stays 'ambient' so the athlete's music keeps going.
+let mediaMode = false;
+const applySession = () => { try { if (navigator.audioSession) navigator.audioSession.type = mediaMode ? 'playback' : 'ambient'; } catch { /* older browsers */ } };
+export function setMediaMode(on) { if (mediaMode === !!on) return; mediaMode = !!on; applySession(); }
+export const inMediaMode = () => mediaMode;
 export function unlockAudio() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
-  try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch { /* older browsers */ }
+  applySession();
   if (!ctx) {
     ctx = new AC();
     master = ctx.createGain();
